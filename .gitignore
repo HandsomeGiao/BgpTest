@@ -1,0 +1,5 @@
+TopoSimulator/build/
+TopoSimulator/tmp/
+tmp/
+TopoGenerator/**/__pycache__/
+*.pyc
