@@ -14,7 +14,6 @@ python -m topogenerator.main
 
 - Add routers, configure router id, ASN, route-reflector flag, cluster id and originated prefixes.
 - Add links between routers, configure state, delay and route-reflector client direction.
-- Export JSON and pass it to `TopoSimulator --topology`.
+- Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.
 
 The editor stores visual node positions in each router's optional `position` field. The C++ simulator ignores that field.
-

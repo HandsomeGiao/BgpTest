@@ -5,8 +5,21 @@
 ## Build
 
 ```powershell
-cmake -S TopoSimulator -B TopoSimulator/build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+$env:VCPKG_ROOT = "C:\Users\giaogiao\AllMyLibFiles\vcpkg"
+cmake -S TopoSimulator -B TopoSimulator/build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
 cmake --build TopoSimulator/build --config Release
+```
+
+Or use the helper script:
+
+```powershell
+.\TopoSimulator\build.ps1
+```
+
+If `VCPKG_ROOT` is not set, `build.ps1` will try `C:\Users\giaogiao\AllMyLibFiles\vcpkg`, which is the vcpkg location detected on this machine. You can also pass an explicit path:
+
+```powershell
+.\TopoSimulator\build.ps1 -VcpkgRoot "D:\path\to\vcpkg"
 ```
 
 Dependencies are declared in `vcpkg.json`:
@@ -18,6 +31,14 @@ Dependencies are declared in `vcpkg.json`:
 
 ```powershell
 .\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\config\sample_topology.json
+```
+
+You can also double-click `TopoSimulator.exe` after building. Without `--topology`, it only looks in the current working directory's `topo/` folder, lists the available `*.json` topology files, and lets you choose one. If no JSON topology exists there, it prints a message and exits.
+
+The build copies `TopoSimulator/topo/` next to the executable, so double-clicking the built exe has a ready-to-run sample topology:
+
+```text
+TopoSimulator/build/Release/topo/sample_topology.json
 ```
 
 Each run creates a directory below `tmp/` and writes `bmp_collector.log` as JSON lines. Every received BGP message includes timestamp, receiver, sender, sequence, message type and full message payload.
@@ -70,4 +91,3 @@ withdraw <router> <prefix>
 converge [timeout_ms]
 quit
 ```
-

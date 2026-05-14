@@ -1,0 +1,87 @@
+{
+  "simulation": {
+    "name": "rr-demo",
+    "log_dir": "tmp",
+    "worker_threads": 4,
+    "convergence_quiet_ms": 300
+  },
+  "routers": [
+    {
+      "id": "R1",
+      "router_id": "1.1.1.1",
+      "asn": 65000,
+      "route_reflector": true,
+      "cluster_id": "1.1.1.1",
+      "originated_prefixes": [
+        "10.1.0.0/24"
+      ],
+      "neighbors": [
+        {
+          "id": "R2",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": true,
+          "enabled": true
+        },
+        {
+          "id": "R3",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": true,
+          "enabled": true
+        },
+        {
+          "id": "E1",
+          "remote_asn": 65100,
+          "session_type": "ebgp",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "router_id": "2.2.2.2",
+      "asn": 65000,
+      "originated_prefixes": [
+        "10.2.0.0/24"
+      ]
+    },
+    {
+      "id": "R3",
+      "router_id": "3.3.3.3",
+      "asn": 65000,
+      "originated_prefixes": [
+        "10.3.0.0/24"
+      ]
+    },
+    {
+      "id": "E1",
+      "router_id": "100.0.0.1",
+      "asn": 65100,
+      "originated_prefixes": [
+        "192.0.2.0/24"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "a": "R1",
+      "b": "R2",
+      "enabled": true,
+      "delay_ms": 2
+    },
+    {
+      "a": "R1",
+      "b": "R3",
+      "enabled": true,
+      "delay_ms": 2
+    },
+    {
+      "a": "R1",
+      "b": "E1",
+      "enabled": true,
+      "delay_ms": 5
+    }
+  ]
+}
+

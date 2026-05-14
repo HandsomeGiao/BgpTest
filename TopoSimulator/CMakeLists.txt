@@ -37,3 +37,8 @@ endif()
 add_executable(TopoSimulator src/main.cpp)
 target_link_libraries(TopoSimulator PRIVATE toposim)
 
+add_custom_command(TARGET TopoSimulator POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/topo
+        $<TARGET_FILE_DIR:TopoSimulator>/topo
+)

@@ -1,9 +1,19 @@
 #include <chrono>
+#include <algorithm>
 #include <exception>
+#include <filesystem>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
+
+#ifdef _WIN32
+#include <cstdio>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <spdlog/spdlog.h>
 
@@ -38,7 +48,44 @@ void printHelp() {
         << "  quit\n";
 }
 
-std::string topologyPathFromArgs(int argc, char** argv) {
+bool stdinIsTerminal() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0;
+#else
+    return isatty(STDIN_FILENO) != 0;
+#endif
+}
+
+void waitBeforeExitIfDoubleClicked() {
+    if (!stdinIsTerminal()) {
+        return;
+    }
+    std::cout << "\nPress Enter to exit...";
+    std::string ignored;
+    std::getline(std::cin, ignored);
+}
+
+std::vector<std::filesystem::path> discoverTopologies() {
+    const auto topo_dir = std::filesystem::current_path() / "topo";
+    std::vector<std::filesystem::path> topologies;
+    if (!std::filesystem::exists(topo_dir) || !std::filesystem::is_directory(topo_dir)) {
+        return topologies;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(topo_dir)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (entry.path().extension() == ".json") {
+            topologies.push_back(entry.path());
+        }
+    }
+
+    std::sort(topologies.begin(), topologies.end());
+    return topologies;
+}
+
+std::optional<std::filesystem::path> topologyPathFromArgs(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if ((arg == "--topology" || arg == "-t") && i + 1 < argc) {
@@ -48,7 +95,52 @@ std::string topologyPathFromArgs(int argc, char** argv) {
             spdlog::set_level(spdlog::level::debug);
         }
     }
-    return "config/sample_topology.json";
+
+    const auto topo_dir = std::filesystem::current_path() / "topo";
+    const auto topologies = discoverTopologies();
+    if (topologies.empty()) {
+        std::cout << "No available topologies in: " << topo_dir.string() << '\n';
+        waitBeforeExitIfDoubleClicked();
+        return std::nullopt;
+    }
+
+    std::cout << "Available topologies in " << topo_dir.string() << ":\n";
+    for (std::size_t i = 0; i < topologies.size(); ++i) {
+        std::cout << "  " << (i + 1) << ". " << topologies[i].filename().string() << '\n';
+    }
+
+    if (topologies.size() == 1) {
+        std::cout << "Using topology: " << topologies.front().filename().string() << '\n';
+        return topologies.front();
+    }
+
+    if (!stdinIsTerminal()) {
+        std::cout << "Multiple topologies are available. Pass --topology <file> in non-interactive mode.\n";
+        return std::nullopt;
+    }
+
+    std::cout << "Select topology [1-" << topologies.size() << "]: ";
+    std::string line;
+    if (!std::getline(std::cin, line)) {
+        return std::nullopt;
+    }
+
+    std::size_t selected = 0;
+    try {
+        selected = static_cast<std::size_t>(std::stoul(line));
+    } catch (...) {
+        std::cout << "Invalid selection.\n";
+        waitBeforeExitIfDoubleClicked();
+        return std::nullopt;
+    }
+
+    if (selected == 0 || selected > topologies.size()) {
+        std::cout << "Invalid selection.\n";
+        waitBeforeExitIfDoubleClicked();
+        return std::nullopt;
+    }
+
+    return topologies[selected - 1];
 }
 
 }  // namespace
@@ -56,7 +148,10 @@ std::string topologyPathFromArgs(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         const auto topology_path = topologyPathFromArgs(argc, argv);
-        auto topology = toposim::TopoManager::loadTopology(topology_path);
+        if (!topology_path) {
+            return 1;
+        }
+        auto topology = toposim::TopoManager::loadTopology(*topology_path);
         toposim::TopoManager manager(std::move(topology));
 
         manager.start();
@@ -111,6 +206,7 @@ int main(int argc, char** argv) {
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "Fatal: " << ex.what() << '\n';
+        waitBeforeExitIfDoubleClicked();
         return 1;
     }
 }
