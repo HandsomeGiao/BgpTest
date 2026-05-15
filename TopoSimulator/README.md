@@ -2,6 +2,8 @@
 
 `TopoSimulator` is a pure C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, waits for convergence, then accepts interactive topology changes.
 
+Supported environment: Windows + MSVC + vcpkg only.
+
 ## Build
 
 ```powershell

@@ -8,12 +8,8 @@
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
 #include <cstdio>
 #include <io.h>
-#else
-#include <unistd.h>
-#endif
 
 #include <spdlog/spdlog.h>
 
@@ -48,11 +44,7 @@ void printHelp() {
 }
 
 bool stdinIsTerminal() {
-#ifdef _WIN32
   return _isatty(_fileno(stdin)) != 0;
-#else
-  return isatty(STDIN_FILENO) != 0;
-#endif
 }
 
 void waitBeforeExitIfDoubleClicked() {

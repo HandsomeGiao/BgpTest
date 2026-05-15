@@ -38,7 +38,7 @@ BGP Test Framework
 
 ### TopoSimulator
 
-`TopoSimulator` 是核心仿真引擎，使用 C++20、CMake 和 vcpkg manifest 构建。
+`TopoSimulator` 是核心仿真引擎，只支持 Windows + MSVC + vcpkg，使用 C++20、CMake 和 vcpkg manifest 构建。
 
 主要模块：
 
