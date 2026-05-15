@@ -9,7 +9,6 @@ class RouterNode:
     id: str
     router_id: str
     asn: int
-    route_reflector: bool = False
     cluster_id: str = ""
     originated_prefixes: list[str] = field(default_factory=list)
     x: float = 100.0
@@ -22,7 +21,6 @@ class RouterNode:
             id=str(data.get("id", f"R{index + 1}")),
             router_id=str(data.get("router_id", f"{index + 1}.{index + 1}.{index + 1}.{index + 1}")),
             asn=int(data.get("asn", 65000)),
-            route_reflector=bool(data.get("route_reflector", False)),
             cluster_id=str(data.get("cluster_id", data.get("router_id", ""))),
             originated_prefixes=list(data.get("originated_prefixes", [])),
             x=float(position.get("x", 120 + index * 80)),
@@ -128,7 +126,6 @@ class TopologyModel:
                     "id": router.id,
                     "router_id": router.router_id,
                     "asn": router.asn,
-                    "route_reflector": router.route_reflector,
                     "cluster_id": router.cluster_id or router.router_id,
                     "originated_prefixes": router.originated_prefixes,
                     "position": {"x": router.x, "y": router.y},
@@ -156,4 +153,3 @@ class TopologyModel:
                 for link in self.links
             ],
         }
-

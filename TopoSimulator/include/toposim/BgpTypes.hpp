@@ -81,7 +81,6 @@ struct RouterConfig {
     std::string id;
     std::string router_id;
     std::uint32_t asn = 0;
-    bool route_reflector = false;
     std::string cluster_id;
     std::vector<std::string> originated_prefixes;
     std::vector<NeighborConfig> neighbors;
@@ -144,4 +143,3 @@ void from_json(const nlohmann::json& j, TopologyConfig& config);
 void to_json(nlohmann::json& j, const RouteEntry& route);
 
 }  // namespace toposim
-

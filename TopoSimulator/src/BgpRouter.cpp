@@ -49,7 +49,10 @@ std::uint32_t BgpRouter::asn() const {
 }
 
 bool BgpRouter::isRouteReflector() const {
-    return config_.route_reflector;
+    std::lock_guard lock(mutex_);
+    return std::any_of(neighbors_.begin(), neighbors_.end(), [](const auto& entry) {
+        return entry.second.rr_client;
+    });
 }
 
 bool BgpRouter::isActive() const {
@@ -391,7 +394,7 @@ RouteEntry BgpRouter::transformRouteForPeer(const RouteEntry& route,
         transformed.attributes.next_hop = config_.router_id;
     }
 
-    if (config_.route_reflector && !route.local_origin &&
+    if (isRouteReflector() && !route.local_origin &&
         route.source_session == SessionType::Ibgp &&
         to_peer.session_type == SessionType::Ibgp) {
         if (!transformed.attributes.originator_id) {
@@ -583,12 +586,21 @@ std::vector<RouteEntry> BgpRouter::candidatesForPrefix(const std::string& prefix
 
 bool BgpRouter::shouldReflectIbgpRoute(const RouteEntry& route,
                                        const NeighborConfig& to_peer) const {
-    if (!config_.route_reflector) {
+    bool has_rr_client = false;
+    bool learned_from_client = false;
+    {
+        std::lock_guard lock(mutex_);
+        has_rr_client = std::any_of(neighbors_.begin(), neighbors_.end(), [](const auto& entry) {
+            return entry.second.rr_client;
+        });
+        const auto learned_neighbor = neighbors_.find(route.learned_from);
+        learned_from_client =
+            learned_neighbor != neighbors_.end() && learned_neighbor->second.rr_client;
+    }
+
+    if (!has_rr_client) {
         return false;
     }
-    const auto learned_neighbor = neighbors_.find(route.learned_from);
-    const bool learned_from_client =
-        learned_neighbor != neighbors_.end() && learned_neighbor->second.rr_client;
 
     if (learned_from_client) {
         return true;

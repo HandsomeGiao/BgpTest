@@ -10,7 +10,6 @@
       "id": "R1",
       "router_id": "1.1.1.1",
       "asn": 65000,
-      "route_reflector": true,
       "cluster_id": "1.1.1.1",
       "originated_prefixes": [
         "10.1.0.0/24"
@@ -84,4 +83,3 @@
     }
   ]
 }
-

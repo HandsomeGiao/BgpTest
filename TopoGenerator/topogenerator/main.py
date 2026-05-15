@@ -63,8 +63,6 @@ class RouterDialog(QDialog):
         self.asn_spin = QSpinBox()
         self.asn_spin.setRange(1, 10_000_000)
         self.asn_spin.setValue(router.asn if router else 65000)
-        self.rr_check = QCheckBox()
-        self.rr_check.setChecked(router.route_reflector if router else False)
         self.cluster_edit = QLineEdit(router.cluster_id if router else "")
         self.prefixes_edit = QPlainTextEdit("\n".join(router.originated_prefixes) if router else "")
 
@@ -72,7 +70,6 @@ class RouterDialog(QDialog):
         form.addRow("Node id", self.id_edit)
         form.addRow("BGP router id", self.router_id_edit)
         form.addRow("ASN", self.asn_spin)
-        form.addRow("Route reflector", self.rr_check)
         form.addRow("Cluster id", self.cluster_edit)
         form.addRow("Originated prefixes", self.prefixes_edit)
 
@@ -101,7 +98,6 @@ class RouterDialog(QDialog):
             id=self.id_edit.text().strip(),
             router_id=router_id,
             asn=self.asn_spin.value(),
-            route_reflector=self.rr_check.isChecked(),
             cluster_id=self.cluster_edit.text().strip() or router_id,
             originated_prefixes=prefixes,
             x=x,
@@ -143,8 +139,8 @@ class LinkDialog(QDialog):
         form.addRow("B", self.b_combo)
         form.addRow("Enabled", self.enabled_check)
         form.addRow("Delay ms", self.delay_spin)
-        form.addRow("", self.rr_a_check)
-        form.addRow("", self.rr_b_check)
+        form.addRow("RR client", self.rr_a_check)
+        form.addRow("RR client", self.rr_b_check)
 
         ok = QPushButton("OK")
         cancel = QPushButton("Cancel")
@@ -177,7 +173,7 @@ class RouterItem(QGraphicsEllipseItem):
         self.router = router
         self.scene_ref = scene_ref
         self.setPos(QPointF(router.x, router.y))
-        self.setBrush(QBrush(QColor("#d8f0ff") if router.route_reflector else QColor("#f7f7f7")))
+        self.setBrush(QBrush(QColor("#d8f0ff") if scene_ref.is_route_reflector(router.id) else QColor("#f7f7f7")))
         self.setPen(QPen(QColor("#25607a"), 2))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
@@ -269,6 +265,14 @@ class TopologyScene(QGraphicsScene):
                 continue
             item.setLine(QLineF(a_item.pos(), b_item.pos()))
             item.update_pen()
+
+    def is_route_reflector(self, router_id: str) -> bool:
+        for link in self.model.links:
+            if link.a == router_id and link.rr_client_from_a:
+                return True
+            if link.b == router_id and link.rr_client_from_b:
+                return True
+        return False
 
     def update_as_groups(self) -> None:
         grouped: dict[int, list[RouterItem]] = {}

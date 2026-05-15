@@ -59,7 +59,7 @@ BGP Test Framework
 它用于：
 
 - 添加、编辑和删除路由器节点。
-- 配置 router id、ASN、路由反射器标记、cluster id 和本地起源前缀。
+- 配置 router id、ASN、cluster id 和本地起源前缀。
 - 添加和编辑节点之间的链路。
 - 配置链路状态、延迟和 RR client 方向。
 - 导出 `TopoSimulator` 可读取的 JSON 拓扑文件。
@@ -134,4 +134,3 @@ python -m topogenerator.main
 - `selectBestRoute`
 
 这样可以在不重写拓扑管理、多线程投递和日志系统的前提下，替换 BGP 策略、路径选择、属性处理或自定义报文行为。
-

@@ -245,7 +245,7 @@ nlohmann::json TopoManager::routersSnapshot() const {
             {"router_id", router->routerId()},
             {"asn", router->asn()},
             {"active", router->isActive()},
-            {"route_reflector", router->isRouteReflector()},
+            {"has_rr_clients", router->isRouteReflector()},
         });
     }
     return result;
@@ -344,4 +344,3 @@ std::filesystem::path TopoManager::makeRunDirectory() const {
 }
 
 }  // namespace toposim
-

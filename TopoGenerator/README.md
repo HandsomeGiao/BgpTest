@@ -13,7 +13,7 @@ python -m topogenerator.main
 ## Workflow
 
 - Add routers directly on the canvas.
-- Double-click an existing router to configure router id, ASN, route-reflector flag, cluster id and originated prefixes.
+- Double-click an existing router to configure router id, ASN, cluster id and originated prefixes.
 - Add links between routers, configure state, delay and route-reflector client direction.
 - Right-drag the canvas to pan the view, and use the mouse wheel to zoom.
 - Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.

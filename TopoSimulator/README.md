@@ -48,17 +48,16 @@ Each run creates a directory below `tmp/` and writes `bmp_collector.log` as JSON
 The simulator accepts:
 
 - `simulation`: run name, log directory, worker count and convergence quiet period.
-- `routers`: router id, BGP router-id, ASN, route-reflector flag, cluster id, originated prefixes and optional neighbors.
+- `routers`: router id, BGP router-id, ASN, cluster id, originated prefixes and optional neighbors.
 - `links`: physical/logical connectivity, state and delivery delay.
 
 Neighbor entries may be explicit. If a link exists but one side omits the neighbor, `TopoManager` derives a symmetric neighbor using the routers' ASNs.
 
 Route reflector support is modeled through:
 
-- Router flag: `"route_reflector": true`
 - Per-neighbor flag on the reflector: `"rr_client": true`
 
-IBGP routes are not re-advertised to other IBGP peers unless the router is a route reflector. Client-learned routes are reflected to other peers except the origin peer; non-client-learned routes are reflected only to clients.
+There is no separate behavioral switch for route reflectors. If a router has at least one neighbor marked with `"rr_client": true`, it is treated as a route reflector. IBGP routes are not re-advertised to other IBGP peers unless this derived route-reflector role applies. Client-learned routes are reflected to other peers except the origin peer; non-client-learned routes are reflected only to clients.
 
 ## Extension Points
 

@@ -217,7 +217,6 @@ void to_json(nlohmann::json& j, const RouterConfig& config) {
         {"id", config.id},
         {"router_id", config.router_id},
         {"asn", config.asn},
-        {"route_reflector", config.route_reflector},
         {"cluster_id", config.cluster_id},
         {"originated_prefixes", config.originated_prefixes},
         {"neighbors", config.neighbors},
@@ -228,7 +227,6 @@ void from_json(const nlohmann::json& j, RouterConfig& config) {
     j.at("id").get_to(config.id);
     getIfPresent(j, "router_id", config.router_id);
     getIfPresent(j, "asn", config.asn);
-    getIfPresent(j, "route_reflector", config.route_reflector);
     getIfPresent(j, "cluster_id", config.cluster_id);
     getIfPresent(j, "originated_prefixes", config.originated_prefixes);
     getIfPresent(j, "neighbors", config.neighbors);
