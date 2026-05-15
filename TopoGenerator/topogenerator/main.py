@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt
+from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt
 from PyQt6.QtGui import QAction, QBrush, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -299,6 +299,62 @@ class TopologyScene(QGraphicsScene):
             self.main_window.edit_router_item(item)
 
 
+class TopologyView(QGraphicsView):
+    def __init__(self, scene: TopologyScene) -> None:
+        super().__init__(scene)
+        self._panning = False
+        self._last_pan_pos = QPoint()
+        self._zoom_factor = 1.15
+        self._min_zoom = 0.2
+        self._max_zoom = 4.0
+        self._current_zoom = 1.0
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.RightButton:
+            self._panning = True
+            self._last_pan_pos = event.pos()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._panning:
+            delta = event.pos() - self._last_pan_pos
+            self._last_pan_pos = event.pos()
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.RightButton and self._panning:
+            self._panning = False
+            self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if event.angleDelta().y() == 0:
+            event.ignore()
+            return
+
+        factor = self._zoom_factor if event.angleDelta().y() > 0 else 1 / self._zoom_factor
+        next_zoom = self._current_zoom * factor
+        if next_zoom < self._min_zoom or next_zoom > self._max_zoom:
+            event.accept()
+            return
+
+        self._current_zoom = next_zoom
+        self.scale(factor, factor)
+        event.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -307,7 +363,7 @@ class MainWindow(QMainWindow):
         self.model = TopologyModel()
         self.scene = TopologyScene(self.model)
         self.scene.main_window = self
-        self.view = QGraphicsView(self.scene)
+        self.view = TopologyView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
         self.setCentralWidget(self.view)
         self._build_toolbar()
