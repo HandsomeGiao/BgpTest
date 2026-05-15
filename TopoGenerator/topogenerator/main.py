@@ -122,7 +122,7 @@ class LinkDialog(QDialog):
         self.enabled_check.setChecked(True)
         self.delay_spin = QSpinBox()
         self.delay_spin.setRange(0, 60_000)
-        self.delay_spin.setValue(1)
+        self.delay_spin.setValue(0)
         self.rr_a_check = QCheckBox("A treats B as RR client")
         self.rr_b_check = QCheckBox("B treats A as RR client")
 
@@ -182,6 +182,19 @@ class RouterItem(QGraphicsEllipseItem):
         label = QGraphicsSimpleTextItem(router.id, self)
         label_rect = label.boundingRect()
         label.setPos(-label_rect.width() / 2, -label_rect.height() / 2)
+        self.update_style(False)
+
+    def update_style(self, link_start: bool = False) -> None:
+        self.setBrush(QBrush(QColor("#d8f0ff") if self.scene_ref.is_route_reflector(self.router.id) else QColor("#f7f7f7")))
+        color = QColor("#f2c94c") if link_start else QColor("#25607a")
+        width = 4 if link_start else 2
+        self.setPen(QPen(color, width))
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.scene_ref.router_clicked(self):
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event) -> None:
         self.scene_ref.router_double_clicked(self)
@@ -299,8 +312,17 @@ class TopologyScene(QGraphicsScene):
                 group_item.update_rect(rect.adjusted(-34, -30, 34, 30))
 
     def router_double_clicked(self, item: RouterItem) -> None:
-        if self.main_window is not None:
+        if self.main_window is not None and not self.main_window.link_mode_enabled:
             self.main_window.edit_router_item(item)
+
+    def router_clicked(self, item: RouterItem) -> bool:
+        if self.main_window is None:
+            return False
+        return self.main_window.handle_router_click_for_link_mode(item)
+
+    def set_link_start_router(self, router_id: Optional[str]) -> None:
+        for item in self.router_items.values():
+            item.update_style(item.router.id == router_id)
 
 
 class TopologyView(QGraphicsView):
@@ -365,6 +387,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("TopoGenerator")
         self.resize(1100, 760)
         self.model = TopologyModel()
+        self.link_mode_enabled = False
+        self.pending_link_router_id: Optional[str] = None
+        self.link_mode_action: Optional[QAction] = None
         self.scene = TopologyScene(self.model)
         self.scene.main_window = self
         self.view = TopologyView(self.scene)
@@ -375,15 +400,23 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Topology")
         self.addToolBar(toolbar)
-        actions = [
-            ("Add Router", self.add_router),
-            ("Add Link", self.add_link),
+
+        add_router_action = QAction("Add Router", self)
+        add_router_action.triggered.connect(self.add_router)
+        toolbar.addAction(add_router_action)
+
+        self.link_mode_action = QAction("Link Mode (Q)", self)
+        self.link_mode_action.setCheckable(True)
+        self.link_mode_action.setShortcut("Q")
+        self.link_mode_action.toggled.connect(self.set_link_mode)
+        toolbar.addAction(self.link_mode_action)
+
+        for text, callback in [
             ("Edit", self.edit_selected),
             ("Delete", self.delete_selected),
             ("Load", self.load_json),
             ("Export", self.export_json),
-        ]
-        for text, callback in actions:
+        ]:
             action = QAction(text, self)
             action.triggered.connect(callback)
             toolbar.addAction(action)
@@ -402,21 +435,10 @@ class MainWindow(QMainWindow):
         )
         self.model.add_router(router)
         self.scene.rebuild()
+        self.clear_pending_link()
         if router.id in self.scene.router_items:
             self.scene.clearSelection()
             self.scene.router_items[router.id].setSelected(True)
-
-    def add_link(self) -> None:
-        if len(self.model.routers) < 2:
-            self._error("Create at least two routers first")
-            return
-        dialog = LinkDialog(sorted(self.model.routers.keys()), parent=self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.model.add_link(dialog.link())
-                self.scene.rebuild()
-            except ValueError as exc:
-                self._error(str(exc))
 
     def edit_selected(self) -> None:
         selected = self.scene.selectedItems()
@@ -436,6 +458,7 @@ class MainWindow(QMainWindow):
                 item.link.rr_client_from_a = updated.rr_client_from_a
                 item.link.rr_client_from_b = updated.rr_client_from_b
                 self.scene.rebuild()
+                self.clear_pending_link()
 
     def edit_router_item(self, item: RouterItem) -> None:
         dialog = RouterDialog(item.router, self)
@@ -459,6 +482,7 @@ class MainWindow(QMainWindow):
         self.model.routers.pop(old_id, None)
         self.model.add_router(updated)
         self.scene.rebuild()
+        self.clear_pending_link()
         if updated.id in self.scene.router_items:
             self.scene.router_items[updated.id].setSelected(True)
 
@@ -472,6 +496,7 @@ class MainWindow(QMainWindow):
         elif isinstance(item, LinkItem):
             self.model.remove_link(item.link.a, item.link.b)
         self.scene.rebuild()
+        self.clear_pending_link()
 
     def load_json(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Load topology", "", "JSON (*.json)")
@@ -483,6 +508,7 @@ class MainWindow(QMainWindow):
             self.scene = TopologyScene(self.model)
             self.scene.main_window = self
             self.view.setScene(self.scene)
+            self.clear_pending_link()
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             self._error(f"Failed to load topology: {exc}")
 
@@ -499,6 +525,49 @@ class MainWindow(QMainWindow):
 
     def _error(self, message: str) -> None:
         QMessageBox.critical(self, "TopoGenerator", message)
+
+    def set_link_mode(self, enabled: bool) -> None:
+        self.link_mode_enabled = enabled
+        self.clear_pending_link()
+        if self.link_mode_action and self.link_mode_action.isChecked() != enabled:
+            self.link_mode_action.setChecked(enabled)
+        if enabled:
+            self.statusBar().showMessage("Link mode: click two routers to create a link.")
+        else:
+            self.statusBar().clearMessage()
+
+    def clear_pending_link(self) -> None:
+        self.pending_link_router_id = None
+        self.scene.set_link_start_router(None)
+
+    def handle_router_click_for_link_mode(self, item: RouterItem) -> bool:
+        if not self.link_mode_enabled:
+            return False
+
+        router_id = item.router.id
+        if self.pending_link_router_id is None or self.pending_link_router_id == router_id:
+            self.pending_link_router_id = router_id
+            self.scene.set_link_start_router(router_id)
+            self.statusBar().showMessage(f"Link mode: selected {router_id}; click another router.")
+            return True
+
+        link = LinkEdge(
+            a=self.pending_link_router_id,
+            b=router_id,
+            enabled=True,
+            delay_ms=0,
+        )
+        try:
+            self.model.add_link(link)
+        except ValueError as exc:
+            self.statusBar().showMessage(str(exc), 4000)
+            self.clear_pending_link()
+            return True
+
+        self.pending_link_router_id = None
+        self.scene.rebuild()
+        self.statusBar().showMessage(f"Created link {link.a} - {link.b}.", 3000)
+        return True
 
     def _next_router_index(self) -> int:
         index = len(self.model.routers) + 1

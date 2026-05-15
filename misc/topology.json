@@ -1,0 +1,117 @@
+{
+  "simulation": {
+    "name": "generated-topology",
+    "log_dir": "tmp",
+    "worker_threads": 0,
+    "convergence_quiet_ms": 300
+  },
+  "routers": [
+    {
+      "id": "R1",
+      "router_id": "1.1.1.1",
+      "asn": 65000,
+      "cluster_id": "1.1.1.1",
+      "originated_prefixes": [],
+      "position": {
+        "x": -139.0,
+        "y": -113.0
+      },
+      "neighbors": [
+        {
+          "id": "R2",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        },
+        {
+          "id": "R3",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "R2",
+      "router_id": "2.2.2.2",
+      "asn": 65000,
+      "cluster_id": "2.2.2.2",
+      "originated_prefixes": [],
+      "position": {
+        "x": 202.0,
+        "y": -119.0
+      },
+      "neighbors": [
+        {
+          "id": "R1",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        },
+        {
+          "id": "R3",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "R3",
+      "router_id": "3.3.3.3",
+      "asn": 65000,
+      "cluster_id": "3.3.3.3",
+      "originated_prefixes": [],
+      "position": {
+        "x": 60.0,
+        "y": 148.0
+      },
+      "neighbors": [
+        {
+          "id": "R2",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        },
+        {
+          "id": "R1",
+          "remote_asn": 65000,
+          "session_type": "ibgp",
+          "rr_client": false,
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "a": "R1",
+      "b": "R2",
+      "enabled": true,
+      "delay_ms": 0,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R2",
+      "b": "R3",
+      "enabled": true,
+      "delay_ms": 0,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R3",
+      "b": "R1",
+      "enabled": true,
+      "delay_ms": 0,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    }
+  ]
+}

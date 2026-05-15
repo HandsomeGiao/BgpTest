@@ -33,7 +33,7 @@ class LinkEdge:
     a: str
     b: str
     enabled: bool = True
-    delay_ms: int = 1
+    delay_ms: int = 0
     rr_client_from_a: bool = False
     rr_client_from_b: bool = False
 
@@ -43,7 +43,7 @@ class LinkEdge:
             a=str(data["a"]),
             b=str(data["b"]),
             enabled=bool(data.get("enabled", True)),
-            delay_ms=int(data.get("delay_ms", 1)),
+            delay_ms=int(data.get("delay_ms", 0)),
             rr_client_from_a=bool(data.get("rr_client_from_a", False)),
             rr_client_from_b=bool(data.get("rr_client_from_b", False)),
         )
