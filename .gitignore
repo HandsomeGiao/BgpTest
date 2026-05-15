@@ -3,3 +3,4 @@ TopoSimulator/tmp/
 tmp/
 TopoGenerator/**/__pycache__/
 *.pyc
+.venv/

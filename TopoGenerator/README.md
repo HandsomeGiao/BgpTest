@@ -12,8 +12,11 @@ python -m topogenerator.main
 
 ## Workflow
 
-- Add routers, configure router id, ASN, route-reflector flag, cluster id and originated prefixes.
+- Add routers directly on the canvas.
+- Double-click an existing router to configure router id, ASN, route-reflector flag, cluster id and originated prefixes.
 - Add links between routers, configure state, delay and route-reflector client direction.
 - Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.
+
+Routers in the same AS are automatically enclosed by a colored frame. The frame updates as routers are added, deleted, moved, or edited.
 
 The editor stores visual node positions in each router's optional `position` field. The C++ simulator ignores that field.

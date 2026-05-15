@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QLineF, QPointF, Qt
+from PyQt6.QtCore import QLineF, QPointF, QRectF, Qt
 from PyQt6.QtGui import QAction, QBrush, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
@@ -31,7 +32,26 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .models import LinkEdge, RouterNode, TopologyModel
+try:
+    from .models import LinkEdge, RouterNode, TopologyModel
+except ImportError:
+    from models import LinkEdge, RouterNode, TopologyModel
+
+
+AS_COLORS = [
+    "#2f80ed",
+    "#27ae60",
+    "#eb5757",
+    "#9b51e0",
+    "#f2994a",
+    "#00a3a3",
+    "#d9468a",
+    "#6f7d00",
+]
+
+
+def color_for_asn(asn: int) -> QColor:
+    return QColor(AS_COLORS[abs(asn) % len(AS_COLORS)])
 
 
 class RouterDialog(QDialog):
@@ -167,12 +187,17 @@ class RouterItem(QGraphicsEllipseItem):
         label_rect = label.boundingRect()
         label.setPos(-label_rect.width() / 2, -label_rect.height() / 2)
 
+    def mouseDoubleClickEvent(self, event) -> None:
+        self.scene_ref.router_double_clicked(self)
+        event.accept()
+
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             point = self.pos()
             self.router.x = point.x()
             self.router.y = point.y()
             self.scene_ref.update_links()
+            self.scene_ref.update_as_groups()
         return super().itemChange(change, value)
 
 
@@ -189,12 +214,33 @@ class LinkItem(QGraphicsLineItem):
         self.setPen(pen)
 
 
+class AsGroupItem(QGraphicsRectItem):
+    def __init__(self, asn: int) -> None:
+        super().__init__()
+        self.asn = asn
+        color = color_for_asn(asn)
+        fill = QColor(color)
+        fill.setAlpha(18)
+        self.setBrush(QBrush(fill))
+        self.setPen(QPen(color, 2, Qt.PenStyle.DashLine))
+        self.setZValue(-3)
+
+        self.label = QGraphicsSimpleTextItem(f"AS {asn}", self)
+        self.label.setBrush(QBrush(color))
+
+    def update_rect(self, rect: QRectF) -> None:
+        self.setRect(rect)
+        self.label.setPos(rect.left() + 10, rect.top() + 6)
+
+
 class TopologyScene(QGraphicsScene):
     def __init__(self, model: TopologyModel) -> None:
         super().__init__()
         self.model = model
         self.router_items: dict[str, RouterItem] = {}
         self.link_items: list[LinkItem] = []
+        self.as_group_items: dict[int, AsGroupItem] = {}
+        self.main_window: Optional["MainWindow"] = None
         self.setSceneRect(-2000, -2000, 4000, 4000)
         self.rebuild()
 
@@ -202,6 +248,7 @@ class TopologyScene(QGraphicsScene):
         self.clear()
         self.router_items.clear()
         self.link_items.clear()
+        self.as_group_items.clear()
         for link in self.model.links:
             item = LinkItem(link)
             item.setZValue(-1)
@@ -212,6 +259,7 @@ class TopologyScene(QGraphicsScene):
             self.router_items[router.id] = item
             self.addItem(item)
         self.update_links()
+        self.update_as_groups()
 
     def update_links(self) -> None:
         for item in self.link_items:
@@ -222,6 +270,34 @@ class TopologyScene(QGraphicsScene):
             item.setLine(QLineF(a_item.pos(), b_item.pos()))
             item.update_pen()
 
+    def update_as_groups(self) -> None:
+        grouped: dict[int, list[RouterItem]] = {}
+        for item in self.router_items.values():
+            grouped.setdefault(item.router.asn, []).append(item)
+
+        for asn in list(self.as_group_items):
+            if asn not in grouped:
+                self.removeItem(self.as_group_items[asn])
+                del self.as_group_items[asn]
+
+        for asn, router_items in grouped.items():
+            group_item = self.as_group_items.get(asn)
+            if group_item is None:
+                group_item = AsGroupItem(asn)
+                self.as_group_items[asn] = group_item
+                self.addItem(group_item)
+
+            rect: Optional[QRectF] = None
+            for router_item in router_items:
+                item_rect = router_item.mapRectToScene(router_item.boundingRect())
+                rect = item_rect if rect is None else rect.united(item_rect)
+            if rect is not None:
+                group_item.update_rect(rect.adjusted(-34, -30, 34, 30))
+
+    def router_double_clicked(self, item: RouterItem) -> None:
+        if self.main_window is not None:
+            self.main_window.edit_router_item(item)
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -230,6 +306,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 760)
         self.model = TopologyModel()
         self.scene = TopologyScene(self.model)
+        self.scene.main_window = self
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
         self.setCentralWidget(self.view)
@@ -252,22 +329,22 @@ class MainWindow(QMainWindow):
             toolbar.addAction(action)
 
     def add_router(self) -> None:
-        index = len(self.model.routers) + 1
-        default_router = RouterNode(
+        index = self._next_router_index()
+        center = self.view.mapToScene(self.view.viewport().rect().center())
+        offset = 24 * (len(self.model.routers) % 6)
+        router = RouterNode(
             id=f"R{index}",
             router_id=f"{index}.{index}.{index}.{index}",
             asn=65000,
-            x=120 + index * 50,
-            y=120 + index * 35,
+            cluster_id=f"{index}.{index}.{index}.{index}",
+            x=center.x() + offset,
+            y=center.y() + offset,
         )
-        dialog = RouterDialog(default_router, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            router = dialog.router(default_router.x, default_router.y)
-            if not router.id:
-                self._error("Router id is required")
-                return
-            self.model.add_router(router)
-            self.scene.rebuild()
+        self.model.add_router(router)
+        self.scene.rebuild()
+        if router.id in self.scene.router_items:
+            self.scene.clearSelection()
+            self.scene.router_items[router.id].setSelected(True)
 
     def add_link(self) -> None:
         if len(self.model.routers) < 2:
@@ -287,21 +364,7 @@ class MainWindow(QMainWindow):
             return
         item = selected[0]
         if isinstance(item, RouterItem):
-            dialog = RouterDialog(item.router, self)
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                old_id = item.router.id
-                updated = dialog.router(item.router.x, item.router.y)
-                if not updated.id:
-                    self._error("Router id is required")
-                    return
-                for link in self.model.links:
-                    if link.a == old_id:
-                        link.a = updated.id
-                    if link.b == old_id:
-                        link.b = updated.id
-                self.model.routers.pop(old_id, None)
-                self.model.add_router(updated)
-                self.scene.rebuild()
+            self.edit_router_item(item)
         elif isinstance(item, LinkItem):
             dialog = LinkDialog(sorted(self.model.routers.keys()), item.link, self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -313,6 +376,31 @@ class MainWindow(QMainWindow):
                 item.link.rr_client_from_a = updated.rr_client_from_a
                 item.link.rr_client_from_b = updated.rr_client_from_b
                 self.scene.rebuild()
+
+    def edit_router_item(self, item: RouterItem) -> None:
+        dialog = RouterDialog(item.router, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        old_id = item.router.id
+        updated = dialog.router(item.router.x, item.router.y)
+        if not updated.id:
+            self._error("Router id is required")
+            return
+        if updated.id != old_id and updated.id in self.model.routers:
+            self._error(f"Router id already exists: {updated.id}")
+            return
+
+        for link in self.model.links:
+            if link.a == old_id:
+                link.a = updated.id
+            if link.b == old_id:
+                link.b = updated.id
+        self.model.routers.pop(old_id, None)
+        self.model.add_router(updated)
+        self.scene.rebuild()
+        if updated.id in self.scene.router_items:
+            self.scene.router_items[updated.id].setSelected(True)
 
     def delete_selected(self) -> None:
         selected = self.scene.selectedItems()
@@ -333,6 +421,7 @@ class MainWindow(QMainWindow):
             with Path(path).open("r", encoding="utf-8") as handle:
                 self.model = TopologyModel.from_json(json.load(handle))
             self.scene = TopologyScene(self.model)
+            self.scene.main_window = self
             self.view.setScene(self.scene)
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             self._error(f"Failed to load topology: {exc}")
@@ -350,6 +439,12 @@ class MainWindow(QMainWindow):
 
     def _error(self, message: str) -> None:
         QMessageBox.critical(self, "TopoGenerator", message)
+
+    def _next_router_index(self) -> int:
+        index = len(self.model.routers) + 1
+        while f"R{index}" in self.model.routers:
+            index += 1
+        return index
 
 
 def main() -> int:
