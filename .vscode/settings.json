@@ -1,0 +1,14 @@
+{
+  "cmake.sourceDirectory": "${workspaceFolder}/TopoSimulator",
+  "cmake.buildDirectory": "${workspaceFolder}/TopoSimulator/build",
+  "cmake.generator": "Visual Studio 17 2022",
+  "cmake.platform": "x64",
+  "cmake.configureOnOpen": true,
+  "cmake.configureSettings": {
+    "CMAKE_TOOLCHAIN_FILE": "C:/Users/giaogiao/AllMyLibFiles/vcpkg/scripts/buildsystems/vcpkg.cmake"
+  },
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.cppStandard": "c++20",
+  "C_Cpp.errorSquiggles": "enabled"
+}
+

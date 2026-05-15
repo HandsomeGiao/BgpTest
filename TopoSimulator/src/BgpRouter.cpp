@@ -11,412 +11,412 @@ namespace toposim {
 namespace {
 
 int sessionPreference(SessionType type) {
-    return type == SessionType::Ebgp ? 0 : 1;
+  return type == SessionType::Ebgp ? 0 : 1;
 }
 
-std::string clusterAppend(const std::string& existing, const std::string& cluster_id) {
-    if (cluster_id.empty()) {
-        return existing;
-    }
-    if (existing.empty()) {
-        return cluster_id;
-    }
-    return existing + "," + cluster_id;
+std::string clusterAppend(const std::string &existing,
+                          const std::string &cluster_id) {
+  if (cluster_id.empty()) {
+    return existing;
+  }
+  if (existing.empty()) {
+    return cluster_id;
+  }
+  return existing + "," + cluster_id;
 }
 
-}  // namespace
+} // namespace
 
-BgpRouter::BgpRouter(RouterConfig config)
-    : config_(std::move(config)) {
-    if (config_.cluster_id.empty()) {
-        config_.cluster_id = config_.router_id;
-    }
-    for (const auto& neighbor : config_.neighbors) {
-        addOrUpdateNeighbor(neighbor);
-    }
+BgpRouter::BgpRouter(RouterConfig config) : config_(std::move(config)) {
+  if (config_.cluster_id.empty()) {
+    config_.cluster_id = config_.router_id;
+  }
+  for (const auto &neighbor : config_.neighbors) {
+    addOrUpdateNeighbor(neighbor);
+  }
 }
 
-const std::string& BgpRouter::id() const {
-    return config_.id;
-}
+const std::string &BgpRouter::id() const { return config_.id; }
 
-const std::string& BgpRouter::routerId() const {
-    return config_.router_id;
-}
+const std::string &BgpRouter::routerId() const { return config_.router_id; }
 
-std::uint32_t BgpRouter::asn() const {
-    return config_.asn;
-}
+std::uint32_t BgpRouter::asn() const { return config_.asn; }
 
 bool BgpRouter::isRouteReflector() const {
-    std::lock_guard lock(mutex_);
-    return std::any_of(neighbors_.begin(), neighbors_.end(), [](const auto& entry) {
-        return entry.second.rr_client;
-    });
+  std::lock_guard lock(mutex_);
+  return std::any_of(neighbors_.begin(), neighbors_.end(),
+                     [](const auto &entry) { return entry.second.rr_client; });
 }
 
 bool BgpRouter::isActive() const {
-    std::lock_guard lock(mutex_);
-    return active_;
+  std::lock_guard lock(mutex_);
+  return active_;
 }
 
-void BgpRouter::attachManager(TopoManager* manager) {
-    manager_ = manager;
+void BgpRouter::attachManager(TopoManager *manager) { manager_ = manager; }
+
+void BgpRouter::addOrUpdateNeighbor(const NeighborConfig &neighbor) {
+  std::lock_guard lock(mutex_);
+  auto normalized = neighbor;
+  if (normalized.remote_asn == 0) {
+    normalized.remote_asn = config_.asn;
+  }
+  neighbors_[normalized.id] = normalized;
+  peer_states_.try_emplace(normalized.id, PeerState::Idle);
 }
 
-void BgpRouter::addOrUpdateNeighbor(const NeighborConfig& neighbor) {
-    std::lock_guard lock(mutex_);
-    auto normalized = neighbor;
-    if (normalized.remote_asn == 0) {
-        normalized.remote_asn = config_.asn;
-    }
-    neighbors_[normalized.id] = normalized;
-    peer_states_.try_emplace(normalized.id, PeerState::Idle);
-}
-
-std::optional<NeighborConfig> BgpRouter::neighbor(const std::string& peer_id) const {
-    std::lock_guard lock(mutex_);
-    const auto it = neighbors_.find(peer_id);
-    if (it == neighbors_.end()) {
-        return std::nullopt;
-    }
-    return it->second;
+std::optional<NeighborConfig>
+BgpRouter::neighbor(const std::string &peer_id) const {
+  std::lock_guard lock(mutex_);
+  const auto it = neighbors_.find(peer_id);
+  if (it == neighbors_.end()) {
+    return std::nullopt;
+  }
+  return it->second;
 }
 
 std::vector<NeighborConfig> BgpRouter::neighbors() const {
-    std::lock_guard lock(mutex_);
-    std::vector<NeighborConfig> result;
-    result.reserve(neighbors_.size());
-    for (const auto& [_, neighbor] : neighbors_) {
-        result.push_back(neighbor);
-    }
-    return result;
+  std::lock_guard lock(mutex_);
+  std::vector<NeighborConfig> result;
+  result.reserve(neighbors_.size());
+  for (const auto &[_, neighbor] : neighbors_) {
+    result.push_back(neighbor);
+  }
+  return result;
 }
 
 void BgpRouter::start() {
-    std::vector<NeighborConfig> enabled_neighbors;
-    {
-        std::lock_guard lock(mutex_);
-        active_ = true;
-        local_routes_.clear();
-        adj_rib_in_.clear();
-        loc_rib_.clear();
-        adj_rib_out_.clear();
-
-        for (const auto& prefix : config_.originated_prefixes) {
-            RouteEntry route;
-            route.prefix = prefix;
-            route.learned_from = config_.id;
-            route.local_origin = true;
-            route.attributes.next_hop = config_.router_id;
-            route.attributes.local_pref = 100;
-            local_routes_[prefix] = route;
-            loc_rib_[prefix] = route;
-        }
-
-        for (auto& [peer_id, state] : peer_states_) {
-            state = PeerState::Idle;
-        }
-        for (const auto& [_, neighbor] : neighbors_) {
-            if (neighbor.enabled) {
-                enabled_neighbors.push_back(neighbor);
-            }
-        }
-    }
-
-    for (const auto& neighbor : enabled_neighbors) {
-        sendOpenToNeighbor(neighbor);
-    }
-}
-
-void BgpRouter::stop() {
+  std::vector<NeighborConfig> enabled_neighbors;
+  {
     std::lock_guard lock(mutex_);
-    active_ = false;
+    active_ = true;
+    local_routes_.clear();
     adj_rib_in_.clear();
     loc_rib_.clear();
     adj_rib_out_.clear();
-    for (auto& [_, state] : peer_states_) {
-        state = PeerState::Idle;
+
+    for (const auto &prefix : config_.originated_prefixes) {
+      RouteEntry route;
+      route.prefix = prefix;
+      route.learned_from = config_.id;
+      route.local_origin = true;
+      route.attributes.next_hop = config_.router_id;
+      route.attributes.local_pref = 100;
+      local_routes_[prefix] = route;
+      loc_rib_[prefix] = route;
     }
+
+    for (auto &[peer_id, state] : peer_states_) {
+      state = PeerState::Idle;
+    }
+    for (const auto &[_, neighbor] : neighbors_) {
+      if (neighbor.enabled) {
+        enabled_neighbors.push_back(neighbor);
+      }
+    }
+  }
+
+  for (const auto &neighbor : enabled_neighbors) {
+    sendOpenToNeighbor(neighbor);
+  }
 }
 
-void BgpRouter::receiveMessage(const BgpMessage& message) {
-    {
-        std::lock_guard lock(mutex_);
-        if (!active_) {
-            return;
-        }
-    }
-
-    onMessageReceived(message);
-
-    switch (message.type) {
-        case BgpMessageType::Open:
-            onOpenMessage(message);
-            break;
-        case BgpMessageType::Keepalive:
-            onKeepaliveMessage(message);
-            break;
-        case BgpMessageType::Update:
-            onUpdateMessage(message);
-            break;
-        case BgpMessageType::Notification:
-            onNotificationMessage(message);
-            break;
-    }
+void BgpRouter::stop() {
+  std::lock_guard lock(mutex_);
+  active_ = false;
+  adj_rib_in_.clear();
+  loc_rib_.clear();
+  adj_rib_out_.clear();
+  for (auto &[_, state] : peer_states_) {
+    state = PeerState::Idle;
+  }
 }
 
-void BgpRouter::neighborDown(const std::string& peer_id) {
-    std::set<std::string> changed_prefixes;
-    {
-        std::lock_guard lock(mutex_);
-        peer_states_[peer_id] = PeerState::Idle;
-        if (auto it = adj_rib_in_.find(peer_id); it != adj_rib_in_.end()) {
-            for (const auto& [prefix, _] : it->second) {
-                changed_prefixes.insert(prefix);
-            }
-            adj_rib_in_.erase(it);
-        }
-        adj_rib_out_.erase(peer_id);
+void BgpRouter::receiveMessage(const BgpMessage &message) {
+  {
+    std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
     }
+  }
 
-    if (!changed_prefixes.empty()) {
-        runDecisionProcessFor(changed_prefixes);
-    }
+  onMessageReceived(message);
+
+  switch (message.type) {
+  case BgpMessageType::Open:
+    onOpenMessage(message);
+    break;
+  case BgpMessageType::Keepalive:
+    onKeepaliveMessage(message);
+    break;
+  case BgpMessageType::Update:
+    onUpdateMessage(message);
+    break;
+  case BgpMessageType::Notification:
+    onNotificationMessage(message);
+    break;
+  }
 }
 
-void BgpRouter::neighborUp(const std::string& peer_id) {
-    auto neighbor_config = neighbor(peer_id);
-    if (!neighbor_config || !neighbor_config->enabled) {
-        return;
+void BgpRouter::neighborDown(const std::string &peer_id) {
+  std::set<std::string> changed_prefixes;
+  {
+    std::lock_guard lock(mutex_);
+    peer_states_[peer_id] = PeerState::Idle;
+    if (auto it = adj_rib_in_.find(peer_id); it != adj_rib_in_.end()) {
+      for (const auto &[prefix, _] : it->second) {
+        changed_prefixes.insert(prefix);
+      }
+      adj_rib_in_.erase(it);
     }
-    sendOpenToNeighbor(*neighbor_config);
+    adj_rib_out_.erase(peer_id);
+  }
+
+  if (!changed_prefixes.empty()) {
+    runDecisionProcessFor(changed_prefixes);
+  }
 }
 
-void BgpRouter::originatePrefix(const std::string& prefix) {
-    {
-        std::lock_guard lock(mutex_);
-        if (std::find(config_.originated_prefixes.begin(),
-                      config_.originated_prefixes.end(),
-                      prefix) == config_.originated_prefixes.end()) {
-            config_.originated_prefixes.push_back(prefix);
-        }
-        RouteEntry route;
-        route.prefix = prefix;
-        route.learned_from = config_.id;
-        route.local_origin = true;
-        route.attributes.next_hop = config_.router_id;
-        local_routes_[prefix] = route;
-    }
-    runDecisionProcessFor({prefix});
+void BgpRouter::neighborUp(const std::string &peer_id) {
+  auto neighbor_config = neighbor(peer_id);
+  if (!neighbor_config || !neighbor_config->enabled) {
+    return;
+  }
+  sendOpenToNeighbor(*neighbor_config);
 }
 
-void BgpRouter::withdrawLocalPrefix(const std::string& prefix) {
-    {
-        std::lock_guard lock(mutex_);
-        local_routes_.erase(prefix);
-        config_.originated_prefixes.erase(
-            std::remove(config_.originated_prefixes.begin(),
-                        config_.originated_prefixes.end(),
-                        prefix),
-            config_.originated_prefixes.end());
+void BgpRouter::originatePrefix(const std::string &prefix) {
+  {
+    std::lock_guard lock(mutex_);
+    if (std::find(config_.originated_prefixes.begin(),
+                  config_.originated_prefixes.end(),
+                  prefix) == config_.originated_prefixes.end()) {
+      config_.originated_prefixes.push_back(prefix);
     }
-    runDecisionProcessFor({prefix});
+    RouteEntry route;
+    route.prefix = prefix;
+    route.learned_from = config_.id;
+    route.local_origin = true;
+    route.attributes.next_hop = config_.router_id;
+    local_routes_[prefix] = route;
+  }
+  runDecisionProcessFor({prefix});
+}
+
+void BgpRouter::withdrawLocalPrefix(const std::string &prefix) {
+  {
+    std::lock_guard lock(mutex_);
+    local_routes_.erase(prefix);
+    config_.originated_prefixes.erase(
+        std::remove(config_.originated_prefixes.begin(),
+                    config_.originated_prefixes.end(), prefix),
+        config_.originated_prefixes.end());
+  }
+  runDecisionProcessFor({prefix});
 }
 
 nlohmann::json BgpRouter::ribSnapshot() const {
-    std::lock_guard lock(mutex_);
-    nlohmann::json result;
-    result["router"] = config_.id;
-    result["loc_rib"] = nlohmann::json::array();
-    for (const auto& [_, route] : loc_rib_) {
-        result["loc_rib"].push_back(route);
-    }
-    result["adj_rib_in"] = adj_rib_in_;
-    result["adj_rib_out"] = adj_rib_out_;
-    return result;
+  std::lock_guard lock(mutex_);
+  nlohmann::json result;
+  result["router"] = config_.id;
+  result["loc_rib"] = nlohmann::json::array();
+  for (const auto &[_, route] : loc_rib_) {
+    result["loc_rib"].push_back(route);
+  }
+  result["adj_rib_in"] = adj_rib_in_;
+  result["adj_rib_out"] = adj_rib_out_;
+  return result;
 }
 
 nlohmann::json BgpRouter::peerSnapshot() const {
+  std::lock_guard lock(mutex_);
+  nlohmann::json result = nlohmann::json::array();
+  for (const auto &[peer_id, neighbor] : neighbors_) {
+    result.push_back({
+        {"id", peer_id},
+        {"remote_asn", neighbor.remote_asn},
+        {"session_type", toString(neighbor.session_type)},
+        {"rr_client", neighbor.rr_client},
+        {"enabled", neighbor.enabled},
+        {"state", toString(peer_states_.at(peer_id))},
+    });
+  }
+  return result;
+}
+
+void BgpRouter::onMessageReceived(const BgpMessage &message) {
+  spdlog::debug("{} received {} from {}", config_.id, toString(message.type),
+                message.from);
+}
+
+void BgpRouter::onOpenMessage(const BgpMessage &message) {
+  std::optional<NeighborConfig> neighbor_config;
+  std::map<std::string, std::optional<RouteEntry>> current_routes;
+  {
     std::lock_guard lock(mutex_);
-    nlohmann::json result = nlohmann::json::array();
-    for (const auto& [peer_id, neighbor] : neighbors_) {
-        result.push_back({
-            {"id", peer_id},
-            {"remote_asn", neighbor.remote_asn},
-            {"session_type", toString(neighbor.session_type)},
-            {"rr_client", neighbor.rr_client},
-            {"enabled", neighbor.enabled},
-            {"state", toString(peer_states_.at(peer_id))},
-        });
+    const auto it = neighbors_.find(message.from);
+    if (it == neighbors_.end() || !it->second.enabled) {
+      return;
     }
-    return result;
-}
-
-void BgpRouter::onMessageReceived(const BgpMessage& message) {
-    spdlog::debug("{} received {} from {}", config_.id, toString(message.type), message.from);
-}
-
-void BgpRouter::onOpenMessage(const BgpMessage& message) {
-    std::optional<NeighborConfig> neighbor_config;
-    std::map<std::string, std::optional<RouteEntry>> current_routes;
-    {
-        std::lock_guard lock(mutex_);
-        const auto it = neighbors_.find(message.from);
-        if (it == neighbors_.end() || !it->second.enabled) {
-            return;
-        }
-        peer_states_[message.from] = PeerState::Established;
-        neighbor_config = it->second;
-        for (const auto& [prefix, route] : loc_rib_) {
-            current_routes[prefix] = route;
-        }
+    peer_states_[message.from] = PeerState::Established;
+    neighbor_config = it->second;
+    for (const auto &[prefix, route] : loc_rib_) {
+      current_routes[prefix] = route;
     }
-    sendKeepaliveToNeighbor(*neighbor_config);
-    disseminateChangedRoutes(current_routes);
+  }
+  sendKeepaliveToNeighbor(*neighbor_config);
+  disseminateChangedRoutes(current_routes);
 }
 
-void BgpRouter::onKeepaliveMessage(const BgpMessage& message) {
+void BgpRouter::onKeepaliveMessage(const BgpMessage &message) {
+  std::lock_guard lock(mutex_);
+  if (auto it = peer_states_.find(message.from); it != peer_states_.end()) {
+    it->second = PeerState::Established;
+  }
+}
+
+void BgpRouter::onUpdateMessage(const BgpMessage &message) {
+  if (!message.update) {
+    return;
+  }
+
+  std::set<std::string> changed_prefixes;
+  {
     std::lock_guard lock(mutex_);
-    if (auto it = peer_states_.find(message.from); it != peer_states_.end()) {
-        it->second = PeerState::Established;
+    const auto neighbor_it = neighbors_.find(message.from);
+    if (neighbor_it == neighbors_.end() || !neighbor_it->second.enabled) {
+      return;
     }
-}
+    peer_states_[message.from] = PeerState::Established;
 
-void BgpRouter::onUpdateMessage(const BgpMessage& message) {
-    if (!message.update) {
+    for (const auto &prefix : message.update->withdrawn_routes) {
+      if (auto peer_rib = adj_rib_in_.find(message.from);
+          peer_rib != adj_rib_in_.end()) {
+        peer_rib->second.erase(prefix);
+      }
+      changed_prefixes.insert(prefix);
+    }
+
+    if (!message.update->nlri.empty()) {
+      RouteEntry route;
+      route.attributes = message.update->path_attributes;
+      route.learned_from = message.from;
+      route.source_session = neighbor_it->second.session_type;
+      route.local_origin = false;
+
+      if (containsOwnAs(route.attributes)) {
+        spdlog::debug(
+            "{} rejected route from {} because AS_PATH contains local AS {}",
+            config_.id, message.from, config_.asn);
         return;
-    }
+      }
 
-    std::set<std::string> changed_prefixes;
-    {
-        std::lock_guard lock(mutex_);
-        const auto neighbor_it = neighbors_.find(message.from);
-        if (neighbor_it == neighbors_.end() || !neighbor_it->second.enabled) {
-            return;
+      for (const auto &prefix : message.update->nlri) {
+        route.prefix = prefix;
+        if (importRouteAllowed(route, neighbor_it->second)) {
+          adj_rib_in_[message.from][prefix] = route;
+          changed_prefixes.insert(prefix);
         }
-        peer_states_[message.from] = PeerState::Established;
-
-        for (const auto& prefix : message.update->withdrawn_routes) {
-            if (auto peer_rib = adj_rib_in_.find(message.from); peer_rib != adj_rib_in_.end()) {
-                peer_rib->second.erase(prefix);
-            }
-            changed_prefixes.insert(prefix);
-        }
-
-        if (!message.update->nlri.empty()) {
-            RouteEntry route;
-            route.attributes = message.update->path_attributes;
-            route.learned_from = message.from;
-            route.source_session = neighbor_it->second.session_type;
-            route.local_origin = false;
-
-            if (containsOwnAs(route.attributes)) {
-                spdlog::debug("{} rejected route from {} because AS_PATH contains local AS {}",
-                              config_.id,
-                              message.from,
-                              config_.asn);
-                return;
-            }
-
-            for (const auto& prefix : message.update->nlri) {
-                route.prefix = prefix;
-                if (importRouteAllowed(route, neighbor_it->second)) {
-                    adj_rib_in_[message.from][prefix] = route;
-                    changed_prefixes.insert(prefix);
-                }
-            }
-        }
+      }
     }
+  }
 
-    if (!changed_prefixes.empty()) {
-        runDecisionProcessFor(changed_prefixes);
-    }
+  if (!changed_prefixes.empty()) {
+    runDecisionProcessFor(changed_prefixes);
+  }
 }
 
-void BgpRouter::onNotificationMessage(const BgpMessage& message) {
-    neighborDown(message.from);
+void BgpRouter::onNotificationMessage(const BgpMessage &message) {
+  neighborDown(message.from);
 }
 
-bool BgpRouter::importRouteAllowed(const RouteEntry& route, const NeighborConfig&) const {
-    if (route.attributes.originator_id == config_.router_id) {
+bool BgpRouter::importRouteAllowed(const RouteEntry &route,
+                                   const NeighborConfig &) const {
+  if (route.attributes.originator_id == config_.router_id) {
+    return false;
+  }
+  if (route.attributes.cluster_list) {
+    const auto &clusters = *route.attributes.cluster_list;
+    std::size_t start = 0;
+    while (start <= clusters.size()) {
+      const auto end = clusters.find(',', start);
+      const auto token =
+          clusters.substr(start, end == std::string::npos ? end : end - start);
+      if (token == config_.cluster_id) {
         return false;
+      }
+      if (end == std::string::npos) {
+        break;
+      }
+      start = end + 1;
     }
-    if (route.attributes.cluster_list) {
-        const auto& clusters = *route.attributes.cluster_list;
-        std::size_t start = 0;
-        while (start <= clusters.size()) {
-            const auto end = clusters.find(',', start);
-            const auto token = clusters.substr(start, end == std::string::npos ? end : end - start);
-            if (token == config_.cluster_id) {
-                return false;
-            }
-            if (end == std::string::npos) {
-                break;
-            }
-            start = end + 1;
-        }
-    }
+  }
+  return true;
+}
+
+bool BgpRouter::exportRouteAllowed(const RouteEntry &route,
+                                   const NeighborConfig &to_peer) const {
+  if (!to_peer.enabled) {
+    return false;
+  }
+  if (route.learned_from == to_peer.id) {
+    return false;
+  }
+  if (route.local_origin || route.source_session == SessionType::Ebgp) {
     return true;
-}
-
-bool BgpRouter::exportRouteAllowed(const RouteEntry& route,
-                                   const NeighborConfig& to_peer) const {
-    if (!to_peer.enabled) {
-        return false;
-    }
-    if (route.learned_from == to_peer.id) {
-        return false;
-    }
-    if (route.local_origin || route.source_session == SessionType::Ebgp) {
-        return true;
-    }
-    if (route.source_session == SessionType::Ibgp && to_peer.session_type == SessionType::Ebgp) {
-        return true;
-    }
-    if (route.source_session == SessionType::Ibgp && to_peer.session_type == SessionType::Ibgp) {
-        return shouldReflectIbgpRoute(route, to_peer);
-    }
+  }
+  if (route.source_session == SessionType::Ibgp &&
+      to_peer.session_type == SessionType::Ebgp) {
     return true;
+  }
+  if (route.source_session == SessionType::Ibgp &&
+      to_peer.session_type == SessionType::Ibgp) {
+    return shouldReflectIbgpRoute(route, to_peer);
+  }
+  return true;
 }
 
-RouteEntry BgpRouter::transformRouteForPeer(const RouteEntry& route,
-                                            const NeighborConfig& to_peer) const {
-    RouteEntry transformed = route;
-    transformed.learned_from = config_.id;
-    transformed.local_origin = false;
-    transformed.source_session = to_peer.session_type;
+RouteEntry
+BgpRouter::transformRouteForPeer(const RouteEntry &route,
+                                 const NeighborConfig &to_peer) const {
+  RouteEntry transformed = route;
+  transformed.learned_from = config_.id;
+  transformed.local_origin = false;
+  transformed.source_session = to_peer.session_type;
 
-    if (to_peer.session_type == SessionType::Ebgp) {
-        transformed.attributes.as_path.insert(transformed.attributes.as_path.begin(), config_.asn);
-        transformed.attributes.next_hop = config_.router_id;
-    } else if (transformed.attributes.next_hop.empty()) {
-        transformed.attributes.next_hop = config_.router_id;
+  if (to_peer.session_type == SessionType::Ebgp) {
+    transformed.attributes.as_path.insert(
+        transformed.attributes.as_path.begin(), config_.asn);
+    transformed.attributes.next_hop = config_.router_id;
+  } else if (transformed.attributes.next_hop.empty()) {
+    transformed.attributes.next_hop = config_.router_id;
+  }
+
+  if (isRouteReflector() && !route.local_origin &&
+      route.source_session == SessionType::Ibgp &&
+      to_peer.session_type == SessionType::Ibgp) {
+    if (!transformed.attributes.originator_id) {
+      transformed.attributes.originator_id = route.attributes.next_hop.empty()
+                                                 ? route.learned_from
+                                                 : route.attributes.next_hop;
     }
+    transformed.attributes.cluster_list = clusterAppend(
+        transformed.attributes.cluster_list.value_or(""), config_.cluster_id);
+  }
 
-    if (isRouteReflector() && !route.local_origin &&
-        route.source_session == SessionType::Ibgp &&
-        to_peer.session_type == SessionType::Ibgp) {
-        if (!transformed.attributes.originator_id) {
-            transformed.attributes.originator_id = route.attributes.next_hop.empty()
-                                                       ? route.learned_from
-                                                       : route.attributes.next_hop;
-        }
-        transformed.attributes.cluster_list =
-            clusterAppend(transformed.attributes.cluster_list.value_or(""), config_.cluster_id);
-    }
-
-    return transformed;
+  return transformed;
 }
 
-std::optional<RouteEntry> BgpRouter::selectBestRoute(
-    const std::string&,
-    const std::vector<RouteEntry>& candidates) const {
-    if (candidates.empty()) {
-        return std::nullopt;
-    }
+std::optional<RouteEntry>
+BgpRouter::selectBestRoute(const std::string &,
+                           const std::vector<RouteEntry> &candidates) const {
+  if (candidates.empty()) {
+    return std::nullopt;
+  }
 
-    return *std::min_element(candidates.begin(), candidates.end(), [](const auto& lhs, const auto& rhs) {
+  return *std::min_element(
+      candidates.begin(), candidates.end(),
+      [](const auto &lhs, const auto &rhs) {
         return std::tuple{
                    -static_cast<int>(lhs.attributes.local_pref),
                    lhs.attributes.as_path.size(),
@@ -424,192 +424,196 @@ std::optional<RouteEntry> BgpRouter::selectBestRoute(
                    sessionPreference(lhs.source_session),
                    lhs.attributes.next_hop,
                    lhs.learned_from,
-               } <
-               std::tuple{
-                   -static_cast<int>(rhs.attributes.local_pref),
-                   rhs.attributes.as_path.size(),
-                   rhs.attributes.med,
-                   sessionPreference(rhs.source_session),
-                   rhs.attributes.next_hop,
-                   rhs.learned_from,
-               };
-    });
+               } < std::tuple{
+                       -static_cast<int>(rhs.attributes.local_pref),
+                       rhs.attributes.as_path.size(),
+                       rhs.attributes.med,
+                       sessionPreference(rhs.source_session),
+                       rhs.attributes.next_hop,
+                       rhs.learned_from,
+                   };
+      });
 }
 
-void BgpRouter::sendMessage(const std::string& peer_id, BgpMessage message) const {
-    if (!manager_) {
-        return;
-    }
-    message.from = config_.id;
-    message.to = peer_id;
-    manager_->sendMessage(config_.id, peer_id, std::move(message));
+void BgpRouter::sendMessage(const std::string &peer_id,
+                            BgpMessage message) const {
+  if (!manager_) {
+    return;
+  }
+  message.from = config_.id;
+  message.to = peer_id;
+  manager_->sendMessage(config_.id, peer_id, std::move(message));
 }
 
-void BgpRouter::sendOpenToNeighbor(const NeighborConfig& neighbor) {
-    {
-        std::lock_guard lock(mutex_);
-        if (!active_) {
-            return;
-        }
-        peer_states_[neighbor.id] = PeerState::OpenSent;
+void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
+  {
+    std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
     }
+    peer_states_[neighbor.id] = PeerState::OpenSent;
+  }
 
-    BgpMessage message;
-    message.type = BgpMessageType::Open;
-    message.open = BgpOpenPayload{
-        .version = 4,
-        .asn = config_.asn,
-        .hold_time_seconds = neighbor.hold_time_seconds,
-        .router_id = config_.router_id,
-    };
-    sendMessage(neighbor.id, std::move(message));
+  BgpMessage message;
+  message.type = BgpMessageType::Open;
+  message.open = BgpOpenPayload{
+      .version = 4,
+      .asn = config_.asn,
+      .hold_time_seconds = neighbor.hold_time_seconds,
+      .router_id = config_.router_id,
+  };
+  sendMessage(neighbor.id, std::move(message));
 }
 
-void BgpRouter::sendKeepaliveToNeighbor(const NeighborConfig& neighbor) {
-    BgpMessage message;
-    message.type = BgpMessageType::Keepalive;
-    sendMessage(neighbor.id, std::move(message));
+void BgpRouter::sendKeepaliveToNeighbor(const NeighborConfig &neighbor) {
+  BgpMessage message;
+  message.type = BgpMessageType::Keepalive;
+  sendMessage(neighbor.id, std::move(message));
 }
 
-void BgpRouter::sendUpdateToNeighbor(const NeighborConfig& neighbor,
-                                     const std::vector<std::string>& nlri,
-                                     const std::vector<std::string>& withdrawn,
-                                     const std::optional<RouteEntry>& route) {
-    BgpMessage message;
-    message.type = BgpMessageType::Update;
-    BgpUpdatePayload update;
-    update.nlri = nlri;
-    update.withdrawn_routes = withdrawn;
-    if (route) {
-        update.path_attributes = route->attributes;
-    }
-    message.update = std::move(update);
-    sendMessage(neighbor.id, std::move(message));
+void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
+                                     const std::vector<std::string> &nlri,
+                                     const std::vector<std::string> &withdrawn,
+                                     const std::optional<RouteEntry> &route) {
+  BgpMessage message;
+  message.type = BgpMessageType::Update;
+  BgpUpdatePayload update;
+  update.nlri = nlri;
+  update.withdrawn_routes = withdrawn;
+  if (route) {
+    update.path_attributes = route->attributes;
+  }
+  message.update = std::move(update);
+  sendMessage(neighbor.id, std::move(message));
 }
 
-void BgpRouter::runDecisionProcessFor(const std::set<std::string>& changed_prefixes) {
-    std::set<std::string> prefixes = changed_prefixes;
-    {
-        std::lock_guard lock(mutex_);
-        if (prefixes.empty()) {
-            for (const auto& [prefix, _] : loc_rib_) {
-                prefixes.insert(prefix);
-            }
-            for (const auto& [prefix, _] : local_routes_) {
-                prefixes.insert(prefix);
-            }
-        }
+void BgpRouter::runDecisionProcessFor(
+    const std::set<std::string> &changed_prefixes) {
+  std::set<std::string> prefixes = changed_prefixes;
+  {
+    std::lock_guard lock(mutex_);
+    if (prefixes.empty()) {
+      for (const auto &[prefix, _] : loc_rib_) {
+        prefixes.insert(prefix);
+      }
+      for (const auto &[prefix, _] : local_routes_) {
+        prefixes.insert(prefix);
+      }
     }
+  }
 
-    std::map<std::string, std::optional<RouteEntry>> changes;
-    {
-        std::lock_guard lock(mutex_);
-        for (const auto& prefix : prefixes) {
-            const auto old_it = loc_rib_.find(prefix);
-            const auto old_route = old_it == loc_rib_.end()
-                                       ? std::optional<RouteEntry>{}
-                                       : std::optional<RouteEntry>{old_it->second};
-            auto selected = selectBestRoute(prefix, candidatesForPrefix(prefix));
+  std::map<std::string, std::optional<RouteEntry>> changes;
+  {
+    std::lock_guard lock(mutex_);
+    for (const auto &prefix : prefixes) {
+      const auto old_it = loc_rib_.find(prefix);
+      const auto old_route = old_it == loc_rib_.end()
+                                 ? std::optional<RouteEntry>{}
+                                 : std::optional<RouteEntry>{old_it->second};
+      auto selected = selectBestRoute(prefix, candidatesForPrefix(prefix));
 
-            const bool changed =
-                (!old_route && selected) ||
-                (old_route && !selected) ||
-                (old_route && selected &&
-                 nlohmann::json(*old_route).dump() != nlohmann::json(*selected).dump());
+      const bool changed = (!old_route && selected) ||
+                           (old_route && !selected) ||
+                           (old_route && selected &&
+                            nlohmann::json(*old_route).dump() !=
+                                nlohmann::json(*selected).dump());
 
-            if (!changed) {
-                continue;
-            }
+      if (!changed) {
+        continue;
+      }
 
-            if (selected) {
-                loc_rib_[prefix] = *selected;
-            } else {
-                loc_rib_.erase(prefix);
-            }
-            changes[prefix] = selected;
-        }
+      if (selected) {
+        loc_rib_[prefix] = *selected;
+      } else {
+        loc_rib_.erase(prefix);
+      }
+      changes[prefix] = selected;
     }
+  }
 
-    if (!changes.empty()) {
-        disseminateChangedRoutes(changes);
-    }
+  if (!changes.empty()) {
+    disseminateChangedRoutes(changes);
+  }
 }
 
 void BgpRouter::disseminateChangedRoutes(
-    const std::map<std::string, std::optional<RouteEntry>>& changes) {
-    std::vector<NeighborConfig> peers;
-    {
+    const std::map<std::string, std::optional<RouteEntry>> &changes) {
+  std::vector<NeighborConfig> peers;
+  {
+    std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
+    }
+    for (const auto &[_, neighbor] : neighbors_) {
+      if (neighbor.enabled &&
+          peer_states_[neighbor.id] == PeerState::Established) {
+        peers.push_back(neighbor);
+      }
+    }
+  }
+
+  for (const auto &neighbor : peers) {
+    for (const auto &[prefix, maybe_route] : changes) {
+      if (!maybe_route || !exportRouteAllowed(*maybe_route, neighbor)) {
+        {
+          std::lock_guard lock(mutex_);
+          adj_rib_out_[neighbor.id].erase(prefix);
+        }
+        sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
+        continue;
+      }
+      auto transformed = transformRouteForPeer(*maybe_route, neighbor);
+      transformed.prefix = prefix;
+      {
         std::lock_guard lock(mutex_);
-        if (!active_) {
-            return;
-        }
-        for (const auto& [_, neighbor] : neighbors_) {
-            if (neighbor.enabled && peer_states_[neighbor.id] == PeerState::Established) {
-                peers.push_back(neighbor);
-            }
-        }
+        adj_rib_out_[neighbor.id][prefix] = transformed;
+      }
+      sendUpdateToNeighbor(neighbor, {prefix}, {}, transformed);
     }
-
-    for (const auto& neighbor : peers) {
-        for (const auto& [prefix, maybe_route] : changes) {
-            if (!maybe_route || !exportRouteAllowed(*maybe_route, neighbor)) {
-                {
-                    std::lock_guard lock(mutex_);
-                    adj_rib_out_[neighbor.id].erase(prefix);
-                }
-                sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
-                continue;
-            }
-            auto transformed = transformRouteForPeer(*maybe_route, neighbor);
-            transformed.prefix = prefix;
-            {
-                std::lock_guard lock(mutex_);
-                adj_rib_out_[neighbor.id][prefix] = transformed;
-            }
-            sendUpdateToNeighbor(neighbor, {prefix}, {}, transformed);
-        }
-    }
+  }
 }
 
-std::vector<RouteEntry> BgpRouter::candidatesForPrefix(const std::string& prefix) const {
-    std::vector<RouteEntry> candidates;
-    if (auto it = local_routes_.find(prefix); it != local_routes_.end()) {
-        candidates.push_back(it->second);
+std::vector<RouteEntry>
+BgpRouter::candidatesForPrefix(const std::string &prefix) const {
+  std::vector<RouteEntry> candidates;
+  if (auto it = local_routes_.find(prefix); it != local_routes_.end()) {
+    candidates.push_back(it->second);
+  }
+  for (const auto &[_, routes] : adj_rib_in_) {
+    if (auto it = routes.find(prefix); it != routes.end()) {
+      candidates.push_back(it->second);
     }
-    for (const auto& [_, routes] : adj_rib_in_) {
-        if (auto it = routes.find(prefix); it != routes.end()) {
-            candidates.push_back(it->second);
-        }
-    }
-    return candidates;
+  }
+  return candidates;
 }
 
-bool BgpRouter::shouldReflectIbgpRoute(const RouteEntry& route,
-                                       const NeighborConfig& to_peer) const {
-    bool has_rr_client = false;
-    bool learned_from_client = false;
-    {
-        std::lock_guard lock(mutex_);
-        has_rr_client = std::any_of(neighbors_.begin(), neighbors_.end(), [](const auto& entry) {
-            return entry.second.rr_client;
-        });
-        const auto learned_neighbor = neighbors_.find(route.learned_from);
-        learned_from_client =
-            learned_neighbor != neighbors_.end() && learned_neighbor->second.rr_client;
-    }
+bool BgpRouter::shouldReflectIbgpRoute(const RouteEntry &route,
+                                       const NeighborConfig &to_peer) const {
+  bool has_rr_client = false;
+  bool learned_from_client = false;
+  {
+    std::lock_guard lock(mutex_);
+    has_rr_client =
+        std::any_of(neighbors_.begin(), neighbors_.end(),
+                    [](const auto &entry) { return entry.second.rr_client; });
+    const auto learned_neighbor = neighbors_.find(route.learned_from);
+    learned_from_client = learned_neighbor != neighbors_.end() &&
+                          learned_neighbor->second.rr_client;
+  }
 
-    if (!has_rr_client) {
-        return false;
-    }
+  if (!has_rr_client) {
+    return false;
+  }
 
-    if (learned_from_client) {
-        return true;
-    }
-    return to_peer.rr_client;
+  if (learned_from_client) {
+    return true;
+  }
+  return to_peer.rr_client;
 }
 
-bool BgpRouter::containsOwnAs(const PathAttributes& attrs) const {
-    return std::find(attrs.as_path.begin(), attrs.as_path.end(), config_.asn) != attrs.as_path.end();
+bool BgpRouter::containsOwnAs(const PathAttributes &attrs) const {
+  return std::find(attrs.as_path.begin(), attrs.as_path.end(), config_.asn) !=
+         attrs.as_path.end();
 }
 
-}  // namespace toposim
+} // namespace toposim
