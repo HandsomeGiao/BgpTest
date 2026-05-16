@@ -1,0 +1,62 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "TopoSimulator: debug sample topology",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\TopoSimulator\\build\\Debug\\TopoSimulator.exe",
+      "args": [
+        "--topology",
+        "${workspaceFolder}\\TopoSimulator\\config\\sample_topology.json"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\TopoSimulator\\build\\Debug",
+      "environment": [
+        {
+          "name": "VCPKG_ROOT",
+          "value": "C:\\Users\\giaogiao\\AllMyLibFiles\\vcpkg"
+        }
+      ],
+      "externalConsole": true,
+      "preLaunchTask": "TopoSimulator: build Debug"
+    },
+    {
+      "name": "TopoSimulator: debug topology picker",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\TopoSimulator\\build\\Debug\\TopoSimulator.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\TopoSimulator\\build\\Debug",
+      "environment": [
+        {
+          "name": "VCPKG_ROOT",
+          "value": "C:\\Users\\giaogiao\\AllMyLibFiles\\vcpkg"
+        }
+      ],
+      "externalConsole": true,
+      "preLaunchTask": "TopoSimulator: build Debug"
+    },
+    {
+      "name": "TopoSimulator: run Release sample",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}\\TopoSimulator\\build\\Release\\TopoSimulator.exe",
+      "args": [
+        "--topology",
+        "${workspaceFolder}\\TopoSimulator\\config\\sample_topology.json"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}\\TopoSimulator\\build\\Release",
+      "environment": [
+        {
+          "name": "VCPKG_ROOT",
+          "value": "C:\\Users\\giaogiao\\AllMyLibFiles\\vcpkg"
+        }
+      ],
+      "externalConsole": true,
+      "preLaunchTask": "TopoSimulator: build Release"
+    }
+  ]
+}
