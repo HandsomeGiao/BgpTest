@@ -8,9 +8,12 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($VcpkgRoot)) {
-    $localCandidate = "C:\Users\giaogiao\AllMyLibFiles\vcpkg"
-    if (Test-Path -LiteralPath $localCandidate) {
-        $VcpkgRoot = $localCandidate
+    $vcpkgCommand = Get-Command vcpkg -ErrorAction SilentlyContinue
+    if ($vcpkgCommand -and $vcpkgCommand.Source) {
+        $candidate = Split-Path -Parent $vcpkgCommand.Source
+        if (Test-Path -LiteralPath (Join-Path $candidate "scripts\buildsystems\vcpkg.cmake")) {
+            $VcpkgRoot = $candidate
+        }
     }
 }
 

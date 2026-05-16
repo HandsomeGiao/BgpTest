@@ -68,7 +68,7 @@ New peripheral features should be added outside the core. For example, a differe
 ## Build
 
 ```powershell
-$env:VCPKG_ROOT = "C:\Users\giaogiao\AllMyLibFiles\vcpkg"
+$env:VCPKG_ROOT = "<path-to-vcpkg>"
 cmake -S TopoSimulator -B TopoSimulator/build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake"
 cmake --build TopoSimulator/build --config Release
 ```
@@ -79,10 +79,10 @@ Or use the helper script:
 .\TopoSimulator\build.ps1
 ```
 
-If `VCPKG_ROOT` is not set, `build.ps1` will try `C:\Users\giaogiao\AllMyLibFiles\vcpkg`, which is the vcpkg location detected on this machine. You can also pass an explicit path:
+`build.ps1` uses `VCPKG_ROOT`, a `-VcpkgRoot` argument, or a `vcpkg` executable found on `PATH`:
 
 ```powershell
-.\TopoSimulator\build.ps1 -VcpkgRoot "D:\path\to\vcpkg"
+.\TopoSimulator\build.ps1 -VcpkgRoot "<path-to-vcpkg>"
 ```
 
 Dependencies are declared in `vcpkg.json`:

@@ -87,14 +87,25 @@ void loadReadableFont(ImGuiIO &io, float dpi_scale) {
   config.PixelSnapH = true;
 
   const float font_size = 16.0f * dpi_scale;
+  const auto windows_dir = [] {
+    std::array<char, MAX_PATH> buffer{};
+    const UINT size =
+        GetWindowsDirectoryA(buffer.data(), static_cast<UINT>(buffer.size()));
+    if (size > 0 && size < buffer.size()) {
+      return std::filesystem::path{buffer.data()};
+    }
+    return std::filesystem::path{};
+  }();
   const std::array<const char *, 3> fonts = {
-      "C:\\Windows\\Fonts\\msyh.ttc",
-      "C:\\Windows\\Fonts\\segoeui.ttf",
-      "C:\\Windows\\Fonts\\arial.ttf",
+      "msyh.ttc",
+      "segoeui.ttf",
+      "arial.ttf",
   };
   for (const auto *font : fonts) {
-    if (std::filesystem::exists(font) &&
-        io.Fonts->AddFontFromFileTTF(font, font_size, &config,
+    const auto font_path = windows_dir / "Fonts" / font;
+    const auto font_path_text = font_path.string();
+    if (!windows_dir.empty() && std::filesystem::exists(font_path) &&
+        io.Fonts->AddFontFromFileTTF(font_path_text.c_str(), font_size, &config,
                                      io.Fonts->GetGlyphRangesChineseFull())) {
       return;
     }
