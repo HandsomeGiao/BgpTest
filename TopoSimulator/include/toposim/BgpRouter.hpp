@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -65,18 +66,29 @@ protected:
                   const std::vector<RouteEntry> &candidates) const;
 
   void sendMessage(const std::string &peer_id, BgpMessage message,
-                   std::chrono::milliseconds extra_delay = std::chrono::milliseconds{0}) const;
+                   std::chrono::milliseconds extra_delay =
+                       std::chrono::milliseconds{0},
+                   std::function<bool()> delivery_guard = {}) const;
 
 private:
+  struct UpdateSchedule {
+    std::chrono::milliseconds delay{0};
+    std::map<std::string, std::uint64_t> generations;
+  };
+
   void sendOpenToNeighbor(const NeighborConfig &neighbor);
   void sendKeepaliveToNeighbor(const NeighborConfig &neighbor);
   void sendUpdateToNeighbor(const NeighborConfig &neighbor,
                             const std::vector<std::string> &nlri,
                             const std::vector<std::string> &withdrawn,
                             const std::optional<RouteEntry> &route);
-  std::chrono::milliseconds mraiDelayForUpdate(const NeighborConfig &neighbor,
-                                               const std::vector<std::string> &nlri,
-                                               const std::vector<std::string> &withdrawn);
+  UpdateSchedule scheduleUpdate(const NeighborConfig &neighbor,
+                                const std::vector<std::string> &nlri,
+                                const std::vector<std::string> &withdrawn);
+  [[nodiscard]] bool
+  updateStillCurrent(const std::string &peer_id,
+                     const std::map<std::string, std::uint64_t> &generations)
+      const;
   void runDecisionProcessFor(const std::set<std::string> &changed_prefixes);
   void disseminateChangedRoutes(
       const std::map<std::string, std::optional<RouteEntry>> &changes);
@@ -100,6 +112,9 @@ private:
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out_;
   std::map<std::string, std::map<std::string, std::chrono::steady_clock::time_point>>
       mrai_next_advertisement_;
+  std::map<std::string, std::map<std::string, std::uint64_t>>
+      update_generations_;
+  std::uint64_t update_generation_counter_ = 0;
 };
 
 } // namespace toposim

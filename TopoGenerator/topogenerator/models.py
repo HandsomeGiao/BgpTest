@@ -73,6 +73,22 @@ class TopologyModel:
             router = RouterNode.from_json(router_data, index)
             model.routers[router.id] = router
         model.links = [LinkEdge.from_json(link) for link in data.get("links", [])]
+        links_by_key = {tuple(sorted((link.a, link.b))): link for link in model.links}
+        for router_data in data.get("routers", []):
+            router_id = str(router_data.get("id", ""))
+            for neighbor in router_data.get("neighbors", []):
+                neighbor_id = str(neighbor.get("id", ""))
+                link = links_by_key.get(tuple(sorted((router_id, neighbor_id))))
+                if link is None:
+                    continue
+                if link.a == router_id:
+                    link.rr_client_from_a = bool(neighbor.get("rr_client", link.rr_client_from_a))
+                    link.mrai_ms_from_a = int(neighbor.get("mrai_ms", link.mrai_ms_from_a))
+                elif link.b == router_id:
+                    link.rr_client_from_b = bool(neighbor.get("rr_client", link.rr_client_from_b))
+                    link.mrai_ms_from_b = int(neighbor.get("mrai_ms", link.mrai_ms_from_b))
+                if "enabled" in neighbor:
+                    link.enabled = link.enabled and bool(neighbor["enabled"])
         return model
 
     def add_router(self, router: RouterNode) -> None:

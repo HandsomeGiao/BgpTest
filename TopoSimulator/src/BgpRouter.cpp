@@ -126,6 +126,7 @@ void BgpRouter::stop() {
   loc_rib_.clear();
   adj_rib_out_.clear();
   mrai_next_advertisement_.clear();
+  update_generations_.clear();
   for (auto &[_, state] : peer_states_) {
     state = PeerState::Idle;
   }
@@ -170,6 +171,7 @@ void BgpRouter::neighborDown(const std::string &peer_id) {
     }
     adj_rib_out_.erase(peer_id);
     mrai_next_advertisement_.erase(peer_id);
+    update_generations_.erase(peer_id);
   }
 
   if (!changed_prefixes.empty()) {
@@ -281,6 +283,7 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
   }
 
   std::set<std::string> changed_prefixes;
+  std::optional<NeighborConfig> from_peer;
   {
     std::lock_guard lock(mutex_);
     const auto neighbor_it = neighbors_.find(message.from);
@@ -288,6 +291,7 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
       return;
     }
     peer_states_[message.from] = PeerState::Established;
+    from_peer = neighbor_it->second;
 
     for (const auto &prefix : message.update->withdrawn_routes) {
       if (auto peer_rib = adj_rib_in_.find(message.from);
@@ -296,24 +300,33 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
       }
       changed_prefixes.insert(prefix);
     }
+  }
 
-    if (!message.update->nlri.empty()) {
-      RouteEntry route;
-      route.attributes = message.update->path_attributes;
-      route.learned_from = message.from;
-      route.source_session = neighbor_it->second.session_type;
-      route.local_origin = false;
+  std::vector<RouteEntry> imported_routes;
+  if (!message.update->nlri.empty() && from_peer) {
+    RouteEntry route;
+    route.attributes = message.update->path_attributes;
+    route.learned_from = message.from;
+    route.source_session = from_peer->session_type;
+    route.local_origin = false;
 
-      if (containsOwnAs(route.attributes)) {
-        return;
-      }
-
+    if (!containsOwnAs(route.attributes)) {
       for (const auto &prefix : message.update->nlri) {
         route.prefix = prefix;
-        if (importRouteAllowed(route, neighbor_it->second)) {
-          adj_rib_in_[message.from][prefix] = route;
-          changed_prefixes.insert(prefix);
+        if (importRouteAllowed(route, *from_peer)) {
+          imported_routes.push_back(route);
         }
+      }
+    }
+  }
+
+  if (!imported_routes.empty()) {
+    std::lock_guard lock(mutex_);
+    const auto neighbor_it = neighbors_.find(message.from);
+    if (neighbor_it != neighbors_.end() && neighbor_it->second.enabled) {
+      for (const auto &route : imported_routes) {
+        adj_rib_in_[message.from][route.prefix] = route;
+        changed_prefixes.insert(route.prefix);
       }
     }
   }
@@ -414,15 +427,16 @@ BgpRouter::selectBestRoute(const std::string &,
   return *std::min_element(
       candidates.begin(), candidates.end(),
       [](const auto &lhs, const auto &rhs) {
+        if (lhs.attributes.local_pref != rhs.attributes.local_pref) {
+          return lhs.attributes.local_pref > rhs.attributes.local_pref;
+        }
         return std::tuple{
-                   -static_cast<int>(lhs.attributes.local_pref),
                    lhs.attributes.as_path.size(),
                    lhs.attributes.med,
                    sessionPreference(lhs.source_session),
                    lhs.attributes.next_hop,
                    lhs.learned_from,
                } < std::tuple{
-                       -static_cast<int>(rhs.attributes.local_pref),
                        rhs.attributes.as_path.size(),
                        rhs.attributes.med,
                        sessionPreference(rhs.source_session),
@@ -434,13 +448,15 @@ BgpRouter::selectBestRoute(const std::string &,
 
 void BgpRouter::sendMessage(const std::string &peer_id,
                             BgpMessage message,
-                            std::chrono::milliseconds extra_delay) const {
+                            std::chrono::milliseconds extra_delay,
+                            std::function<bool()> delivery_guard) const {
   if (!manager_) {
     return;
   }
   message.from = config_.id;
   message.to = peer_id;
-  manager_->sendMessage(config_.id, peer_id, std::move(message), extra_delay);
+  manager_->sendMessage(config_.id, peer_id, std::move(message), extra_delay,
+                        std::move(delivery_guard));
 }
 
 void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
@@ -482,23 +498,42 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
     update.path_attributes = route->attributes;
   }
   message.update = std::move(update);
-  const auto mrai_delay = mraiDelayForUpdate(neighbor, nlri, withdrawn);
-  sendMessage(neighbor.id, std::move(message), mrai_delay);
+  auto schedule = scheduleUpdate(neighbor, nlri, withdrawn);
+  std::function<bool()> delivery_guard;
+  if (!schedule.generations.empty()) {
+    delivery_guard =
+        [this, peer_id = neighbor.id,
+         generations = std::move(schedule.generations)]() {
+          return updateStillCurrent(peer_id, generations);
+        };
+  }
+  sendMessage(neighbor.id, std::move(message), schedule.delay,
+              std::move(delivery_guard));
 }
 
-std::chrono::milliseconds
-BgpRouter::mraiDelayForUpdate(const NeighborConfig &neighbor,
-                              const std::vector<std::string> &nlri,
-                              const std::vector<std::string> &withdrawn) {
+BgpRouter::UpdateSchedule
+BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
+                          const std::vector<std::string> &nlri,
+                          const std::vector<std::string> &withdrawn) {
+  UpdateSchedule schedule;
+  std::lock_guard lock(mutex_);
+
+  for (const auto &prefix : withdrawn) {
+    update_generations_[neighbor.id][prefix] = ++update_generation_counter_;
+  }
+
+  for (const auto &prefix : nlri) {
+    const auto generation = ++update_generation_counter_;
+    update_generations_[neighbor.id][prefix] = generation;
+    schedule.generations[prefix] = generation;
+  }
+
   if (neighbor.mrai_ms == 0 || nlri.empty() || !withdrawn.empty()) {
-    return std::chrono::milliseconds{0};
+    return schedule;
   }
 
   const auto interval = std::chrono::milliseconds(neighbor.mrai_ms);
   const auto now = std::chrono::steady_clock::now();
-  auto delay = std::chrono::milliseconds{0};
-
-  std::lock_guard lock(mutex_);
   for (const auto &prefix : nlri) {
     auto &next_available = mrai_next_advertisement_[neighbor.id][prefix];
     if (next_available.time_since_epoch().count() == 0 ||
@@ -510,13 +545,34 @@ BgpRouter::mraiDelayForUpdate(const NeighborConfig &neighbor,
     const auto prefix_delay =
         std::chrono::duration_cast<std::chrono::milliseconds>(next_available -
                                                               now);
-    if (prefix_delay > delay) {
-      delay = prefix_delay;
+    if (prefix_delay > schedule.delay) {
+      schedule.delay = prefix_delay;
     }
     next_available += interval;
   }
 
-  return delay;
+  return schedule;
+}
+
+bool BgpRouter::updateStillCurrent(
+    const std::string &peer_id,
+    const std::map<std::string, std::uint64_t> &generations) const {
+  std::lock_guard lock(mutex_);
+  if (!active_) {
+    return false;
+  }
+  const auto peer_it = update_generations_.find(peer_id);
+  if (peer_it == update_generations_.end()) {
+    return false;
+  }
+  for (const auto &[prefix, generation] : generations) {
+    const auto prefix_it = peer_it->second.find(prefix);
+    if (prefix_it == peer_it->second.end() ||
+        prefix_it->second != generation) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void BgpRouter::runDecisionProcessFor(
@@ -535,29 +591,50 @@ void BgpRouter::runDecisionProcessFor(
   }
 
   std::map<std::string, std::optional<RouteEntry>> changes;
-  {
-    std::lock_guard lock(mutex_);
-    for (const auto &prefix : prefixes) {
-      const auto old_it = loc_rib_.find(prefix);
-      const auto old_route = old_it == loc_rib_.end()
-                                 ? std::optional<RouteEntry>{}
-                                 : std::optional<RouteEntry>{old_it->second};
-      auto selected = selectBestRoute(prefix, candidatesForPrefix(prefix));
-
-      const bool changed = (!old_route && selected) ||
-                           (old_route && !selected) ||
-                           (old_route && selected && *old_route != *selected);
-
-      if (!changed) {
-        continue;
+  for (const auto &prefix : prefixes) {
+    while (true) {
+      std::optional<RouteEntry> old_route;
+      std::vector<RouteEntry> candidates;
+      {
+        std::lock_guard lock(mutex_);
+        const auto old_it = loc_rib_.find(prefix);
+        if (old_it != loc_rib_.end()) {
+          old_route = old_it->second;
+        }
+        candidates = candidatesForPrefix(prefix);
       }
 
-      if (selected) {
-        loc_rib_[prefix] = *selected;
-      } else {
-        loc_rib_.erase(prefix);
+      auto selected = selectBestRoute(prefix, candidates);
+
+      {
+        std::lock_guard lock(mutex_);
+        if (candidatesForPrefix(prefix) != candidates) {
+          continue;
+        }
+
+        const auto current_it = loc_rib_.find(prefix);
+        const auto current_route =
+            current_it == loc_rib_.end()
+                ? std::optional<RouteEntry>{}
+                : std::optional<RouteEntry>{current_it->second};
+        if (current_route != old_route) {
+          continue;
+        }
+
+        const bool changed =
+            (!current_route && selected) || (current_route && !selected) ||
+            (current_route && selected && *current_route != *selected);
+
+        if (changed) {
+          if (selected) {
+            loc_rib_[prefix] = *selected;
+          } else {
+            loc_rib_.erase(prefix);
+          }
+          changes[prefix] = selected;
+        }
+        break;
       }
-      changes[prefix] = selected;
     }
   }
 

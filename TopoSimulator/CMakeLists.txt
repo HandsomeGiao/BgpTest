@@ -14,6 +14,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+enable_testing()
+
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
@@ -46,9 +48,16 @@ target_compile_options(toposim_io PRIVATE /W4 /permissive-)
 
 add_executable(TopoSimulator src/main.cpp)
 target_link_libraries(TopoSimulator PRIVATE toposim_io spdlog::spdlog)
+target_compile_options(TopoSimulator PRIVATE /W4 /permissive-)
 
 add_custom_command(TARGET TopoSimulator POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_CURRENT_SOURCE_DIR}/topo
         $<TARGET_FILE_DIR:TopoSimulator>/topo
 )
+
+add_executable(TopoSimulatorTests tests/core_tests.cpp)
+target_link_libraries(TopoSimulatorTests PRIVATE toposim)
+target_compile_options(TopoSimulatorTests PRIVATE /W4 /permissive-)
+
+add_test(NAME TopoSimulatorTests COMMAND TopoSimulatorTests)

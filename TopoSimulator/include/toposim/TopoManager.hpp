@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -29,7 +30,9 @@ public:
   void stop();
   void sendMessage(const std::string &from, const std::string &to,
                    BgpMessage message,
-                   std::chrono::milliseconds extra_delay = std::chrono::milliseconds{0});
+                   std::chrono::milliseconds extra_delay =
+                       std::chrono::milliseconds{0},
+                   std::function<bool()> delivery_guard = {});
   void setLinkState(const std::string &a, const std::string &b, bool enabled);
   void setRouterState(const std::string &router_id, bool enabled);
   void originatePrefix(const std::string &router_id, const std::string &prefix);
@@ -50,8 +53,11 @@ private:
 
   static std::string edgeKey(const std::string &a, const std::string &b);
 
+  void validateConfig() const;
   void buildRouters();
   void normalizeNeighborsFromLinks();
+  [[nodiscard]] bool messageStillDeliverable(const std::string &from,
+                                             const std::string &to) const;
   [[nodiscard]] std::optional<LinkRuntime> linkFor(const std::string &a,
                                                    const std::string &b) const;
   [[nodiscard]] std::chrono::milliseconds convergenceQuietPeriod() const;

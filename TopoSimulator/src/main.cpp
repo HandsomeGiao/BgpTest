@@ -483,12 +483,20 @@ int main(int argc, char **argv) {
           std::cout << toposim::toJson(manager.peersSnapshot(parts[2])).dump(2)
                     << '\n';
         } else if (parts.size() == 4 && parts[0] == "link") {
+          if (parts[1] != "up" && parts[1] != "down") {
+            printWarningLine("Usage: link <up|down> <a> <b>");
+            continue;
+          }
           if (!requireConverged(manager)) {
             continue;
           }
           manager.setLinkState(parts[2], parts[3], parts[1] == "up");
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "node") {
+          if (parts[1] != "up" && parts[1] != "down") {
+            printWarningLine("Usage: node <up|down> <router>");
+            continue;
+          }
           if (!requireConverged(manager)) {
             continue;
           }
@@ -508,6 +516,10 @@ int main(int argc, char **argv) {
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts[0] == "converge") {
           const auto timeout = parts.size() > 1 ? std::stoi(parts[1]) : 20000;
+          if (timeout <= 0) {
+            printWarningLine("Usage: converge [positive_timeout_ms]");
+            continue;
+          }
           const bool ok =
               manager.waitForConvergence(std::chrono::milliseconds(timeout));
           if (ok) {

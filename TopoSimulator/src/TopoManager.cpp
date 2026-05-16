@@ -6,6 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <unordered_set>
 
 namespace toposim {
 namespace {
@@ -31,6 +32,7 @@ std::string runTimestamp() {
 } // namespace
 
 TopoManager::TopoManager(TopologyConfig config) : config_(std::move(config)) {
+  validateConfig();
   buildRouters();
   normalizeNeighborsFromLinks();
 
@@ -99,12 +101,11 @@ void TopoManager::stop() {
 
 void TopoManager::sendMessage(const std::string &from, const std::string &to,
                               BgpMessage message,
-                              std::chrono::milliseconds extra_delay) {
-  std::shared_ptr<BgpRouter> destination;
-  std::uint32_t delay_ms = 0;
+                              std::chrono::milliseconds extra_delay,
+                              std::function<bool()> delivery_guard) {
   {
     std::lock_guard lock(mutex_);
-    if (!running_) {
+    if (!running_ || !pool_ || !bmp_) {
       return;
     }
     auto dst_it = routers_.find(to);
@@ -116,23 +117,31 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
     if (!link || !link->config.enabled) {
       return;
     }
-    destination = dst_it->second;
-    delay_ms = link->config.delay_ms;
+    auto destination = dst_it->second;
+    const auto delay_ms = link->config.delay_ms;
+    auto *collector = bmp_.get();
     message.sequence = ++sequence_;
-  }
 
-  auto *collector = bmp_.get();
-  pool_->enqueue([destination = std::move(destination), collector, delay_ms, extra_delay,
-                  message = std::move(message)]() mutable {
-    if (extra_delay.count() > 0) {
-      std::this_thread::sleep_for(extra_delay);
-    }
-    if (delay_ms > 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-    }
-    collector->recordReceive(message.to, message);
-    destination->receiveMessage(message);
-  });
+    pool_->enqueue([this, destination = std::move(destination), collector,
+                    delay_ms, extra_delay,
+                    delivery_guard = std::move(delivery_guard),
+                    message = std::move(message)]() mutable {
+      if (extra_delay.count() > 0) {
+        std::this_thread::sleep_for(extra_delay);
+      }
+      if (delay_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      }
+      if (delivery_guard && !delivery_guard()) {
+        return;
+      }
+      if (!messageStillDeliverable(message.from, message.to)) {
+        return;
+      }
+      collector->recordReceive(message.to, message);
+      destination->receiveMessage(message);
+    });
+  }
 }
 
 void TopoManager::setLinkState(const std::string &a, const std::string &b,
@@ -162,7 +171,7 @@ void TopoManager::setLinkState(const std::string &a, const std::string &b,
 }
 
 void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
-  std::vector<std::string> peers;
+  std::vector<std::shared_ptr<BgpRouter>> peer_routers;
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
@@ -172,10 +181,17 @@ void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
     }
     router = it->second;
     for (const auto &[_, link] : links_) {
+      std::string peer;
       if (link.config.a == router_id) {
-        peers.push_back(link.config.b);
+        peer = link.config.b;
       } else if (link.config.b == router_id) {
-        peers.push_back(link.config.a);
+        peer = link.config.a;
+      }
+      if (!peer.empty()) {
+        if (auto peer_router = routers_.find(peer);
+            peer_router != routers_.end()) {
+          peer_routers.push_back(peer_router->second);
+        }
       }
     }
   }
@@ -184,19 +200,13 @@ void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
                             {{"router", router_id}});
   if (enabled) {
     router->start();
-    for (const auto &peer : peers) {
-      if (auto peer_router = routers_.find(peer);
-          peer_router != routers_.end()) {
-        peer_router->second->neighborUp(router_id);
-      }
+    for (const auto &peer_router : peer_routers) {
+      peer_router->neighborUp(router_id);
     }
   } else {
     router->stop();
-    for (const auto &peer : peers) {
-      if (auto peer_router = routers_.find(peer);
-          peer_router != routers_.end()) {
-        peer_router->second->neighborDown(router_id);
-      }
+    for (const auto &peer_router : peer_routers) {
+      peer_router->neighborDown(router_id);
     }
   }
 }
@@ -226,6 +236,9 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
 }
 
 bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
+  if (!pool_) {
+    return !running_;
+  }
   const auto quiet_period = convergenceQuietPeriod();
   return pool_->waitForIdle(std::max(timeout, quiet_period), quiet_period);
 }
@@ -235,10 +248,18 @@ bool TopoManager::isConverged() const {
 }
 
 std::vector<RouterSnapshot> TopoManager::routersSnapshot() const {
-  std::lock_guard lock(mutex_);
+  std::vector<std::pair<std::string, std::shared_ptr<BgpRouter>>> routers;
+  {
+    std::lock_guard lock(mutex_);
+    routers.reserve(routers_.size());
+    for (const auto &[id, router] : routers_) {
+      routers.emplace_back(id, router);
+    }
+  }
+
   std::vector<RouterSnapshot> result;
-  result.reserve(routers_.size());
-  for (const auto &[id, router] : routers_) {
+  result.reserve(routers.size());
+  for (const auto &[id, router] : routers) {
     result.push_back({
         .id = id,
         .router_id = router->routerId(),
@@ -275,6 +296,69 @@ const std::filesystem::path &TopoManager::logFile() const {
 
 std::string TopoManager::edgeKey(const std::string &a, const std::string &b) {
   return a < b ? a + "|" + b : b + "|" + a;
+}
+
+void TopoManager::validateConfig() const {
+  std::unordered_set<std::string> router_ids;
+  for (const auto &router : config_.routers) {
+    if (router.id.empty()) {
+      throw std::runtime_error("Router id cannot be empty");
+    }
+    if (!router_ids.insert(router.id).second) {
+      throw std::runtime_error("Duplicate router id: " + router.id);
+    }
+    if (router.router_id.empty()) {
+      throw std::runtime_error("Router " + router.id +
+                               " has an empty BGP router id");
+    }
+    if (router.asn == 0) {
+      throw std::runtime_error("Router " + router.id + " has invalid ASN 0");
+    }
+  }
+
+  for (const auto &router : config_.routers) {
+    std::unordered_set<std::string> neighbor_ids;
+    for (const auto &neighbor : router.neighbors) {
+      if (neighbor.id.empty()) {
+        throw std::runtime_error("Router " + router.id +
+                                 " has an empty neighbor id");
+      }
+      if (neighbor.id == router.id) {
+        throw std::runtime_error("Router " + router.id +
+                                 " cannot peer with itself");
+      }
+      if (!router_ids.contains(neighbor.id)) {
+        throw std::runtime_error("Router " + router.id +
+                                 " references unknown neighbor: " +
+                                 neighbor.id);
+      }
+      if (!neighbor_ids.insert(neighbor.id).second) {
+        throw std::runtime_error("Router " + router.id +
+                                 " has duplicate neighbor: " + neighbor.id);
+      }
+    }
+  }
+
+  std::unordered_set<std::string> link_keys;
+  for (const auto &link : config_.links) {
+    if (link.a.empty() || link.b.empty()) {
+      throw std::runtime_error("Link endpoints cannot be empty");
+    }
+    if (link.a == link.b) {
+      throw std::runtime_error("Link cannot connect router to itself: " +
+                               link.a);
+    }
+    if (!router_ids.contains(link.a)) {
+      throw std::runtime_error("Link references unknown router: " + link.a);
+    }
+    if (!router_ids.contains(link.b)) {
+      throw std::runtime_error("Link references unknown router: " + link.b);
+    }
+    const auto key = edgeKey(link.a, link.b);
+    if (!link_keys.insert(key).second) {
+      throw std::runtime_error("Duplicate link: " + link.a + " - " + link.b);
+    }
+  }
 }
 
 void TopoManager::buildRouters() {
@@ -326,6 +410,30 @@ void TopoManager::normalizeNeighborsFromLinks() {
       });
     }
   }
+}
+
+bool TopoManager::messageStillDeliverable(const std::string &from,
+                                          const std::string &to) const {
+  std::shared_ptr<BgpRouter> source;
+  std::shared_ptr<BgpRouter> destination;
+  {
+    std::lock_guard lock(mutex_);
+    if (!running_) {
+      return false;
+    }
+    auto src_it = routers_.find(from);
+    auto dst_it = routers_.find(to);
+    if (src_it == routers_.end() || dst_it == routers_.end()) {
+      return false;
+    }
+    const auto link = linkFor(from, to);
+    if (!link || !link->config.enabled) {
+      return false;
+    }
+    source = src_it->second;
+    destination = dst_it->second;
+  }
+  return source->isActive() && destination->isActive();
 }
 
 std::optional<TopoManager::LinkRuntime>
