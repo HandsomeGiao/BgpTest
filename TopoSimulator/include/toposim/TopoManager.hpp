@@ -58,6 +58,7 @@ private:
   void normalizeNeighborsFromLinks();
   [[nodiscard]] std::optional<LinkRuntime> linkFor(const std::string &a,
                                                    const std::string &b) const;
+  [[nodiscard]] std::chrono::milliseconds convergenceQuietPeriod() const;
   [[nodiscard]] std::filesystem::path makeRunDirectory() const;
 
   TopologyConfig config_;

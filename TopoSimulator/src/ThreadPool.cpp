@@ -35,22 +35,28 @@ bool ThreadPool::waitForIdle(std::chrono::milliseconds timeout,
   auto quiet_start = std::optional<std::chrono::steady_clock::time_point>{};
 
   std::unique_lock lock(mutex_);
-  while (std::chrono::steady_clock::now() < deadline) {
+  while (true) {
+    const auto now = std::chrono::steady_clock::now();
     if (pending_.load(std::memory_order_relaxed) == 0 && tasks_.empty()) {
       if (!quiet_start) {
-        quiet_start = std::chrono::steady_clock::now();
+        quiet_start = now;
       }
       const auto quiet_until = *quiet_start + quiet_period;
-      if (quiet_until <= std::chrono::steady_clock::now()) {
+      if (quiet_until <= now) {
         return true;
+      }
+      if (deadline <= now) {
+        return false;
       }
       idle_cv_.wait_until(lock, std::min(deadline, quiet_until));
     } else {
       quiet_start.reset();
+      if (deadline <= now) {
+        return false;
+      }
       idle_cv_.wait_until(lock, deadline);
     }
   }
-  return pending_.load(std::memory_order_relaxed) == 0 && tasks_.empty();
 }
 
 void ThreadPool::stop() {

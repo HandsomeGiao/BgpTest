@@ -240,9 +240,8 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
 }
 
 bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
-  return pool_->waitForIdle(
-      timeout,
-      std::chrono::milliseconds(config_.simulation.convergence_quiet_ms));
+  const auto quiet_period = convergenceQuietPeriod();
+  return pool_->waitForIdle(std::max(timeout, quiet_period), quiet_period);
 }
 
 nlohmann::json TopoManager::routersSnapshot() const {
@@ -344,6 +343,22 @@ TopoManager::linkFor(const std::string &a, const std::string &b) const {
     return std::nullopt;
   }
   return it->second;
+}
+
+std::chrono::milliseconds TopoManager::convergenceQuietPeriod() const {
+  std::uint64_t max_mrai_ms = 0;
+  for (const auto &router : config_.routers) {
+    for (const auto &neighbor : router.neighbors) {
+      max_mrai_ms = std::max(max_mrai_ms,
+                             static_cast<std::uint64_t>(neighbor.mrai_ms));
+    }
+  }
+
+  const auto configured_quiet_ms =
+      static_cast<std::uint64_t>(config_.simulation.convergence_quiet_ms);
+  const auto mrai_quiet_ms = (max_mrai_ms * 3 + 1) / 2;
+  return std::chrono::milliseconds(
+      std::max(configured_quiet_ms, mrai_quiet_ms));
 }
 
 std::filesystem::path TopoManager::makeRunDirectory() const {

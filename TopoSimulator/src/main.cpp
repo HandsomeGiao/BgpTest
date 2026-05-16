@@ -12,6 +12,7 @@
 #include <conio.h>
 #include <cstdio>
 #include <io.h>
+#include <windows.h>
 
 #include <spdlog/spdlog.h>
 
@@ -20,6 +21,86 @@
 namespace {
 
 bool stdinIsTerminal();
+bool stdoutIsTerminal();
+
+HANDLE consoleOutput() { return GetStdHandle(STD_OUTPUT_HANDLE); }
+
+WORD defaultConsoleAttributes() {
+  static const WORD attrs = [] {
+    CONSOLE_SCREEN_BUFFER_INFO info{};
+    if (GetConsoleScreenBufferInfo(consoleOutput(), &info)) {
+      return info.wAttributes;
+    }
+    return static_cast<WORD>(FOREGROUND_RED | FOREGROUND_GREEN |
+                             FOREGROUND_BLUE);
+  }();
+  return attrs;
+}
+
+class ScopedConsoleColor {
+public:
+  explicit ScopedConsoleColor(WORD attrs) : active_(stdoutIsTerminal()) {
+    if (active_) {
+      SetConsoleTextAttribute(consoleOutput(), attrs);
+    }
+  }
+
+  ~ScopedConsoleColor() {
+    if (active_) {
+      SetConsoleTextAttribute(consoleOutput(), defaultConsoleAttributes());
+    }
+  }
+
+  ScopedConsoleColor(const ScopedConsoleColor &) = delete;
+  ScopedConsoleColor &operator=(const ScopedConsoleColor &) = delete;
+
+private:
+  bool active_ = false;
+};
+
+constexpr WORD kDim = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+constexpr WORD kPrompt = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+constexpr WORD kCommand = FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+constexpr WORD kArgument = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+constexpr WORD kInfo = FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+constexpr WORD kSuccess = FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+constexpr WORD kWarning = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+constexpr WORD kError = FOREGROUND_RED | FOREGROUND_INTENSITY;
+constexpr WORD kCandidate = FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+
+void writeColored(const std::string &text, WORD attrs) {
+  ScopedConsoleColor color(attrs);
+  std::cout << text;
+}
+
+void writeLineColored(const std::string &text, WORD attrs) {
+  writeColored(text, attrs);
+  std::cout << '\n';
+}
+
+void printPrompt(const std::string &prompt) {
+  writeColored(prompt, kPrompt);
+}
+
+void printErrorLine(const std::string &message) {
+  writeColored("[ERR] ", kError);
+  writeLineColored(message, kError);
+}
+
+void printInfoLine(const std::string &message) {
+  writeColored("[*] ", kInfo);
+  std::cout << message << '\n';
+}
+
+void printSuccessLine(const std::string &message) {
+  writeColored("[OK] ", kSuccess);
+  std::cout << message << '\n';
+}
+
+void printWarningLine(const std::string &message) {
+  writeColored("[!] ", kWarning);
+  std::cout << message << '\n';
+}
 
 std::vector<std::string> split(const std::string &line) {
   std::istringstream iss(line);
@@ -136,8 +217,12 @@ void replaceCurrentToken(std::string &line, const std::string &replacement) {
 }
 
 void repaintPrompt(const std::string &prompt, const std::string &line) {
-  std::cout << '\r' << prompt << line << "  ";
-  std::cout << '\r' << prompt << line;
+  std::cout << '\r';
+  printPrompt(prompt);
+  std::cout << line << "  ";
+  std::cout << '\r';
+  printPrompt(prompt);
+  std::cout << line;
   std::cout.flush();
 }
 
@@ -151,7 +236,7 @@ readCommandLine(const std::string &prompt, const toposim::TopoManager &manager) 
     return std::nullopt;
   }
 
-  std::cout << prompt;
+  printPrompt(prompt);
   std::cout.flush();
   std::string line;
 
@@ -190,9 +275,9 @@ readCommandLine(const std::string &prompt, const toposim::TopoManager &manager) 
         }
         std::cout << '\n';
         for (const auto &match : matches) {
-          std::cout << "  " << match;
+          writeColored("  * ", kDim);
+          writeLineColored(match, kCandidate);
         }
-        std::cout << '\n';
         repaintPrompt(prompt, line);
       }
       continue;
@@ -210,24 +295,38 @@ readCommandLine(const std::string &prompt, const toposim::TopoManager &manager) 
 }
 
 void printHelp() {
-  std::cout << "Commands:\n"
-            << "  help\n"
-            << "  show routers\n"
-            << "  show peers <router>\n"
-            << "  show rib <router>\n"
-            << "  link up <a> <b>\n"
-            << "  link down <a> <b>\n"
-            << "  node up <router>\n"
-            << "  node down <router>\n"
-            << "  advertise <router> <prefix>\n"
-            << "  withdraw <router> <prefix>\n"
-            << "  converge [timeout_ms]\n"
-            << "  quit\n"
-            << "Use Tab to complete commands and router names.\n";
+  writeLineColored("Commands:", kInfo);
+  const auto command = [](const std::string &verb, const std::string &args = {}) {
+    writeColored("  > ", kDim);
+    writeColored(verb, kCommand);
+    if (!args.empty()) {
+      std::cout << ' ';
+      writeColored(args, kArgument);
+    }
+    std::cout << '\n';
+  };
+  command("help");
+  command("show", "routers");
+  command("show", "peers <router>");
+  command("show", "rib <router>");
+  command("link", "up <a> <b>");
+  command("link", "down <a> <b>");
+  command("node", "up <router>");
+  command("node", "down <router>");
+  command("advertise", "<router> <prefix>");
+  command("withdraw", "<router> <prefix>");
+  command("converge", "[timeout_ms]");
+  command("quit");
+  writeColored("[TAB] ", kWarning);
+  std::cout << "complete commands and router names.\n";
 }
 
 bool stdinIsTerminal() {
   return _isatty(_fileno(stdin)) != 0;
+}
+
+bool stdoutIsTerminal() {
+  return _isatty(_fileno(stdout)) != 0;
 }
 
 void waitBeforeExitIfDoubleClicked() {
@@ -275,30 +374,32 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
   const auto topo_dir = std::filesystem::current_path() / "topo";
   const auto topologies = discoverTopologies();
   if (topologies.empty()) {
-    std::cout << "No available topologies in: " << topo_dir.string() << '\n';
+    printWarningLine("No available topologies in: " + topo_dir.string());
     waitBeforeExitIfDoubleClicked();
     return std::nullopt;
   }
 
-  std::cout << "Available topologies in " << topo_dir.string() << ":\n";
+  printInfoLine("Available topologies in " + topo_dir.string() + ":");
   for (std::size_t i = 0; i < topologies.size(); ++i) {
-    std::cout << "  " << (i + 1) << ". " << topologies[i].filename().string()
-              << '\n';
+    writeColored("  * ", kDim);
+    writeColored(std::to_string(i + 1) + ". ", kArgument);
+    writeLineColored(topologies[i].filename().string(), kCandidate);
   }
 
   if (topologies.size() == 1) {
-    std::cout << "Using topology: " << topologies.front().filename().string()
-              << '\n';
+    printSuccessLine("Using topology: " +
+                     topologies.front().filename().string());
     return topologies.front();
   }
 
   if (!stdinIsTerminal()) {
-    std::cout << "Multiple topologies are available. Pass --topology <file> in "
-                 "non-interactive mode.\n";
+    printWarningLine("Multiple topologies are available. Pass --topology "
+                     "<file> in non-interactive mode.");
     return std::nullopt;
   }
 
-  std::cout << "Select topology [1-" << topologies.size() << "]: ";
+  writeColored("Select topology ", kInfo);
+  writeColored("[1-" + std::to_string(topologies.size()) + "]: ", kArgument);
   std::string line;
   if (!std::getline(std::cin, line)) {
     return std::nullopt;
@@ -308,13 +409,13 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
   try {
     selected = static_cast<std::size_t>(std::stoul(line));
   } catch (...) {
-    std::cout << "Invalid selection.\n";
+    printErrorLine("Invalid selection.");
     waitBeforeExitIfDoubleClicked();
     return std::nullopt;
   }
 
   if (selected == 0 || selected > topologies.size()) {
-    std::cout << "Invalid selection.\n";
+    printErrorLine("Invalid selection.");
     waitBeforeExitIfDoubleClicked();
     return std::nullopt;
   }
@@ -335,9 +436,12 @@ int main(int argc, char **argv) {
 
     manager.start();
     const bool converged = manager.waitForConvergence(std::chrono::seconds(20));
-    std::cout << "Initial convergence: " << (converged ? "ok" : "timeout")
-              << '\n';
-    std::cout << "BMP collector log: " << manager.logFile().string() << '\n';
+    if (converged) {
+      printSuccessLine("Initial convergence: ok");
+    } else {
+      printWarningLine("Initial convergence: timeout");
+    }
+    printInfoLine("BMP collector log: " + manager.logFile().string());
     printHelp();
 
     while (true) {
@@ -381,19 +485,23 @@ int main(int argc, char **argv) {
           const auto timeout = parts.size() > 1 ? std::stoi(parts[1]) : 20000;
           const bool ok =
               manager.waitForConvergence(std::chrono::milliseconds(timeout));
-          std::cout << (ok ? "converged" : "timeout") << '\n';
+          if (ok) {
+            printSuccessLine("converged");
+          } else {
+            printWarningLine("timeout");
+          }
         } else {
-          std::cout << "Unknown command. Type 'help'.\n";
+          printWarningLine("Unknown command. Type 'help'.");
         }
       } catch (const std::exception &ex) {
-        std::cerr << "Command failed: " << ex.what() << '\n';
+        printErrorLine(std::string("Command failed: ") + ex.what());
       }
     }
 
     manager.stop();
     return 0;
   } catch (const std::exception &ex) {
-    std::cerr << "Fatal: " << ex.what() << '\n';
+    printErrorLine(std::string("Fatal: ") + ex.what());
     waitBeforeExitIfDoubleClicked();
     return 1;
   }

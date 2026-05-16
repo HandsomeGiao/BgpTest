@@ -1,6 +1,6 @@
 # TopoSimulator
 
-`TopoSimulator` is a pure C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, waits for convergence, then accepts interactive topology changes.
+`TopoSimulator` is a C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, waits for convergence, then accepts interactive topology changes.
 
 Supported environment: Windows + MSVC + vcpkg only.
 
@@ -57,6 +57,8 @@ Neighbor entries may be explicit. If a link exists but one side omits the neighb
 
 Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE advertisements. `mrai_ms=0` disables MRAI. Withdrawals are sent immediately.
 
+Convergence waits for the worker queue to stay idle for at least `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so configured MRAI timers are included in the stability window.
+
 Route reflector support is modeled through:
 
 - Per-neighbor flag on the reflector: `"rr_client": true`
@@ -82,6 +84,7 @@ These hooks are intentionally virtual so custom BGP protocol experiments can rep
 ## Interactive Commands
 
 Press `Tab` in the interactive prompt to complete command keywords and router ids.
+The prompt, help text, completion candidates, status messages and errors use Windows console colors plus ASCII markers such as `[OK]`, `[!]` and `[ERR]`.
 
 ```text
 show routers
