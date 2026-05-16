@@ -81,6 +81,8 @@ These hooks are intentionally virtual so custom BGP protocol experiments can rep
 
 ## Interactive Commands
 
+Press `Tab` in the interactive prompt to complete command keywords and router ids.
+
 ```text
 show routers
 show peers <router>

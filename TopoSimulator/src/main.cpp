@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <exception>
 #include <filesystem>
@@ -8,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include <conio.h>
 #include <cstdio>
 #include <io.h>
 
@@ -17,6 +19,8 @@
 
 namespace {
 
+bool stdinIsTerminal();
+
 std::vector<std::string> split(const std::string &line) {
   std::istringstream iss(line);
   std::vector<std::string> parts;
@@ -25,6 +29,184 @@ std::vector<std::string> split(const std::string &line) {
     parts.push_back(part);
   }
   return parts;
+}
+
+std::vector<std::string> splitForCompletion(const std::string &line) {
+  auto parts = split(line);
+  if (line.empty() || std::isspace(static_cast<unsigned char>(line.back()))) {
+    parts.emplace_back();
+  }
+  return parts;
+}
+
+std::vector<std::string> routerIds(const toposim::TopoManager &manager) {
+  std::vector<std::string> ids;
+  for (const auto &router : manager.routersSnapshot()) {
+    ids.push_back(router.at("id").get<std::string>());
+  }
+  std::sort(ids.begin(), ids.end());
+  return ids;
+}
+
+bool startsWith(const std::string &value, const std::string &prefix) {
+  return value.size() >= prefix.size() &&
+         std::equal(prefix.begin(), prefix.end(), value.begin());
+}
+
+std::string commonPrefix(const std::vector<std::string> &values) {
+  if (values.empty()) {
+    return {};
+  }
+  auto prefix = values.front();
+  for (const auto &value : values) {
+    while (!startsWith(value, prefix)) {
+      prefix.pop_back();
+      if (prefix.empty()) {
+        return {};
+      }
+    }
+  }
+  return prefix;
+}
+
+std::vector<std::string> filteredCandidates(std::vector<std::string> candidates,
+                                            const std::string &prefix) {
+  std::vector<std::string> matches;
+  std::sort(candidates.begin(), candidates.end());
+  for (const auto &candidate : candidates) {
+    if (startsWith(candidate, prefix)) {
+      matches.push_back(candidate);
+    }
+  }
+  return matches;
+}
+
+std::vector<std::string>
+completionCandidates(const std::string &line,
+                     const toposim::TopoManager &manager) {
+  const auto parts = splitForCompletion(line);
+  const std::size_t index = parts.empty() ? 0 : parts.size() - 1;
+  const std::string prefix = parts.empty() ? std::string{} : parts.back();
+  const auto routers = routerIds(manager);
+
+  if (index == 0) {
+    return filteredCandidates({"advertise", "converge", "exit", "help",
+                               "link", "node", "quit", "show", "withdraw"},
+                              prefix);
+  }
+
+  const auto &command = parts[0];
+  if (command == "show") {
+    if (index == 1) {
+      return filteredCandidates({"peers", "rib", "routers"}, prefix);
+    }
+    if (index == 2 && parts.size() >= 2 &&
+        (parts[1] == "peers" || parts[1] == "rib")) {
+      return filteredCandidates(routers, prefix);
+    }
+  } else if (command == "link") {
+    if (index == 1) {
+      return filteredCandidates({"down", "up"}, prefix);
+    }
+    if (index == 2 || index == 3) {
+      return filteredCandidates(routers, prefix);
+    }
+  } else if (command == "node") {
+    if (index == 1) {
+      return filteredCandidates({"down", "up"}, prefix);
+    }
+    if (index == 2) {
+      return filteredCandidates(routers, prefix);
+    }
+  } else if ((command == "advertise" || command == "withdraw") && index == 1) {
+    return filteredCandidates(routers, prefix);
+  }
+
+  return {};
+}
+
+void replaceCurrentToken(std::string &line, const std::string &replacement) {
+  const auto token_start = line.empty() || std::isspace(static_cast<unsigned char>(line.back()))
+                               ? line.size()
+                               : line.find_last_of(" \t") == std::string::npos
+                                     ? 0
+                                     : line.find_last_of(" \t") + 1;
+  line.erase(token_start);
+  line += replacement;
+}
+
+void repaintPrompt(const std::string &prompt, const std::string &line) {
+  std::cout << '\r' << prompt << line << "  ";
+  std::cout << '\r' << prompt << line;
+  std::cout.flush();
+}
+
+std::optional<std::string>
+readCommandLine(const std::string &prompt, const toposim::TopoManager &manager) {
+  if (!stdinIsTerminal()) {
+    std::string line;
+    if (std::getline(std::cin, line)) {
+      return line;
+    }
+    return std::nullopt;
+  }
+
+  std::cout << prompt;
+  std::cout.flush();
+  std::string line;
+
+  while (true) {
+    const int ch = _getch();
+    if (ch == 3) {
+      return std::nullopt;
+    }
+    if (ch == 13) {
+      std::cout << '\n';
+      return line;
+    }
+    if (ch == 8) {
+      if (!line.empty()) {
+        line.pop_back();
+        repaintPrompt(prompt, line);
+      }
+      continue;
+    }
+    if (ch == 9) {
+      const auto matches = completionCandidates(line, manager);
+      if (matches.empty()) {
+        std::cout << '\a';
+        continue;
+      }
+
+      const auto prefix = commonPrefix(matches);
+      const auto before = line;
+      replaceCurrentToken(line, prefix);
+      if (matches.size() == 1) {
+        line += ' ';
+        repaintPrompt(prompt, line);
+      } else {
+        if (line != before) {
+          repaintPrompt(prompt, line);
+        }
+        std::cout << '\n';
+        for (const auto &match : matches) {
+          std::cout << "  " << match;
+        }
+        std::cout << '\n';
+        repaintPrompt(prompt, line);
+      }
+      continue;
+    }
+    if (ch == 0 || ch == 224) {
+      (void)_getch();
+      continue;
+    }
+    if (std::isprint(ch)) {
+      line.push_back(static_cast<char>(ch));
+      std::cout << static_cast<char>(ch);
+      std::cout.flush();
+    }
+  }
 }
 
 void printHelp() {
@@ -40,7 +222,8 @@ void printHelp() {
             << "  advertise <router> <prefix>\n"
             << "  withdraw <router> <prefix>\n"
             << "  converge [timeout_ms]\n"
-            << "  quit\n";
+            << "  quit\n"
+            << "Use Tab to complete commands and router names.\n";
 }
 
 bool stdinIsTerminal() {
@@ -157,8 +340,12 @@ int main(int argc, char **argv) {
     std::cout << "BMP collector log: " << manager.logFile().string() << '\n';
     printHelp();
 
-    std::string line;
-    while (std::cout << "bgp> " && std::getline(std::cin, line)) {
+    while (true) {
+      auto maybe_line = readCommandLine("bgp> ", manager);
+      if (!maybe_line) {
+        break;
+      }
+      const auto &line = *maybe_line;
       const auto parts = split(line);
       if (parts.empty()) {
         continue;
