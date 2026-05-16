@@ -85,6 +85,8 @@ Or use the helper script:
 .\TopoSimulator\build.ps1 -VcpkgRoot "<path-to-vcpkg>"
 ```
 
+The script pauses before exit so double-click users can read the result. Use `-NoPause` for terminals, CI, or other automated runs.
+
 Dependencies are declared in `vcpkg.json`:
 
 - `nlohmann-json`
@@ -126,7 +128,7 @@ The build copies `TopoSimulator/topo/` next to the executable, so double-clickin
 TopoSimulator/build/Release/topo/sample_topology.json
 ```
 
-Each run creates a directory below `tmp/` and writes both `bmp_collector.log` and a fresh `bmp_collector.sqlite`. The JSON Lines file preserves the raw event stream. The SQLite database uses a single indexed `bmp_events` table with direct fields for prefixes, AS_PATH, source AS and destination AS so the viewer can query without reparsing the log. The viewer table has a `Columns` menu for choosing visible fields, and a `MessageFilter` popup for filtering by involved routers, source/destination routers, action, source AS and destination AS. Withdrawal-only UPDATE messages keep the raw BGP message type as `UPDATE`, but the viewer labels their action as `WITHDRAW`.
+Each run creates a directory below `tmp/` and writes both `bmp_collector.log` and a fresh `bmp_collector.sqlite`. BMP timestamps use readable China time in `YYYY-MM-DD HH:MM:SS.mmm` format. The JSON Lines file preserves the raw event stream. The SQLite database uses a single indexed `bmp_events` table with direct fields for prefixes, AS_PATH, source AS and destination AS so the viewer can query without reparsing the log. The viewer table has a `Columns` menu for choosing visible fields, and a `MessageFilter` popup for filtering by involved routers, source/destination routers, action, source AS and destination AS. Withdrawal-only UPDATE messages keep the raw BGP message type as `UPDATE`, but the viewer labels their action as `WITHDRAW`.
 
 ## JSON Topology
 

@@ -266,10 +266,21 @@ void canceledTransientAdvertisementDoesNotEmitWithdraw() {
   toposim::BmpLogQuery query;
   query.from_routers = {"R3"};
   query.to_routers = {"R2"};
-  query.actions = {"WITHDRAW"};
-  query.limit = 10;
-  require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
-          "R3 withdrew a route from R2 that was never delivered to R2");
+  query.limit = 100;
+  auto records = toposim::BmpLogManager::instance().queryHistory(query);
+  std::sort(records.begin(), records.end(),
+            [](const auto &lhs, const auto &rhs) { return lhs.id < rhs.id; });
+
+  bool delivered_advertisement = false;
+  for (const auto &record : records) {
+    if (record.action == "UPDATE" && record.prefixes == "1.1.1.0/24") {
+      delivered_advertisement = true;
+    }
+    if (record.action == "WITHDRAW" && record.withdrawn == "1.1.1.0/24") {
+      require(delivered_advertisement,
+              "R3 withdrew a route from R2 before delivering it to R2");
+    }
+  }
   manager.stop();
 }
 

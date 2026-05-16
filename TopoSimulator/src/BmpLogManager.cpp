@@ -20,7 +20,8 @@ sqlite3 *asDb(void *db) { return static_cast<sqlite3 *>(db); }
 
 std::string timestampNow() {
   const auto now = std::chrono::system_clock::now();
-  const auto time = std::chrono::system_clock::to_time_t(now);
+  const auto china_time = now + std::chrono::hours{8};
+  const auto time = std::chrono::system_clock::to_time_t(china_time);
   const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
                           now.time_since_epoch()) %
                       1000;
@@ -29,8 +30,8 @@ std::string timestampNow() {
   gmtime_s(&tm, &time);
 
   std::ostringstream oss;
-  oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S") << '.' << std::setw(3)
-      << std::setfill('0') << millis.count() << "Z";
+  oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << '.' << std::setw(3)
+      << std::setfill('0') << millis.count();
   return oss.str();
 }
 
