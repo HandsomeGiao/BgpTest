@@ -662,11 +662,17 @@ void BgpRouter::disseminateChangedRoutes(
   for (const auto &neighbor : peers) {
     for (const auto &[prefix, maybe_route] : changes) {
       if (!maybe_route || !exportRouteAllowed(*maybe_route, neighbor)) {
+        bool was_advertised = false;
         {
           std::lock_guard lock(mutex_);
-          adj_rib_out_[neighbor.id].erase(prefix);
+          if (auto peer_out = adj_rib_out_.find(neighbor.id);
+              peer_out != adj_rib_out_.end()) {
+            was_advertised = peer_out->second.erase(prefix) > 0;
+          }
         }
-        sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
+        if (was_advertised) {
+          sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
+        }
         continue;
       }
       auto transformed = transformRouteForPeer(*maybe_route, neighbor);

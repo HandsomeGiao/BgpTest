@@ -153,6 +153,30 @@ void bmpHistorySupportsCombinedAttributeFilters() {
   manager.stop();
 }
 
+void ebgpRouteIsNotWithdrawnBackToOriginPeer() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "no-withdraw-bounce-tests";
+  config.routers[0].originated_prefixes.push_back("1.1.1.0/24");
+  config.routers[1].asn = 65001;
+  config.routers[0].neighbors[0].remote_asn = 65001;
+  config.routers[0].neighbors[0].session_type = toposim::SessionType::Ebgp;
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery query;
+  query.router = "R1";
+  query.peer = "R2";
+  query.msg_type = "UPDATE";
+  query.prefix = "1.1.1.0/24";
+  query.limit = 10;
+  require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
+          "R2 sent a needless withdrawal back to the origin peer R1");
+  manager.stop();
+}
+
 } // namespace
 
 int main() {
@@ -162,6 +186,7 @@ int main() {
     rejectsInvalidLinks();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     bmpHistorySupportsCombinedAttributeFilters();
+    ebgpRouteIsNotWithdrawnBackToOriginPeer();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';
     return 1;
