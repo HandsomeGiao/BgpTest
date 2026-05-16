@@ -254,14 +254,13 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
       ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
       ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
 
-  if (!ImGui::BeginTable("bmp-records", 10, flags, ImVec2(0, height))) {
+  if (!ImGui::BeginTable("bmp-records", 9, flags, ImVec2(0, height))) {
     return;
   }
   ImGui::TableSetupScrollFreeze(0, 1);
   ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 64.0f);
   ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 170.0f);
   ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-  ImGui::TableSetupColumn("Router", ImGuiTableColumnFlags_WidthFixed, 90.0f);
   ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 80.0f);
   ImGui::TableSetupColumn("To", ImGuiTableColumnFlags_WidthFixed, 80.0f);
   ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 125.0f);
@@ -287,20 +286,18 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
       ImGui::TableSetColumnIndex(2);
       ImGui::TextUnformatted(record.event.c_str());
       ImGui::TableSetColumnIndex(3);
-      ImGui::TextUnformatted(record.router.c_str());
-      ImGui::TableSetColumnIndex(4);
       ImGui::TextUnformatted(record.from.c_str());
-      ImGui::TableSetColumnIndex(5);
+      ImGui::TableSetColumnIndex(4);
       ImGui::TextUnformatted(record.to.c_str());
-      ImGui::TableSetColumnIndex(6);
+      ImGui::TableSetColumnIndex(5);
       const auto action = recordActionLabel(record);
       ImGui::TextUnformatted(action.c_str());
-      ImGui::TableSetColumnIndex(7);
+      ImGui::TableSetColumnIndex(6);
       ImGui::TextUnformatted(record.prefixes.empty() ? record.withdrawn.c_str()
-                                                     : record.prefixes.c_str());
-      ImGui::TableSetColumnIndex(8);
+                                                      : record.prefixes.c_str());
+      ImGui::TableSetColumnIndex(7);
       ImGui::TextUnformatted(record.as_path.c_str());
-      ImGui::TableSetColumnIndex(9);
+      ImGui::TableSetColumnIndex(8);
       ImGui::TextUnformatted(record.next_hop.c_str());
     }
   }
