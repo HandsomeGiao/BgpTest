@@ -14,6 +14,7 @@ python -m topogenerator.main
 
 - Add routers directly on the canvas.
 - Double-click an existing router to configure router id, ASN, cluster id and originated prefixes.
+- New routers receive deterministic BGP router-ids from `10/8`: `R1` uses `10.0.0.1`, `R254` uses `10.0.0.254`, `R255` uses `10.0.1.1`, and so on. This keeps generated ids readable while staying valid for large topologies.
 - Toggle `Link Mode (Q)`, then click two routers to create a link with `delay_ms` set to 0.
 - Select an existing link and click `Edit` to configure state, link delay, A->B/B->A MRAI and route-reflector client direction.
 - Right-drag the canvas to pan the view, and use the mouse wheel to zoom.

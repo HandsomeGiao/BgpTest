@@ -74,6 +74,16 @@ void rejectsDuplicateRouterIds() {
                 "duplicate router id should be rejected");
 }
 
+void rejectsInvalidBgpRouterIds() {
+  for (const auto &router_id : {"256.1.1.1", "1.2.3", "R1", "0.0.0.0"}) {
+    auto config = twoRouterTopology(0);
+    config.routers.front().router_id = router_id;
+    requireThrows([&] { toposim::TopoManager manager(config); },
+                  std::string("invalid BGP router id should be rejected: ") +
+                      router_id);
+  }
+}
+
 void rejectsInvalidLinks() {
   auto unknown_router = twoRouterTopology(0);
   unknown_router.links = {{.a = "R1", .b = "R3"}};
@@ -112,6 +122,7 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
 int main() {
   try {
     rejectsDuplicateRouterIds();
+    rejectsInvalidBgpRouterIds();
     rejectsInvalidLinks();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
   } catch (const std::exception &ex) {

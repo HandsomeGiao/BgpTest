@@ -1,6 +1,7 @@
 #include "toposim/TopoManager.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -27,6 +28,39 @@ std::string runTimestamp() {
   std::ostringstream oss;
   oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
   return oss.str();
+}
+
+bool isValidBgpRouterId(const std::string &value) {
+  if (value == "0.0.0.0") {
+    return false;
+  }
+
+  std::size_t pos = 0;
+  for (int part = 0; part < 4; ++part) {
+    if (pos >= value.size() ||
+        !std::isdigit(static_cast<unsigned char>(value[pos]))) {
+      return false;
+    }
+
+    unsigned int octet = 0;
+    while (pos < value.size() &&
+           std::isdigit(static_cast<unsigned char>(value[pos]))) {
+      octet = octet * 10U + static_cast<unsigned int>(value[pos] - '0');
+      if (octet > 255U) {
+        return false;
+      }
+      ++pos;
+    }
+
+    if (part < 3) {
+      if (pos >= value.size() || value[pos] != '.') {
+        return false;
+      }
+      ++pos;
+    }
+  }
+
+  return pos == value.size();
 }
 
 } // namespace
@@ -307,9 +341,11 @@ void TopoManager::validateConfig() const {
     if (!router_ids.insert(router.id).second) {
       throw std::runtime_error("Duplicate router id: " + router.id);
     }
-    if (router.router_id.empty()) {
-      throw std::runtime_error("Router " + router.id +
-                               " has an empty BGP router id");
+    if (!isValidBgpRouterId(router.router_id)) {
+      throw std::runtime_error(
+          "Router " + router.id +
+          " has an invalid BGP router id. Expected dotted decimal x.x.x.x "
+          "with each octet in 0..255, excluding 0.0.0.0");
     }
     if (router.asn == 0) {
       throw std::runtime_error("Router " + router.id + " has invalid ASN 0");

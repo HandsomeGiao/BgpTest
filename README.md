@@ -10,6 +10,7 @@
 ## 功能概览
 
 - 从 JSON 文件读取网络拓扑、路由器配置、BGP 邻居关系和链路状态。
+- 邻居连接是模拟器内存里的消息投递，不使用真实 socket 或接口 IP；`router_id` 是 BGP router-id，用于协议标识和 NEXT_HOP 字段。
 - 模拟 BGP OPEN、KEEPALIVE、UPDATE、NOTIFICATION 等基础报文。
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
@@ -74,6 +75,7 @@ BGP Test Framework
 - 配置 router id、ASN、cluster id 和本地起源前缀。
 - 添加和编辑节点之间的链路。
 - 配置链路状态、链路延迟、双向 MRAI 和 RR client 方向。
+- 新增路由器默认生成可读且合法的 BGP router-id，例如 `10.0.0.1`、`10.0.0.2`、`10.0.1.1`，避免大规模拓扑中出现 `300.300.300.300` 这类非法值。
 - 加载已有模拟器 JSON 时，会从邻居配置恢复双向 MRAI 和 RR client 方向，避免 round-trip 导出时丢失协议配置。
 - 导出 `TopoSimulator` 可读取的 JSON 拓扑文件。
 

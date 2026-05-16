@@ -33,9 +33,9 @@ from PyQt6.QtWidgets import (
 )
 
 try:
-    from .models import LinkEdge, RouterNode, TopologyModel
+    from .models import LinkEdge, RouterNode, TopologyModel, router_id_from_index
 except ImportError:
-    from models import LinkEdge, RouterNode, TopologyModel
+    from models import LinkEdge, RouterNode, TopologyModel, router_id_from_index
 
 
 AS_COLORS = [
@@ -437,11 +437,16 @@ class MainWindow(QMainWindow):
         index = self._next_router_index()
         center = self.view.mapToScene(self.view.viewport().rect().center())
         offset = 24 * (len(self.model.routers) % 6)
+        try:
+            router_id = router_id_from_index(index)
+        except ValueError as exc:
+            self._error(str(exc))
+            return
         router = RouterNode(
             id=f"R{index}",
-            router_id=f"{index}.{index}.{index}.{index}",
+            router_id=router_id,
             asn=65000,
-            cluster_id=f"{index}.{index}.{index}.{index}",
+            cluster_id=router_id,
             x=center.x() + offset,
             y=center.y() + offset,
         )

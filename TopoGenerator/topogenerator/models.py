@@ -3,6 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+ROUTER_ID_BASE_OCTET = 10
+ROUTER_ID_USABLE_LAST_OCTETS = 254
+ROUTER_ID_MAX_INDEX = 256 * 256 * ROUTER_ID_USABLE_LAST_OCTETS
+
+
+def router_id_from_index(index: int) -> str:
+    """Return a readable, valid BGP router-id for a 1-based router index."""
+    if index < 1 or index > ROUTER_ID_MAX_INDEX:
+        raise ValueError(f"Router index must be in 1..{ROUTER_ID_MAX_INDEX}")
+    zero_based = index - 1
+    second_octet = zero_based // (256 * ROUTER_ID_USABLE_LAST_OCTETS)
+    remainder = zero_based % (256 * ROUTER_ID_USABLE_LAST_OCTETS)
+    third_octet = remainder // ROUTER_ID_USABLE_LAST_OCTETS
+    fourth_octet = remainder % ROUTER_ID_USABLE_LAST_OCTETS + 1
+    return f"{ROUTER_ID_BASE_OCTET}.{second_octet}.{third_octet}.{fourth_octet}"
+
 
 @dataclass
 class RouterNode:
@@ -17,11 +33,12 @@ class RouterNode:
     @classmethod
     def from_json(cls, data: dict[str, Any], index: int) -> "RouterNode":
         position = data.get("position", {})
+        router_id = str(data.get("router_id", router_id_from_index(index + 1)))
         return cls(
             id=str(data.get("id", f"R{index + 1}")),
-            router_id=str(data.get("router_id", f"{index + 1}.{index + 1}.{index + 1}.{index + 1}")),
+            router_id=router_id,
             asn=int(data.get("asn", 65000)),
-            cluster_id=str(data.get("cluster_id", data.get("router_id", ""))),
+            cluster_id=str(data.get("cluster_id", router_id)),
             originated_prefixes=list(data.get("originated_prefixes", [])),
             x=float(position.get("x", 120 + index * 80)),
             y=float(position.get("y", 120 + index * 60)),
