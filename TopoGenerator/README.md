@@ -20,6 +20,7 @@ python -m topogenerator.main
 - Right-drag the canvas to pan the view, and use the mouse wheel to zoom.
 - Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.
 - Loading a simulator JSON file restores directional MRAI and route-reflector client settings from each router's neighbor entries, so load/edit/export preserves those protocol fields.
+- The editor remembers the last loaded or exported topology and automatically restores it on the next startup.
 
 Routers in the same AS are automatically enclosed by a colored frame. The frame updates as routers are added, deleted, moved, or edited.
 

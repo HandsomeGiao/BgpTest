@@ -22,7 +22,7 @@
 - 生成 `bmp_collector.log` 和 `bmp_collector.sqlite`，分别用于 JSON Lines 原始记录和 SQLite 历史查询。
 - 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、自定义表格显示列，并通过 `MessageFilter` 按相关路由器、来源/目的路由器、动作类型、来源 AS 和目的 AS 查询历史或实时过滤报文；withdraw-only UPDATE 会直接标识为 `WITHDRAW`。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
-- 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置。
+- 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置，并在下次启动时自动恢复最近加载或导出的拓扑。
 - 提供 CTest 测试目标，覆盖核心拓扑校验和 MRAI 撤销场景。
 
 ## 架构

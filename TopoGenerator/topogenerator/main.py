@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt
+from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, QSettings, Qt
 from PyQt6.QtGui import QAction, QBrush, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication,
@@ -398,6 +398,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("TopoGenerator")
         self.resize(1100, 760)
+        self.settings = QSettings("BgpTest", "TopoGenerator")
+        self.current_topology_path: Optional[Path] = None
         self.model = TopologyModel()
         self.link_mode_enabled = False
         self.pending_link_router_id: Optional[str] = None
@@ -408,6 +410,7 @@ class MainWindow(QMainWindow):
         self.view.setRenderHints(self.view.renderHints())
         self.setCentralWidget(self.view)
         self._build_toolbar()
+        self._restore_last_topology()
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Topology")
@@ -518,29 +521,59 @@ class MainWindow(QMainWindow):
         self.clear_pending_link()
 
     def load_json(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Load topology", "", "JSON (*.json)")
+        start_dir = str(self.current_topology_path.parent) if self.current_topology_path else ""
+        path, _ = QFileDialog.getOpenFileName(self, "Load topology", start_dir, "JSON (*.json)")
         if not path:
             return
         try:
-            with Path(path).open("r", encoding="utf-8") as handle:
-                self.model = TopologyModel.from_json(json.load(handle))
-            self.scene = TopologyScene(self.model)
-            self.scene.main_window = self
-            self.view.setScene(self.scene)
-            self.clear_pending_link()
+            self._load_topology(Path(path))
         except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             self._error(f"Failed to load topology: {exc}")
 
     def export_json(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "Export topology", "topology.json", "JSON (*.json)")
+        default_path = str(self.current_topology_path) if self.current_topology_path else "topology.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Export topology", default_path, "JSON (*.json)")
         if not path:
             return
+        topology_path = Path(path)
         try:
-            with Path(path).open("w", encoding="utf-8") as handle:
+            with topology_path.open("w", encoding="utf-8") as handle:
                 json.dump(self.model.to_json(), handle, indent=2)
                 handle.write("\n")
+            self._remember_topology(topology_path)
         except OSError as exc:
             self._error(f"Failed to export topology: {exc}")
+
+    def _replace_model(self, model: TopologyModel) -> None:
+        self.model = model
+        self.scene = TopologyScene(self.model)
+        self.scene.main_window = self
+        self.view.setScene(self.scene)
+        self.clear_pending_link()
+
+    def _load_topology(self, path: Path) -> None:
+        with path.open("r", encoding="utf-8") as handle:
+            self._replace_model(TopologyModel.from_json(json.load(handle)))
+        self._remember_topology(path)
+
+    def _remember_topology(self, path: Path) -> None:
+        self.current_topology_path = path
+        self.settings.setValue("last_topology", str(path))
+        self.statusBar().showMessage(f"Topology: {path}", 3000)
+
+    def _restore_last_topology(self) -> None:
+        path_text = self.settings.value("last_topology", "", str)
+        if not path_text:
+            return
+        path = Path(path_text)
+        if not path.is_file():
+            self.settings.remove("last_topology")
+            return
+        try:
+            self._load_topology(path)
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            self.settings.remove("last_topology")
+            self.statusBar().showMessage(f"Failed to restore topology: {exc}", 5000)
 
     def _error(self, message: str) -> None:
         QMessageBox.critical(self, "TopoGenerator", message)
