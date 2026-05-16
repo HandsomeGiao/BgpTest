@@ -175,20 +175,6 @@ LRESULT WINAPI wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-bool containsCaseInsensitive(const std::string &value,
-                             const std::string &needle) {
-  if (needle.empty()) {
-    return true;
-  }
-  auto lower_value = value;
-  auto lower_needle = needle;
-  std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(),
-                 [](unsigned char ch) { return static_cast<char>(tolower(ch)); });
-  std::transform(lower_needle.begin(), lower_needle.end(), lower_needle.begin(),
-                 [](unsigned char ch) { return static_cast<char>(tolower(ch)); });
-  return lower_value.find(lower_needle) != std::string::npos;
-}
-
 std::string upperAscii(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
     return static_cast<char>(std::toupper(ch));
@@ -197,7 +183,7 @@ std::string upperAscii(std::string value) {
 }
 
 std::string recordActionLabel(const BmpLogRecord &record) {
-  return record.action.empty() ? record.msg_type : record.action;
+  return record.action;
 }
 
 enum class BmpViewerColumn : std::size_t {
@@ -206,7 +192,9 @@ enum class BmpViewerColumn : std::size_t {
   Event,
   Router,
   From,
+  FromAs,
   To,
+  ToAs,
   Action,
   Prefixes,
   Withdrawn,
@@ -240,7 +228,9 @@ constexpr std::array<BmpViewerColumnDefinition, kBmpViewerColumnCount>
         {BmpViewerColumn::Event, "Event", 150.0f, true},
         {BmpViewerColumn::Router, "Router", 90.0f, false},
         {BmpViewerColumn::From, "From", 80.0f, true},
+        {BmpViewerColumn::FromAs, "From AS", 85.0f, false},
         {BmpViewerColumn::To, "To", 80.0f, true},
+        {BmpViewerColumn::ToAs, "To AS", 85.0f, false},
         {BmpViewerColumn::Action, "Action", 125.0f, true},
         {BmpViewerColumn::Prefixes, "Prefixes", 0.0f, true},
         {BmpViewerColumn::Withdrawn, "Withdrawn", 0.0f, false},
@@ -284,8 +274,12 @@ std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
     return record.router;
   case BmpViewerColumn::From:
     return record.from;
+  case BmpViewerColumn::FromAs:
+    return record.from_as ? std::to_string(*record.from_as) : "";
   case BmpViewerColumn::To:
     return record.to;
+  case BmpViewerColumn::ToAs:
+    return record.to_as ? std::to_string(*record.to_as) : "";
   case BmpViewerColumn::Action:
     return recordActionLabel(record);
   case BmpViewerColumn::Prefixes:
@@ -310,48 +304,117 @@ std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
   return {};
 }
 
-bool recordTypeMatches(const BmpLogRecord &record, const std::string &filter) {
-  if (filter.empty()) {
+struct MessageFilterState {
+  std::array<char, 192> routers{};
+  std::array<char, 192> from_routers{};
+  std::array<char, 192> to_routers{};
+  std::array<char, 192> actions{};
+  std::array<char, 192> from_asns{};
+  std::array<char, 192> to_asns{};
+  int history_limit = 500;
+};
+
+std::vector<std::string> splitFilterTokens(const std::string &text) {
+  std::vector<std::string> tokens;
+  std::string token;
+  auto flush = [&] {
+    if (!token.empty()) {
+      tokens.push_back(token);
+      token.clear();
+    }
+  };
+  for (const char ch : text) {
+    if (std::isspace(static_cast<unsigned char>(ch)) || ch == ',' ||
+        ch == ';') {
+      flush();
+    } else {
+      token.push_back(ch);
+    }
+  }
+  flush();
+  return tokens;
+}
+
+std::vector<std::uint32_t> parseAsnTokens(const std::string &text) {
+  std::vector<std::uint32_t> asns;
+  for (const auto &token : splitFilterTokens(text)) {
+    try {
+      asns.push_back(static_cast<std::uint32_t>(std::stoul(token)));
+    } catch (const std::exception &) {
+    }
+  }
+  return asns;
+}
+
+std::string normalizeActionToken(std::string value) {
+  return upperAscii(std::move(value));
+}
+
+std::vector<std::string> parseActionTokens(const std::string &text) {
+  std::vector<std::string> actions;
+  for (auto token : splitFilterTokens(text)) {
+    actions.push_back(normalizeActionToken(std::move(token)));
+  }
+  return actions;
+}
+
+bool matchesAnyString(const std::vector<std::string> &needles,
+                      std::initializer_list<std::string_view> values) {
+  if (needles.empty()) {
     return true;
   }
-  const auto requested = upperAscii(filter);
-  const auto action = upperAscii(recordActionLabel(record));
-  if (requested == "WITHDRAWAL") {
-    return action == "WITHDRAW";
+  for (const auto &needle : needles) {
+    for (const auto value : values) {
+      if (needle == value) {
+        return true;
+      }
+    }
   }
-  if (requested == "UPDATE") {
-    return action == "UPDATE" || action == "UPDATE+WITHDRAW";
+  return false;
+}
+
+bool matchesAnyAsn(const std::vector<std::uint32_t> &asns,
+                   std::optional<std::uint32_t> value) {
+  if (asns.empty()) {
+    return true;
   }
-  if (requested == "MIXED") {
-    return action == "UPDATE+WITHDRAW";
-  }
-  return action == requested;
+  return value &&
+         std::find(asns.begin(), asns.end(), *value) != asns.end();
+}
+
+BmpLogQuery queryFromFilter(const MessageFilterState &filter) {
+  BmpLogQuery query;
+  query.routers = splitFilterTokens(filter.routers.data());
+  query.from_routers = splitFilterTokens(filter.from_routers.data());
+  query.to_routers = splitFilterTokens(filter.to_routers.data());
+  query.actions = parseActionTokens(filter.actions.data());
+  query.from_asns = parseAsnTokens(filter.from_asns.data());
+  query.to_asns = parseAsnTokens(filter.to_asns.data());
+  query.limit = static_cast<std::size_t>((std::max)(1, filter.history_limit));
+  return query;
 }
 
 bool liveRecordMatches(const BmpLogRecord &record, const BmpLogQuery &query) {
-  if (!query.router.empty() && record.router != query.router) {
+  if (!matchesAnyString(query.routers, {record.router, record.from, record.to})) {
     return false;
   }
-  if (!query.peer.empty() && record.from != query.peer && record.to != query.peer) {
+  if (!matchesAnyString(query.from_routers, {record.from})) {
     return false;
   }
-  if (!recordTypeMatches(record, query.msg_type)) {
+  if (!matchesAnyString(query.to_routers, {record.to})) {
     return false;
   }
-  if (!query.prefix.empty() &&
-      !containsCaseInsensitive(record.prefixes + "," + record.withdrawn,
-                               query.prefix)) {
+  if (!query.actions.empty()) {
+    const auto action = normalizeActionToken(recordActionLabel(record));
+    if (std::find(query.actions.begin(), query.actions.end(), action) ==
+        query.actions.end()) {
+      return false;
+    }
+  }
+  if (!matchesAnyAsn(query.from_asns, record.from_as)) {
     return false;
   }
-  if (!query.asn.empty() &&
-      !containsCaseInsensitive(record.as_path, query.asn)) {
-    return false;
-  }
-  if (!query.next_hop.empty() && record.next_hop != query.next_hop) {
-    return false;
-  }
-  if (query.has_min_local_pref &&
-      (!record.local_pref || *record.local_pref < query.min_local_pref)) {
+  if (!matchesAnyAsn(query.to_asns, record.to_as)) {
     return false;
   }
   return true;
@@ -383,6 +446,44 @@ void drawColumnController(BmpViewerColumnVisibility &visible_columns) {
   ImGui::SameLine();
   if (ImGui::Button("Reset")) {
     visible_columns = defaultColumnVisibility();
+  }
+
+  ImGui::EndPopup();
+}
+
+void drawMessageFilter(MessageFilterState &filter) {
+  if (ImGui::Button("MessageFilter")) {
+    ImGui::OpenPopup("bmp-message-filter");
+  }
+  if (!ImGui::BeginPopup("bmp-message-filter")) {
+    return;
+  }
+
+  ImGui::TextUnformatted("Routers");
+  ImGui::InputText("Contains", filter.routers.data(), filter.routers.size());
+  ImGui::InputText("From", filter.from_routers.data(),
+                   filter.from_routers.size());
+  ImGui::InputText("To", filter.to_routers.data(), filter.to_routers.size());
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("Action");
+  ImGui::InputText("Actions", filter.actions.data(), filter.actions.size());
+
+  ImGui::Separator();
+  ImGui::TextUnformatted("AS");
+  ImGui::InputText("From AS", filter.from_asns.data(),
+                   filter.from_asns.size());
+  ImGui::InputText("To AS", filter.to_asns.data(), filter.to_asns.size());
+
+  ImGui::Separator();
+  ImGui::InputInt("History Limit", &filter.history_limit);
+  if (filter.history_limit < 1) {
+    filter.history_limit = 1;
+  }
+  if (ImGui::Button("Clear")) {
+    const auto limit = filter.history_limit;
+    filter = MessageFilterState{};
+    filter.history_limit = limit;
   }
 
   ImGui::EndPopup();
@@ -451,10 +552,6 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
   ImGui::EndTable();
 }
 
-std::string bufferText(const std::array<char, 128> &buffer) {
-  return std::string(buffer.data());
-}
-
 void viewerLoop() {
   g_stop_requested = false;
   configureDpiAwareness();
@@ -496,14 +593,7 @@ void viewerLoop() {
   bool live_mode = true;
   bool follow_live = true;
   int selected_index = -1;
-  int history_limit = 500;
-  int min_local_pref = 0;
-  std::array<char, 128> router_filter{};
-  std::array<char, 128> peer_filter{};
-  std::array<char, 128> msg_type_filter{};
-  std::array<char, 128> prefix_filter{};
-  std::array<char, 128> asn_filter{};
-  std::array<char, 128> next_hop_filter{};
+  MessageFilterState message_filter;
   std::vector<BmpLogRecord> visible_records;
   std::vector<BmpLogRecord> history_records;
   auto visible_columns = defaultColumnVisibility();
@@ -557,52 +647,16 @@ void viewerLoop() {
     ImGui::SameLine();
     if (ImGui::Button("Query History")) {
       live_mode = false;
-      BmpLogQuery query;
-      query.router = bufferText(router_filter);
-      query.peer = bufferText(peer_filter);
-      query.msg_type = bufferText(msg_type_filter);
-      query.prefix = bufferText(prefix_filter);
-      query.asn = bufferText(asn_filter);
-      query.next_hop = bufferText(next_hop_filter);
-      query.limit = static_cast<std::size_t>((std::max)(1, history_limit));
-      if (min_local_pref > 0) {
-        query.has_min_local_pref = true;
-        query.min_local_pref = static_cast<std::uint32_t>(min_local_pref);
-      }
+      const auto query = queryFromFilter(message_filter);
       history_records = BmpLogManager::instance().queryHistory(query);
       selected_index = history_records.empty() ? -1 : 0;
     }
     ImGui::SameLine();
+    drawMessageFilter(message_filter);
+    ImGui::SameLine();
     drawColumnController(visible_columns);
 
-    ImGui::InputText("Router", router_filter.data(), router_filter.size());
-    ImGui::SameLine();
-    ImGui::InputText("Peer", peer_filter.data(), peer_filter.size());
-    ImGui::SameLine();
-    ImGui::InputText("Type/Action", msg_type_filter.data(),
-                     msg_type_filter.size());
-    ImGui::InputText("Prefix", prefix_filter.data(), prefix_filter.size());
-    ImGui::SameLine();
-    ImGui::InputText("AS_PATH contains ASN", asn_filter.data(),
-                     asn_filter.size());
-    ImGui::SameLine();
-    ImGui::InputText("Next Hop", next_hop_filter.data(),
-                     next_hop_filter.size());
-    ImGui::InputInt("Min Local Pref", &min_local_pref);
-    ImGui::SameLine();
-    ImGui::InputInt("History Limit", &history_limit);
-
-    BmpLogQuery live_query;
-    live_query.router = bufferText(router_filter);
-    live_query.peer = bufferText(peer_filter);
-    live_query.msg_type = bufferText(msg_type_filter);
-    live_query.prefix = bufferText(prefix_filter);
-    live_query.asn = bufferText(asn_filter);
-    live_query.next_hop = bufferText(next_hop_filter);
-    if (min_local_pref > 0) {
-      live_query.has_min_local_pref = true;
-      live_query.min_local_pref = static_cast<std::uint32_t>(min_local_pref);
-    }
+    const auto live_query = queryFromFilter(message_filter);
 
     if (live_mode) {
       visible_records.clear();

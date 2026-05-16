@@ -106,7 +106,7 @@ void startupDoesNotEmitKeepalives() {
   toposim::BmpLogManager::instance().flush();
 
   toposim::BmpLogQuery query;
-  query.msg_type = "KEEPALIVE";
+  query.actions = {"KEEPALIVE"};
   query.limit = 10;
   require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
           "startup emitted KEEPALIVE messages");
@@ -131,14 +131,13 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   require(manager.waitForConvergence(2s), "final convergence timed out");
   toposim::BmpLogManager::instance().flush();
   toposim::BmpLogQuery query;
-  query.router = "R2";
+  query.routers = {"R2"};
   query.limit = 20;
   require(!toposim::BmpLogManager::instance().queryHistory(query).empty(),
           "BMP SQLite history query returned no records for R2");
   toposim::BmpLogQuery withdraw_query;
-  withdraw_query.router = "R2";
-  withdraw_query.msg_type = "WITHDRAW";
-  withdraw_query.prefix = prefix;
+  withdraw_query.routers = {"R2"};
+  withdraw_query.actions = {"WITHDRAW"};
   withdraw_query.limit = 20;
   const auto withdrawals =
       toposim::BmpLogManager::instance().queryHistory(withdraw_query);
@@ -153,7 +152,7 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   manager.stop();
 }
 
-void bmpHistorySupportsCombinedAttributeFilters() {
+void bmpHistorySupportsMessageFilterFields() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "bmp-query-tests";
   config.routers[1].asn = 65001;
@@ -170,13 +169,10 @@ void bmpHistorySupportsCombinedAttributeFilters() {
   toposim::BmpLogManager::instance().flush();
 
   toposim::BmpLogQuery query;
-  query.router = "R2";
-  query.msg_type = "UPDATE";
-  query.prefix = prefix;
-  query.asn = "65000";
-  query.next_hop = "1.1.1.1";
-  query.has_min_local_pref = true;
-  query.min_local_pref = 100;
+  query.routers = {"R2"};
+  query.actions = {"UPDATE"};
+  query.from_asns = {65000};
+  query.to_asns = {65001};
   query.limit = 10;
   require(!toposim::BmpLogManager::instance().queryHistory(query).empty(),
           "combined BMP SQLite attribute query returned no records");
@@ -197,10 +193,9 @@ void ebgpRouteIsNotWithdrawnBackToOriginPeer() {
   toposim::BmpLogManager::instance().flush();
 
   toposim::BmpLogQuery query;
-  query.router = "R1";
-  query.peer = "R2";
-  query.msg_type = "UPDATE";
-  query.prefix = "1.1.1.0/24";
+  query.to_routers = {"R1"};
+  query.from_routers = {"R2"};
+  query.actions = {"UPDATE"};
   query.limit = 10;
   require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
           "R2 sent a needless withdrawal back to the origin peer R1");
@@ -216,7 +211,7 @@ int main() {
     rejectsInvalidLinks();
     startupDoesNotEmitKeepalives();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
-    bmpHistorySupportsCombinedAttributeFilters();
+    bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';

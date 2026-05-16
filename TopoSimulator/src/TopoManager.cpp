@@ -154,12 +154,15 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       return;
     }
     auto destination = dst_it->second;
+    const auto from_as = src_it->second->asn();
+    const auto to_as = dst_it->second->asn();
     const auto delay_ms = link->config.delay_ms;
     message.sequence = ++sequence_;
 
     pool_->enqueue([this, destination = std::move(destination), delay_ms,
                     extra_delay,
                     delivery_guard = std::move(delivery_guard),
+                    from_as, to_as,
                     message = std::move(message)]() mutable {
       if (extra_delay.count() > 0) {
         std::this_thread::sleep_for(extra_delay);
@@ -173,7 +176,8 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       if (!messageStillDeliverable(message.from, message.to)) {
         return;
       }
-      BmpLogManager::instance().recordReceive(message.to, message);
+      BmpLogManager::instance().recordReceive(message.to, message, from_as,
+                                              to_as);
       destination->receiveMessage(message);
     });
   }

@@ -28,6 +28,8 @@ struct BmpLogRecord {
   std::string router;
   std::string from;
   std::string to;
+  std::optional<std::uint32_t> from_as;
+  std::optional<std::uint32_t> to_as;
   std::string msg_type;
   std::string action;
   std::uint64_t sequence = 0;
@@ -41,14 +43,12 @@ struct BmpLogRecord {
 };
 
 struct BmpLogQuery {
-  std::string router;
-  std::string peer;
-  std::string msg_type;
-  std::string prefix;
-  std::string asn;
-  std::string next_hop;
-  std::uint32_t min_local_pref = 0;
-  bool has_min_local_pref = false;
+  std::vector<std::string> routers;
+  std::vector<std::string> from_routers;
+  std::vector<std::string> to_routers;
+  std::vector<std::string> actions;
+  std::vector<std::uint32_t> from_asns;
+  std::vector<std::uint32_t> to_asns;
   std::size_t limit = 500;
 };
 
@@ -65,7 +65,9 @@ public:
   void shutdown();
   void flush();
 
-  void recordReceive(const std::string &router_id, const BgpMessage &message);
+  void recordReceive(const std::string &router_id, const BgpMessage &message,
+                     std::optional<std::uint32_t> from_as = std::nullopt,
+                     std::optional<std::uint32_t> to_as = std::nullopt);
   void recordTopologyEvent(const std::string &event_name,
                            const BmpEventDetail &detail);
 
