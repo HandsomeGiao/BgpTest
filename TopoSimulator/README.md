@@ -154,20 +154,90 @@ Route reflector support is modeled through:
 
 There is no separate behavioral switch for route reflectors. If a router has at least one neighbor marked with `"rr_client": true`, it is treated as a route reflector. IBGP routes are not re-advertised to other IBGP peers unless this derived route-reflector role applies. Client-learned routes are reflected to other peers except the origin peer; non-client-learned routes are reflected only to clients.
 
-## Extension Points
+## Custom BGP Router Behavior
 
-Subclass `toposim::BgpRouter` and override:
+Custom protocol experiments should be implemented by subclassing `toposim::BgpRouter`. Keep `TopoManager` as the owner of topology lifecycle, link/node state and message transport; customize only the router behavior you want to study.
 
-- `onMessageReceived`
-- `onOpenMessage`
-- `onUpdateMessage`
-- `onNotificationMessage`
-- `importRouteAllowed`
-- `exportRouteAllowed`
-- `transformRouteForPeer`
-- `selectBestRoute`
+Useful override points:
 
-These hooks are intentionally virtual so custom BGP protocol experiments can replace policy, decision process, message handling, and attribute transforms without rewriting the topology manager.
+- `importRouteAllowed`: reject or accept routes before they enter Adj-RIB-In.
+- `exportRouteAllowed`: decide whether the current best route may be advertised to a neighbor.
+- `transformRouteForPeer`: edit attributes before advertisement, such as MED, communities, NEXT_HOP or AS_PATH policy.
+- `selectBestRoute`: replace the best-path decision rule.
+- `onMessageReceived`, `onOpenMessage`, `onUpdateMessage`, `onNotificationMessage`: customize protocol handling. Call the base implementation if you still want the default state-machine and RIB side effects.
+
+Minimal example:
+
+```cpp
+#pragma once
+
+#include <algorithm>
+
+#include "toposim/BgpRouter.hpp"
+
+namespace toposim {
+
+class LabRouter final : public BgpRouter {
+public:
+  using BgpRouter::BgpRouter;
+
+protected:
+  bool importRouteAllowed(const RouteEntry &route,
+                          const NeighborConfig &from_peer) const override {
+    if (route.attributes.communities.contains("drop")) {
+      return false;
+    }
+    return BgpRouter::importRouteAllowed(route, from_peer);
+  }
+
+  RouteEntry transformRouteForPeer(const RouteEntry &route,
+                                   const NeighborConfig &to_peer) const override {
+    auto transformed = BgpRouter::transformRouteForPeer(route, to_peer);
+    if (to_peer.session_type == SessionType::Ebgp) {
+      transformed.attributes.med = 50;
+    }
+    return transformed;
+  }
+
+  std::optional<RouteEntry>
+  selectBestRoute(const std::string &prefix,
+                  const std::vector<RouteEntry> &candidates) const override {
+    const auto preferred =
+        std::find_if(candidates.begin(), candidates.end(), [](const auto &route) {
+          return route.learned_from == "R2";
+        });
+    if (preferred != candidates.end()) {
+      return *preferred;
+    }
+    return BgpRouter::selectBestRoute(prefix, candidates);
+  }
+};
+
+} // namespace toposim
+```
+
+To use the custom router, add the header/source under `include/toposim/` and `src/`. If you add a `.cpp` file, list it in the `toposim` target in `CMakeLists.txt`. Then include the custom router in `src/TopoManager.cpp` and choose it in `TopoManager::buildRouters`:
+
+```cpp
+#include "toposim/LabRouter.hpp"
+
+void TopoManager::buildRouters() {
+  for (const auto &router_config : config_.routers) {
+    std::shared_ptr<BgpRouter> router;
+    if (router_config.id.starts_with("LAB")) {
+      router = std::make_shared<LabRouter>(router_config);
+    } else {
+      router = std::make_shared<BgpRouter>(router_config);
+    }
+    router->attachManager(this);
+    routers_[router_config.id] = std::move(router);
+  }
+}
+```
+
+For one experiment, branching by router id, ASN or cluster id is usually enough. If many router families are needed, add an explicit field to `RouterConfig` and the topology JSON, then centralize construction in a small router factory.
+
+The override hooks are called outside the router's internal mutex. Avoid storing references to route candidates after the function returns, and prefer returning modified copies. Use the protected `sendMessage` helper only when implementing new message behavior that should still go through `TopoManager`, BMP logging and delivery checks.
 
 ## Interactive Commands
 

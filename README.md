@@ -163,7 +163,16 @@ python -m topogenerator.main
 
 ## 扩展自定义 BGP 协议
 
-自定义协议逻辑的主要入口是继承 `toposim::BgpRouter`，并按需要重写以下虚函数：
+自定义协议逻辑的主要入口是继承 `toposim::BgpRouter`。推荐保持 `TopoManager` 负责拓扑生命周期、链路/节点状态、消息投递和日志系统，只替换具体路由器的策略行为。
+
+常用步骤：
+
+1. 新增一个 `BgpRouter` 子类，例如 `LabRouter`。
+2. 按需要重写导入策略、导出策略、属性转换、选路规则或消息处理函数。
+3. 如果新增 `.cpp` 文件，把它加入 `TopoSimulator/CMakeLists.txt` 的 `toposim` target。
+4. 在 `TopoManager::buildRouters()` 中根据 router id、ASN、cluster id 或自定义配置字段实例化你的子类。
+
+常用虚函数：
 
 - `onMessageReceived`
 - `onOpenMessage`
@@ -174,4 +183,17 @@ python -m topogenerator.main
 - `transformRouteForPeer`
 - `selectBestRoute`
 
-这样可以在不重写拓扑管理、多线程投递和日志系统的前提下，替换 BGP 策略、路径选择、属性处理或自定义报文行为。
+如果重写消息处理函数并仍希望保留默认 RIB / 状态机副作用，应调用对应的 `BgpRouter::on...` 基类实现。如果只是调整策略，通常优先覆盖 `importRouteAllowed`、`exportRouteAllowed`、`transformRouteForPeer` 和 `selectBestRoute`。
+
+示例接入方式：
+
+```cpp
+std::shared_ptr<BgpRouter> router;
+if (router_config.id.starts_with("LAB")) {
+  router = std::make_shared<LabRouter>(router_config);
+} else {
+  router = std::make_shared<BgpRouter>(router_config);
+}
+```
+
+更完整的示例和注意事项见 [TopoSimulator/README.md](TopoSimulator/README.md) 的 `Custom BGP Router Behavior` 章节。
