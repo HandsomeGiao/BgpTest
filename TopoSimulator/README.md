@@ -31,9 +31,9 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 1. The CLI finds a topology file from `--topology` or the current directory's `topo/` folder.
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
-3. `TopoManager` builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and opens the BMP log.
+3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and opens the BMP log.
 4. Each router starts by sending OPEN messages to enabled neighbors. After sessions become established, routers exchange KEEPALIVE and UPDATE messages.
-5. `TopoManager::sendMessage` is the only message transport path. It checks router/link state, assigns a sequence number, applies MRAI/link delay through the worker pool, records the receive event, then delivers the message to the destination router.
+5. `TopoManager::sendMessage` is the only message transport path. It checks router/link state, assigns a sequence number, applies MRAI/link delay through the worker pool, rechecks delivery state immediately before receipt, records the receive event, then delivers the message to the destination router.
 6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so MRAI-delayed UPDATEs are included in the stability test.
 7. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
 
@@ -45,13 +45,15 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 Route reflector behavior is derived from per-neighbor `rr_client`. A router with at least one RR client is treated as a reflector. Client-learned IBGP routes may be reflected to other peers; non-client-learned IBGP routes are reflected only to clients.
 
-MRAI is tracked per neighbor and prefix inside each router. Advertisements may be delayed, while withdrawals are sent immediately. This keeps the timing behavior close to the router that owns the export policy.
+MRAI is tracked per neighbor and prefix inside each router. Advertisements may be delayed, while withdrawals are sent immediately. Delayed advertisements carry a per-prefix generation guard, so an older UPDATE is dropped if the prefix is withdrawn or superseded before the delay expires. This keeps the timing behavior close to the router that owns the export policy without allowing stale delayed advertisements to revive withdrawn routes.
 
 ### Concurrency Model
 
-The simulation uses asynchronous message delivery rather than one thread per router. Routers process messages synchronously when delivered, while `ThreadPool` handles delayed delivery tasks. Shared router and manager state is protected with mutexes. This keeps large topologies lightweight while still allowing many in-flight messages and delay timers to progress concurrently.
+The simulation uses asynchronous message delivery rather than one thread per router. Routers process messages synchronously when delivered, while `ThreadPool` handles delayed delivery tasks. Shared router and manager state is protected with mutexes. Before a delayed task is delivered, `TopoManager` rechecks that the simulator is still running, the link is still enabled, and both endpoint routers are still active.
 
 Convergence does not inspect routing-table equality directly. It observes the transport queue: when no delivery tasks are pending for the configured quiet period, the network is considered stable from the simulator's point of view.
+
+Policy hooks such as import policy, export policy, route transformation and best-route selection are invoked without holding the router's internal mutex. This keeps custom `BgpRouter` subclasses from deadlocking when they query router state or call other safe extension helpers.
 
 ### Extension Philosophy
 
@@ -84,6 +86,16 @@ Dependencies are declared in `vcpkg.json`:
 - `nlohmann-json`
 - `spdlog`
 
+## Test
+
+The simulator has a small CTest target for core correctness checks:
+
+```powershell
+ctest --test-dir TopoSimulator\build -C Release --output-on-failure
+```
+
+The current tests cover topology validation and an MRAI regression where a delayed advertisement must not revive a prefix after it has been withdrawn.
+
 ## Run
 
 ```powershell
@@ -110,7 +122,11 @@ The simulator accepts:
 
 Neighbor entries may be explicit. If a link exists but one side omits the neighbor, `TopoManager` derives a symmetric neighbor using the routers' ASNs.
 
+Topology validation rejects empty router ids, duplicate router ids, ASN 0, self-neighbors, duplicate neighbors, links with empty endpoints, self-links, duplicate links and links or neighbors that reference unknown routers. These checks run before any routers, worker threads or logs are created.
+
 Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE advertisements. `mrai_ms=0` disables MRAI. Withdrawals are sent immediately.
+
+If an MRAI-delayed advertisement becomes stale because a newer UPDATE or withdraw supersedes it before delivery, the delayed task is dropped instead of being logged or delivered.
 
 Convergence waits for the worker queue to stay idle for at least `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so configured MRAI timers are included in the stability window.
 

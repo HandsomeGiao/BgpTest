@@ -18,6 +18,7 @@ python -m topogenerator.main
 - Select an existing link and click `Edit` to configure state, link delay, A->B/B->A MRAI and route-reflector client direction.
 - Right-drag the canvas to pan the view, and use the mouse wheel to zoom.
 - Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.
+- Loading a simulator JSON file restores directional MRAI and route-reflector client settings from each router's neighbor entries, so load/edit/export preserves those protocol fields.
 
 Routers in the same AS are automatically enclosed by a colored frame. The frame updates as routers are added, deleted, moved, or edited.
 

@@ -14,11 +14,14 @@
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
 - 支持邻居级 MRAI，用于控制同一前缀向同一邻居重复广告的最小间隔。
+- MRAI 延迟广告会在投递前检查是否仍然有效，避免已撤销前缀被旧 UPDATE 重新传播。
 - 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
+- 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
 - 生成 `bmp_collector.log`，以 JSON Lines 形式记录所有节点收到的 BGP 报文。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
-- 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON。
+- 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置。
+- 提供 CTest 测试目标，覆盖核心拓扑校验和 MRAI 撤销场景。
 
 ## 架构
 
@@ -52,6 +55,7 @@ BGP Test Framework
 
 - `BgpRouter`：表示一个 BGP 路由器节点，维护邻居状态、RIB 数据结构和基础 BGP 行为。该类保留了多个虚函数扩展点，便于子类重写接收报文、导入策略、导出策略、路径选择和属性转换逻辑。
 - `TopoManager`：管理整个拓扑的生命周期，负责启动、停止、链路状态变化、节点状态变化，以及路由器之间的报文转发。
+- `TopoManager` 会在延迟报文真正投递前重新检查链路和节点状态，避免链路或节点已关闭后仍投递旧报文。
 - `ThreadPool`：提供多线程任务执行能力，用于并发模拟报文投递和节点处理。
 - `BmpCollector`：模拟 BMP collector，把 BGP 节点收到的报文和拓扑事件写入日志。
 - `BgpTypes`：定义 BGP 消息、路径属性、邻居配置、路由条目和拓扑配置等数据结构。
@@ -70,6 +74,7 @@ BGP Test Framework
 - 配置 router id、ASN、cluster id 和本地起源前缀。
 - 添加和编辑节点之间的链路。
 - 配置链路状态、链路延迟、双向 MRAI 和 RR client 方向。
+- 加载已有模拟器 JSON 时，会从邻居配置恢复双向 MRAI 和 RR client 方向，避免 round-trip 导出时丢失协议配置。
 - 导出 `TopoSimulator` 可读取的 JSON 拓扑文件。
 
 详细使用说明见 [TopoGenerator/README.md](TopoGenerator/README.md)。
@@ -95,6 +100,7 @@ BGP Test Framework
 │  ├─ build.ps1
 │  ├─ include/toposim/
 │  ├─ src/
+│  ├─ tests/
 │  ├─ config/
 │  └─ topo/
 ├─ TopoGenerator/
@@ -111,6 +117,12 @@ BGP Test Framework
 
 ```powershell
 .\TopoSimulator\build.ps1
+```
+
+运行模拟器测试：
+
+```powershell
+ctest --test-dir TopoSimulator\build -C Release --output-on-failure
 ```
 
 运行模拟器：
