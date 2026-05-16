@@ -140,6 +140,7 @@ These hooks are intentionally virtual so custom BGP protocol experiments can rep
 
 Press `Tab` in the interactive prompt to complete command keywords and router ids.
 The prompt, help text, completion candidates, status messages and errors use Windows console colors plus ASCII markers such as `[OK]`, `[!]` and `[ERR]`.
+Commands that change the network (`link`, `node`, `advertise`, `withdraw`) are accepted only when the current topology is already converged. If the network is still changing, the simulator rejects the command and asks you to run `converge [timeout_ms]` first. `show` and `converge` remain available while the network is not converged.
 
 ```text
 show routers

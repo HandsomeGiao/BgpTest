@@ -230,6 +230,10 @@ bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
   return pool_->waitForIdle(std::max(timeout, quiet_period), quiet_period);
 }
 
+bool TopoManager::isConverged() const {
+  return pool_ && pool_->isIdleFor(convergenceQuietPeriod());
+}
+
 std::vector<RouterSnapshot> TopoManager::routersSnapshot() const {
   std::lock_guard lock(mutex_);
   std::vector<RouterSnapshot> result;

@@ -23,6 +23,7 @@ public:
   void enqueue(std::function<void()> task);
   bool waitForIdle(std::chrono::milliseconds timeout,
                    std::chrono::milliseconds quiet_period);
+  [[nodiscard]] bool isIdleFor(std::chrono::milliseconds quiet_period) const;
   void stop();
   [[nodiscard]] std::size_t pending() const;
 
@@ -35,6 +36,7 @@ private:
   std::queue<std::function<void()>> tasks_;
   std::vector<std::thread> workers_;
   std::atomic<std::size_t> pending_{0};
+  std::chrono::steady_clock::time_point idle_since_;
   bool stopping_ = false;
 };
 

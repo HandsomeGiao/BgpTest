@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <chrono>
-#include <optional>
 #include <stdexcept>
 
 namespace toposim {
 
-ThreadPool::ThreadPool(std::size_t worker_count) {
+ThreadPool::ThreadPool(std::size_t worker_count)
+    : idle_since_(std::chrono::steady_clock::now()) {
   worker_count = std::max<std::size_t>(1, worker_count);
   workers_.reserve(worker_count);
   for (std::size_t i = 0; i < worker_count; ++i) {
@@ -25,6 +25,7 @@ void ThreadPool::enqueue(std::function<void()> task) {
     }
     pending_.fetch_add(1, std::memory_order_relaxed);
     tasks_.push(std::move(task));
+    idle_since_ = {};
   }
   cv_.notify_one();
 }
@@ -32,16 +33,15 @@ void ThreadPool::enqueue(std::function<void()> task) {
 bool ThreadPool::waitForIdle(std::chrono::milliseconds timeout,
                              std::chrono::milliseconds quiet_period) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
-  auto quiet_start = std::optional<std::chrono::steady_clock::time_point>{};
 
   std::unique_lock lock(mutex_);
   while (true) {
     const auto now = std::chrono::steady_clock::now();
     if (pending_.load(std::memory_order_relaxed) == 0 && tasks_.empty()) {
-      if (!quiet_start) {
-        quiet_start = now;
+      if (idle_since_.time_since_epoch().count() == 0) {
+        idle_since_ = now;
       }
-      const auto quiet_until = *quiet_start + quiet_period;
+      const auto quiet_until = idle_since_ + quiet_period;
       if (quiet_until <= now) {
         return true;
       }
@@ -50,13 +50,24 @@ bool ThreadPool::waitForIdle(std::chrono::milliseconds timeout,
       }
       idle_cv_.wait_until(lock, std::min(deadline, quiet_until));
     } else {
-      quiet_start.reset();
+      idle_since_ = {};
       if (deadline <= now) {
         return false;
       }
       idle_cv_.wait_until(lock, deadline);
     }
   }
+}
+
+bool ThreadPool::isIdleFor(std::chrono::milliseconds quiet_period) const {
+  std::lock_guard lock(mutex_);
+  if (pending_.load(std::memory_order_relaxed) != 0 || !tasks_.empty()) {
+    return false;
+  }
+  if (idle_since_.time_since_epoch().count() == 0) {
+    return false;
+  }
+  return idle_since_ + quiet_period <= std::chrono::steady_clock::now();
 }
 
 void ThreadPool::stop() {
@@ -98,7 +109,14 @@ void ThreadPool::workerLoop() {
       // The simulation should keep running even if a custom hook throws.
     }
 
-    pending_.fetch_sub(1, std::memory_order_relaxed);
+    {
+      std::lock_guard lock(mutex_);
+      const auto remaining =
+          pending_.fetch_sub(1, std::memory_order_relaxed) - 1;
+      if (remaining == 0 && tasks_.empty()) {
+        idle_since_ = std::chrono::steady_clock::now();
+      }
+    }
     idle_cv_.notify_all();
   }
 }

@@ -322,6 +322,15 @@ void printHelp() {
   std::cout << "complete commands and router names.\n";
 }
 
+bool requireConverged(const toposim::TopoManager &manager) {
+  if (manager.isConverged()) {
+    return true;
+  }
+  printWarningLine("Network is not converged. Run 'converge [timeout_ms]' "
+                   "before changing links, nodes or routes.");
+  return false;
+}
+
 bool stdinIsTerminal() {
   return _isatty(_fileno(stdin)) != 0;
 }
@@ -474,15 +483,27 @@ int main(int argc, char **argv) {
           std::cout << toposim::toJson(manager.peersSnapshot(parts[2])).dump(2)
                     << '\n';
         } else if (parts.size() == 4 && parts[0] == "link") {
+          if (!requireConverged(manager)) {
+            continue;
+          }
           manager.setLinkState(parts[2], parts[3], parts[1] == "up");
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "node") {
+          if (!requireConverged(manager)) {
+            continue;
+          }
           manager.setRouterState(parts[2], parts[1] == "up");
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "advertise") {
+          if (!requireConverged(manager)) {
+            continue;
+          }
           manager.originatePrefix(parts[1], parts[2]);
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "withdraw") {
+          if (!requireConverged(manager)) {
+            continue;
+          }
           manager.withdrawPrefix(parts[1], parts[2]);
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts[0] == "converge") {

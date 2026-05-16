@@ -35,6 +35,7 @@ public:
   void originatePrefix(const std::string &router_id, const std::string &prefix);
   void withdrawPrefix(const std::string &router_id, const std::string &prefix);
   bool waitForConvergence(std::chrono::milliseconds timeout);
+  [[nodiscard]] bool isConverged() const;
 
   [[nodiscard]] std::vector<RouterSnapshot> routersSnapshot() const;
   [[nodiscard]] RibSnapshot ribSnapshot(const std::string &router_id) const;
