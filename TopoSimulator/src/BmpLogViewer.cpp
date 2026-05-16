@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
 #include <iterator>
 #include <mutex>
 #include <string>
@@ -67,6 +68,50 @@ bool createDeviceD3D(HWND hWnd) {
       static_cast<UINT>(std::size(feature_levels)), D3D11_SDK_VERSION, &sd,
       &g_pSwapChain, &g_pd3dDevice, &feature_level, &g_pd3dDeviceContext);
   return result == S_OK;
+}
+
+void configureDpiAwareness() {
+  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+}
+
+float dpiScaleForWindow(HWND hwnd) {
+  const UINT dpi = GetDpiForWindow(hwnd);
+  return dpi > 0 ? static_cast<float>(dpi) / 96.0f : 1.0f;
+}
+
+void loadReadableFont(ImGuiIO &io, float dpi_scale) {
+  ImFontConfig config;
+  config.OversampleH = 3;
+  config.OversampleV = 2;
+  config.PixelSnapH = true;
+
+  const float font_size = 16.0f * dpi_scale;
+  const std::array<const char *, 3> fonts = {
+      "C:\\Windows\\Fonts\\msyh.ttc",
+      "C:\\Windows\\Fonts\\segoeui.ttf",
+      "C:\\Windows\\Fonts\\arial.ttf",
+  };
+  for (const auto *font : fonts) {
+    if (std::filesystem::exists(font) &&
+        io.Fonts->AddFontFromFileTTF(font, font_size, &config,
+                                     io.Fonts->GetGlyphRangesChineseFull())) {
+      return;
+    }
+  }
+
+  io.Fonts->AddFontDefault();
+}
+
+void applyReadableStyle(float dpi_scale) {
+  ImGuiStyle &style = ImGui::GetStyle();
+  style.ScaleAllSizes(dpi_scale);
+  style.WindowRounding = 0.0f;
+  style.WindowBorderSize = 0.0f;
+  style.FrameRounding = 3.0f * dpi_scale;
+  style.GrabRounding = 3.0f * dpi_scale;
+  style.CellPadding = ImVec2(7.0f * dpi_scale, 4.0f * dpi_scale);
+  style.ItemSpacing = ImVec2(8.0f * dpi_scale, 6.0f * dpi_scale);
 }
 
 void cleanupRenderTarget() {
@@ -174,13 +219,13 @@ bool liveRecordMatches(const BmpLogRecord &record, const BmpLogQuery &query) {
 }
 
 void drawRecordTable(const std::vector<BmpLogRecord> &records,
-                     int &selected_index) {
+                     int &selected_index, float height) {
   constexpr ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
       ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
       ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
 
-  if (!ImGui::BeginTable("bmp-records", 10, flags, ImVec2(0, 360))) {
+  if (!ImGui::BeginTable("bmp-records", 10, flags, ImVec2(0, height))) {
     return;
   }
   ImGui::TableSetupScrollFreeze(0, 1);
@@ -237,8 +282,8 @@ std::string bufferText(const std::array<char, 128> &buffer) {
 }
 
 void viewerLoop() {
-  g_running = true;
   g_stop_requested = false;
+  configureDpiAwareness();
 
   WNDCLASSEXW wc = {sizeof(wc), CS_CLASSDC, wndProc, 0L, 0L,
                     GetModuleHandleW(nullptr), nullptr, nullptr, nullptr,
@@ -246,7 +291,8 @@ void viewerLoop() {
   RegisterClassExW(&wc);
   HWND hwnd = CreateWindowW(
       wc.lpszClassName, L"TopoSimulator BMP Log Viewer",
-      WS_OVERLAPPEDWINDOW, 100, 100, 1400, 850, nullptr, nullptr,
+      WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1500, 900, nullptr,
+      nullptr,
       wc.hInstance, nullptr);
 
   if (!createDeviceD3D(hwnd)) {
@@ -265,7 +311,10 @@ void viewerLoop() {
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+  const float dpi_scale = dpiScaleForWindow(hwnd);
+  loadReadableFont(io, dpi_scale);
   ImGui::StyleColorsDark();
+  applyReadableStyle(dpi_scale);
 
   ImGui_ImplWin32_Init(hwnd);
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
@@ -309,8 +358,15 @@ void viewerLoop() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
-    ImGui::Begin("BMP Logs");
+    ImGuiViewport *viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    constexpr ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    ImGui::Begin("BMP Logs", nullptr, window_flags);
 
     ImGui::Text("JSONL: %s", BmpLogManager::instance().logFile().string().c_str());
     ImGui::Text("SQLite: %s",
@@ -391,7 +447,12 @@ void viewerLoop() {
       selected_index = visible_records.empty() ? -1 : 0;
     }
 
-    drawRecordTable(visible_records, selected_index);
+    constexpr float raw_json_height = 170.0f;
+    const float table_height =
+        (std::max)(220.0f, ImGui::GetContentRegionAvail().y -
+                               raw_json_height - ImGui::GetFrameHeightWithSpacing() -
+                               ImGui::GetStyle().ItemSpacing.y * 2.0f);
+    drawRecordTable(visible_records, selected_index, table_height);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Selected Raw JSON");
@@ -429,10 +490,17 @@ void viewerLoop() {
 
 bool BmpLogViewer::startDetached() {
   std::lock_guard lock(g_thread_mutex);
-  if (g_running || (g_viewer_thread.joinable())) {
+  if (g_viewer_thread.joinable()) {
+    if (g_running) {
+      return false;
+    }
+    g_viewer_thread.join();
+  }
+  if (g_running) {
     return false;
   }
   g_stop_requested = false;
+  g_running = true;
   g_viewer_thread = std::thread(viewerLoop);
   return true;
 }
@@ -448,6 +516,7 @@ void BmpLogViewer::stopAndJoin() {
                        0, 0);
   }
   g_viewer_thread.join();
+  g_running = false;
 }
 
 bool BmpLogViewer::isRunning() { return g_running.load(); }

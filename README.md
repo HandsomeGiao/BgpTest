@@ -92,7 +92,7 @@ BGP Test Framework
 4. 模拟器读取拓扑，创建路由器节点和 BGP 邻居关系。
 5. 网络开始交换 BGP 报文并收敛。
 6. 模拟器生成 `tmp/<run>/bmp_collector.log` 和 `tmp/<run>/bmp_collector.sqlite`，记录 BGP 报文和拓扑事件。
-7. 交互式运行时自动打开 BMP 日志窗口；批处理或测试场景可使用 `--bmp-viewer off` 禁用窗口。
+7. 交互式运行时自动打开 BMP 日志窗口；批处理或测试场景可使用 `--bmp-viewer off` 禁用窗口。窗口被关闭后，可在 CLI 中执行 `bmp viewer` 或 `bmp open` 重新打开。
 8. 收敛后进入交互模式，可继续执行链路断开、节点关闭、路由发布或撤销等操作。
 
 ## 目录结构
@@ -142,6 +142,15 @@ ctest --test-dir TopoSimulator\build -C Release --output-on-failure
 ```powershell
 .\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\topo\sample_topology.json --bmp-viewer auto
 .\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\topo\sample_topology.json --bmp-viewer off
+```
+
+运行中可用以下命令控制 BMP 日志窗口：
+
+```text
+bmp viewer
+bmp open
+bmp close
+bmp status
 ```
 
 运行拓扑生成器：

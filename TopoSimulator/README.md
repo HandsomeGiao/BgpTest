@@ -116,6 +116,10 @@ The BMP viewer mode is controlled with `--bmp-viewer auto|on|off`:
 - `on` always opens the window.
 - `off` disables the window for tests, CI and scripted runs.
 
+If the viewer is closed during an interactive run, it can be opened again from
+the CLI with `bmp viewer` or `bmp open`. `bmp close` closes it, and `bmp status`
+prints whether the viewer thread is currently running.
+
 The build copies `TopoSimulator/topo/` next to the executable, so double-clicking the built exe has a ready-to-run sample topology:
 
 ```text
@@ -181,5 +185,8 @@ node up <router>
 advertise <router> <prefix>
 withdraw <router> <prefix>
 converge [timeout_ms]
+bmp viewer
+bmp close
+bmp status
 quit
 ```

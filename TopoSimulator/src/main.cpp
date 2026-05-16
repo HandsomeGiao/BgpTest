@@ -177,7 +177,7 @@ completionCandidates(const std::string &line,
   const auto routers = routerIds(manager);
 
   if (index == 0) {
-    return filteredCandidates({"advertise", "converge", "exit", "help",
+    return filteredCandidates({"advertise", "bmp", "converge", "exit", "help",
                                "link", "node", "quit", "show", "withdraw"},
                               prefix);
   }
@@ -207,6 +207,8 @@ completionCandidates(const std::string &line,
     }
   } else if ((command == "advertise" || command == "withdraw") && index == 1) {
     return filteredCandidates(routers, prefix);
+  } else if (command == "bmp" && index == 1) {
+    return filteredCandidates({"close", "open", "status", "viewer"}, prefix);
   }
 
   return {};
@@ -322,6 +324,7 @@ void printHelp() {
   command("advertise", "<router> <prefix>");
   command("withdraw", "<router> <prefix>");
   command("converge", "[timeout_ms]");
+  command("bmp", "viewer|open|close|status");
   command("quit");
   writeColored("[TAB] ", kWarning);
   std::cout << "complete commands and router names.\n";
@@ -513,6 +516,33 @@ int main(int argc, char **argv) {
         }
         if (parts[0] == "help") {
           printHelp();
+        } else if (parts[0] == "bmp") {
+          if (parts.size() != 2) {
+            printWarningLine("Usage: bmp <viewer|open|close|status>");
+            continue;
+          }
+          if (parts[1] == "viewer" || parts[1] == "open") {
+            if (toposim::BmpLogViewer::startDetached()) {
+              printSuccessLine("BMP viewer opened");
+            } else {
+              printWarningLine("BMP viewer is already running.");
+            }
+          } else if (parts[1] == "close") {
+            if (toposim::BmpLogViewer::isRunning()) {
+              toposim::BmpLogViewer::stopAndJoin();
+              printSuccessLine("BMP viewer closed");
+            } else {
+              printWarningLine("BMP viewer is not running.");
+            }
+          } else if (parts[1] == "status") {
+            if (toposim::BmpLogViewer::isRunning()) {
+              printSuccessLine("BMP viewer: running");
+            } else {
+              printInfoLine("BMP viewer: stopped");
+            }
+          } else {
+            printWarningLine("Usage: bmp <viewer|open|close|status>");
+          }
         } else if (parts.size() == 2 && parts[0] == "show" &&
                    parts[1] == "routers") {
           std::cout << toposim::toJson(manager.routersSnapshot()).dump(2)
