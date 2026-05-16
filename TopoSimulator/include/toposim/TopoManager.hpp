@@ -13,7 +13,7 @@
 
 #include "toposim/BgpRouter.hpp"
 #include "toposim/BgpTypes.hpp"
-#include "toposim/BmpCollector.hpp"
+#include "toposim/BmpLogManager.hpp"
 #include "toposim/ThreadPool.hpp"
 
 namespace toposim {
@@ -45,6 +45,7 @@ public:
   [[nodiscard]] std::vector<PeerSnapshot>
   peersSnapshot(const std::string &router_id) const;
   [[nodiscard]] const std::filesystem::path &logFile() const;
+  [[nodiscard]] const std::filesystem::path &databaseFile() const;
 
 private:
   struct LinkRuntime {
@@ -68,8 +69,9 @@ private:
   std::unordered_map<std::string, std::shared_ptr<BgpRouter>> routers_;
   std::unordered_map<std::string, LinkRuntime> links_;
   std::unique_ptr<ThreadPool> pool_;
-  std::unique_ptr<BmpCollector> bmp_;
   std::filesystem::path run_dir_;
+  std::filesystem::path bmp_log_file_;
+  std::filesystem::path bmp_database_file_;
   std::atomic<std::uint64_t> sequence_{0};
   bool running_ = false;
 };

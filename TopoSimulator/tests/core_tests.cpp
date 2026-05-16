@@ -112,8 +112,44 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   manager.withdrawPrefix("R1", prefix);
 
   require(manager.waitForConvergence(2s), "final convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+  toposim::BmpLogQuery query;
+  query.router = "R2";
+  query.limit = 20;
+  require(!toposim::BmpLogManager::instance().queryHistory(query).empty(),
+          "BMP SQLite history query returned no records for R2");
   require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
           "delayed MRAI advertisement revived a withdrawn route");
+  manager.stop();
+}
+
+void bmpHistorySupportsCombinedAttributeFilters() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "bmp-query-tests";
+  config.routers[1].asn = 65001;
+  config.routers[0].neighbors[0].remote_asn = 65001;
+  config.routers[0].neighbors[0].session_type = toposim::SessionType::Ebgp;
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  const std::string prefix = "198.51.100.0/24";
+  manager.originatePrefix("R1", prefix);
+  require(manager.waitForConvergence(2s), "prefix convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery query;
+  query.router = "R2";
+  query.msg_type = "UPDATE";
+  query.prefix = prefix;
+  query.asn = "65000";
+  query.next_hop = "1.1.1.1";
+  query.has_min_local_pref = true;
+  query.min_local_pref = 100;
+  query.limit = 10;
+  require(!toposim::BmpLogManager::instance().queryHistory(query).empty(),
+          "combined BMP SQLite attribute query returned no records");
   manager.stop();
 }
 
@@ -125,6 +161,7 @@ int main() {
     rejectsInvalidBgpRouterIds();
     rejectsInvalidLinks();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
+    bmpHistorySupportsCombinedAttributeFilters();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';
     return 1;

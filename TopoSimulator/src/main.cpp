@@ -6,6 +6,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "toposim/BmpLogManager.hpp"
+#include "toposim/BmpLogViewer.hpp"
 #include "toposim/TopoManager.hpp"
 #include "toposim/TopologyJson.hpp"
 
@@ -23,6 +26,8 @@ namespace {
 
 bool stdinIsTerminal();
 bool stdoutIsTerminal();
+
+enum class BmpViewerMode { Auto, On, Off };
 
 HANDLE consoleOutput() { return GetStdHandle(STD_OUTPUT_HANDLE); }
 
@@ -433,10 +438,42 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
   return topologies[selected - 1];
 }
 
+BmpViewerMode bmpViewerModeFromArgs(int argc, char **argv) {
+  BmpViewerMode mode = BmpViewerMode::Auto;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--bmp-viewer" && i + 1 < argc) {
+      const std::string value = argv[++i];
+      if (value == "off") {
+        mode = BmpViewerMode::Off;
+      } else if (value == "on") {
+        mode = BmpViewerMode::On;
+      } else if (value == "auto") {
+        mode = BmpViewerMode::Auto;
+      } else {
+        throw std::runtime_error(
+            "Invalid --bmp-viewer value. Use auto, on or off.");
+      }
+    }
+  }
+  return mode;
+}
+
+bool shouldStartBmpViewer(BmpViewerMode mode) {
+  if (mode == BmpViewerMode::On) {
+    return true;
+  }
+  if (mode == BmpViewerMode::Off) {
+    return false;
+  }
+  return stdinIsTerminal() && stdoutIsTerminal();
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
   try {
+    const auto bmp_viewer_mode = bmpViewerModeFromArgs(argc, argv);
     const auto topology_path = topologyPathFromArgs(argc, argv);
     if (!topology_path) {
       return 1;
@@ -445,6 +482,11 @@ int main(int argc, char **argv) {
     toposim::TopoManager manager(std::move(topology));
 
     manager.start();
+    if (shouldStartBmpViewer(bmp_viewer_mode)) {
+      if (!toposim::BmpLogViewer::startDetached()) {
+        printWarningLine("BMP viewer is already running.");
+      }
+    }
     const bool converged = manager.waitForConvergence(std::chrono::seconds(20));
     if (converged) {
       printSuccessLine("Initial convergence: ok");
@@ -452,6 +494,7 @@ int main(int argc, char **argv) {
       printWarningLine("Initial convergence: timeout");
     }
     printInfoLine("BMP collector log: " + manager.logFile().string());
+    printInfoLine("BMP SQLite DB: " + manager.databaseFile().string());
     printHelp();
 
     while (true) {
@@ -536,8 +579,12 @@ int main(int argc, char **argv) {
     }
 
     manager.stop();
+    toposim::BmpLogViewer::stopAndJoin();
+    toposim::BmpLogManager::instance().shutdown();
     return 0;
   } catch (const std::exception &ex) {
+    toposim::BmpLogViewer::stopAndJoin();
+    toposim::BmpLogManager::instance().shutdown();
     printErrorLine(std::string("Fatal: ") + ex.what());
     waitBeforeExitIfDoubleClicked();
     return 1;

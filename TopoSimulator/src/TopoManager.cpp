@@ -78,7 +78,9 @@ TopoManager::TopoManager(TopologyConfig config) : config_(std::move(config)) {
       defaultWorkerCount(config_.simulation.worker_threads);
   pool_ = std::make_unique<ThreadPool>(worker_count);
   run_dir_ = makeRunDirectory();
-  bmp_ = std::make_unique<BmpCollector>(run_dir_ / "bmp_collector.log");
+  bmp_log_file_ = run_dir_ / "bmp_collector.log";
+  bmp_database_file_ = run_dir_ / "bmp_collector.sqlite";
+  BmpLogManager::instance().initialize(bmp_log_file_, bmp_database_file_);
 }
 
 TopoManager::~TopoManager() { stop(); }
@@ -93,7 +95,7 @@ void TopoManager::start() {
     }
   }
 
-  bmp_->recordTopologyEvent(
+  BmpLogManager::instance().recordTopologyEvent(
       "simulation_started",
       {
           {"name", config_.simulation.name},
@@ -128,9 +130,9 @@ void TopoManager::stop() {
     pool_->stop();
     pool_.reset();
   }
-  if (bmp_) {
-    bmp_->recordTopologyEvent("simulation_stopped", BmpEventDetail{});
-  }
+  BmpLogManager::instance().recordTopologyEvent("simulation_stopped",
+                                                BmpEventDetail{});
+  BmpLogManager::instance().flush();
 }
 
 void TopoManager::sendMessage(const std::string &from, const std::string &to,
@@ -139,7 +141,7 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
                               std::function<bool()> delivery_guard) {
   {
     std::lock_guard lock(mutex_);
-    if (!running_ || !pool_ || !bmp_) {
+    if (!running_ || !pool_ || !BmpLogManager::instance().initialized()) {
       return;
     }
     auto dst_it = routers_.find(to);
@@ -153,11 +155,10 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
     }
     auto destination = dst_it->second;
     const auto delay_ms = link->config.delay_ms;
-    auto *collector = bmp_.get();
     message.sequence = ++sequence_;
 
-    pool_->enqueue([this, destination = std::move(destination), collector,
-                    delay_ms, extra_delay,
+    pool_->enqueue([this, destination = std::move(destination), delay_ms,
+                    extra_delay,
                     delivery_guard = std::move(delivery_guard),
                     message = std::move(message)]() mutable {
       if (extra_delay.count() > 0) {
@@ -172,7 +173,7 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       if (!messageStillDeliverable(message.from, message.to)) {
         return;
       }
-      collector->recordReceive(message.to, message);
+      BmpLogManager::instance().recordReceive(message.to, message);
       destination->receiveMessage(message);
     });
   }
@@ -193,8 +194,9 @@ void TopoManager::setLinkState(const std::string &a, const std::string &b,
     router_b = routers_.at(b);
   }
 
-  bmp_->recordTopologyEvent(enabled ? "link_up" : "link_down",
-                            {{"a", a}, {"b", b}});
+  BmpLogManager::instance().recordTopologyEvent(enabled ? "link_up"
+                                                       : "link_down",
+                                                {{"a", a}, {"b", b}});
   if (enabled) {
     router_a->neighborUp(b);
     router_b->neighborUp(a);
@@ -230,8 +232,9 @@ void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
     }
   }
 
-  bmp_->recordTopologyEvent(enabled ? "router_up" : "router_down",
-                            {{"router", router_id}});
+  BmpLogManager::instance().recordTopologyEvent(enabled ? "router_up"
+                                                       : "router_down",
+                                                {{"router", router_id}});
   if (enabled) {
     router->start();
     for (const auto &peer_router : peer_routers) {
@@ -252,8 +255,8 @@ void TopoManager::originatePrefix(const std::string &router_id,
     std::lock_guard lock(mutex_);
     router = routers_.at(router_id);
   }
-  bmp_->recordTopologyEvent("manual_advertise",
-                            {{"router", router_id}, {"prefix", prefix}});
+  BmpLogManager::instance().recordTopologyEvent(
+      "manual_advertise", {{"router", router_id}, {"prefix", prefix}});
   router->originatePrefix(prefix);
 }
 
@@ -264,8 +267,8 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
     std::lock_guard lock(mutex_);
     router = routers_.at(router_id);
   }
-  bmp_->recordTopologyEvent("manual_withdraw",
-                            {{"router", router_id}, {"prefix", prefix}});
+  BmpLogManager::instance().recordTopologyEvent(
+      "manual_withdraw", {{"router", router_id}, {"prefix", prefix}});
   router->withdrawLocalPrefix(prefix);
 }
 
@@ -325,7 +328,11 @@ TopoManager::peersSnapshot(const std::string &router_id) const {
 }
 
 const std::filesystem::path &TopoManager::logFile() const {
-  return bmp_->logFile();
+  return bmp_log_file_;
+}
+
+const std::filesystem::path &TopoManager::databaseFile() const {
+  return bmp_database_file_;
 }
 
 std::string TopoManager::edgeKey(const std::string &a, const std::string &b) {

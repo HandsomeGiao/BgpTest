@@ -1,12 +1,12 @@
 # TopoSimulator
 
-`TopoSimulator` is a C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, waits for convergence, then accepts interactive topology changes.
+`TopoSimulator` is a C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, opens a lightweight BMP observation window for interactive runs, waits for convergence, then accepts interactive topology changes.
 
 Supported environment: Windows + MSVC + vcpkg only.
 
 ## Dependency Boundary
 
-Core simulation code must stay pure C++20: `BgpRouter`, `TopoManager`, `ThreadPool`, `BgpTypes` and their protocol/state-machine logic may only use the C++ standard library plus project headers. Third-party libraries and Windows APIs are limited to peripheral facilities such as the CLI, colored console output, log I/O, JSON topology loading and JSON display adapters. Core APIs should expose standard-library data structures; peripheral adapters convert them to JSON, text logs or console output.
+Protocol and route-decision code must stay pure C++20: `BgpRouter`, `ThreadPool`, `BgpTypes` and their state-machine logic may only use the C++ standard library plus project headers. Third-party libraries and Windows APIs are limited to peripheral facilities such as the CLI, colored console output, JSON topology loading, BMP log persistence and the BMP viewer. Core APIs should expose standard-library data structures; peripheral adapters convert them to JSON, text logs, SQLite rows or GUI tables.
 
 ## Architecture and Design
 
@@ -15,13 +15,14 @@ Core simulation code must stay pure C++20: `BgpRouter`, `TopoManager`, `ThreadPo
 ```text
 TopoSimulator.exe
 ├─ CLI / Windows console / command completion
+├─ BmpLogViewer: ImGui + Win32/DX11 live and historical BMP log browser
 ├─ toposim_io
 │  └─ TopologyJson: JSON topology loading and JSON snapshot formatting
 └─ toposim
    ├─ TopoManager: topology lifecycle, link state, node state, message delivery
    ├─ BgpRouter: BGP speaker state machine, RIBs, route selection, route export
    ├─ ThreadPool: asynchronous delivery workers and convergence idle detection
-   ├─ BmpCollector: BMP-like JSON Lines receive/event log writer
+   ├─ BmpLogManager: BMP-like JSON Lines writer, SQLite history store and live buffer
    └─ BgpTypes: protocol messages, route attributes, config and snapshot structs
 ```
 
@@ -31,15 +32,16 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 1. The CLI finds a topology file from `--topology` or the current directory's `topo/` folder.
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
-3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and opens the BMP log.
+3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
 4. Each router starts by sending OPEN messages to enabled neighbors. After sessions become established, routers exchange KEEPALIVE and UPDATE messages.
 5. `TopoManager::sendMessage` is the only message transport path. It checks router/link state, assigns a sequence number, applies MRAI/link delay through the worker pool, rechecks delivery state immediately before receipt, records the receive event, then delivers the message to the destination router.
 6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so MRAI-delayed UPDATEs are included in the stability test.
-7. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
+7. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
+8. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
 
 ### Core Simulation Model
 
-`TopoManager` owns topology-wide runtime state: routers, links, the worker pool, sequence numbers and the BMP collector. It exposes high-level operations rather than letting routers mutate global topology directly. This gives all topology disturbances a single coordination point.
+`TopoManager` owns topology-wide runtime state: routers, links, the worker pool, sequence numbers and BMP logging integration. It exposes high-level operations rather than letting routers mutate global topology directly. This gives all topology disturbances a single coordination point.
 
 `BgpRouter` models one BGP speaker. It owns neighbor configuration, peer states, local originated routes, Adj-RIB-In, Loc-RIB and Adj-RIB-Out. The base implementation provides simplified RFC4271-style behavior: session establishment, UPDATE import, best-path selection, export policy, route reflection, EBGP AS_PATH prepending and MRAI scheduling.
 
@@ -87,6 +89,8 @@ Dependencies are declared in `vcpkg.json`:
 
 - `nlohmann-json`
 - `spdlog`
+- `sqlite3`
+- `imgui` with the Win32 and DX11 backends
 
 ## Test
 
@@ -106,13 +110,19 @@ The current tests cover topology validation and an MRAI regression where a delay
 
 You can also double-click `TopoSimulator.exe` after building. Without `--topology`, it only looks in the current working directory's `topo/` folder, lists the available `*.json` topology files, and lets you choose one. If no JSON topology exists there, it prints a message and exits.
 
+The BMP viewer mode is controlled with `--bmp-viewer auto|on|off`:
+
+- `auto` is the default. It opens the ImGui window only for an interactive console.
+- `on` always opens the window.
+- `off` disables the window for tests, CI and scripted runs.
+
 The build copies `TopoSimulator/topo/` next to the executable, so double-clicking the built exe has a ready-to-run sample topology:
 
 ```text
 TopoSimulator/build/Release/topo/sample_topology.json
 ```
 
-Each run creates a directory below `tmp/` and writes `bmp_collector.log` as JSON lines. Every received BGP message includes timestamp, receiver, sender, sequence, message type and full message payload.
+Each run creates a directory below `tmp/` and writes both `bmp_collector.log` and `bmp_collector.sqlite`. The JSON Lines file preserves the raw event stream. The SQLite database stores indexed event rows plus prefix and AS_PATH helper tables so the viewer can query by router, peer, message type, prefix, AS number, NEXT_HOP and local-pref without reparsing the log.
 
 ## JSON Topology
 

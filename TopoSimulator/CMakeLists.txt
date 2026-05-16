@@ -18,11 +18,13 @@ enable_testing()
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 add_library(toposim
+    src/BmpLogManager.cpp
     src/BgpRouter.cpp
     src/BgpTypes.cpp
-    src/BmpCollector.cpp
     src/ThreadPool.cpp
     src/TopoManager.cpp
 )
@@ -33,6 +35,7 @@ target_include_directories(toposim
 )
 
 target_compile_options(toposim PRIVATE /W4 /permissive-)
+target_link_libraries(toposim PRIVATE unofficial::sqlite3::sqlite3)
 
 add_library(toposim_io
     src/TopologyJson.cpp
@@ -46,8 +49,18 @@ target_link_libraries(toposim_io
 
 target_compile_options(toposim_io PRIVATE /W4 /permissive-)
 
-add_executable(TopoSimulator src/main.cpp)
-target_link_libraries(TopoSimulator PRIVATE toposim_io spdlog::spdlog)
+add_executable(TopoSimulator
+    src/main.cpp
+    src/BmpLogViewer.cpp
+)
+target_link_libraries(TopoSimulator
+    PRIVATE
+        toposim_io
+        spdlog::spdlog
+        imgui::imgui
+        d3d11
+        dxgi
+)
 target_compile_options(TopoSimulator PRIVATE /W4 /permissive-)
 
 add_custom_command(TARGET TopoSimulator POST_BUILD

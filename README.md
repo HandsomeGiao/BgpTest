@@ -2,7 +2,7 @@
 
 本项目是一个面向大规模 BGP 网络收敛测试的实验框架。它由两个相互隔离的子项目组成：
 
-- `TopoSimulator/`：纯 C++20 实现的 BGP 拓扑模拟器，负责读取拓扑 JSON、启动路由器节点、模拟 BGP 报文传播、记录 BMP 风格日志，并支持运行时拓扑扰动。
+- `TopoSimulator/`：纯 C++20 实现的 BGP 拓扑模拟器，负责读取拓扑 JSON、启动路由器节点、模拟 BGP 报文传播、记录 BMP 风格日志、打开实时观察窗口，并支持运行时拓扑扰动。
 - `TopoGenerator/`：PyQt6 实现的可视化拓扑生成器，负责通过图形界面创建路由器、链路和 BGP 邻居关系，并导出模拟器可读取的 JSON 文件。
 
 项目目标是提供一个足够灵活的 BGP 网络协议测试底座，让使用者可以在基础 BGP 行为之上扩展自定义协议、策略和收敛逻辑。
@@ -19,7 +19,8 @@
 - 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
-- 生成 `bmp_collector.log`，以 JSON Lines 形式记录所有节点收到的 BGP 报文。
+- 生成 `bmp_collector.log` 和 `bmp_collector.sqlite`，分别用于 JSON Lines 原始记录和 SQLite 历史查询。
+- 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、实时过滤报文，并按路由器、邻居、消息类型、前缀、AS_PATH、NEXT_HOP 和 local-pref 等条件查询历史报文。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
 - 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置。
 - 提供 CTest 测试目标，覆盖核心拓扑校验和 MRAI 撤销场景。
@@ -38,7 +39,8 @@ BGP Test Framework
    ├─ TopoManager
    ├─ BgpRouter
    ├─ ThreadPool
-   ├─ BmpCollector
+   ├─ BmpLogManager
+   ├─ BmpLogViewer
    └─ BGP message / route data model
 ```
 
@@ -49,7 +51,7 @@ BGP Test Framework
 依赖边界规则：
 
 - 核心模拟层只能使用纯 C++20 标准库和项目自身头文件，包括 `BgpRouter`、`TopoManager`、`ThreadPool`、`BgpTypes` 等路由器节点、BGP 管理器、协议状态机和决策逻辑。
-- 第三方库和 Windows API 只能用于外围设施，例如命令行交互、颜色输出、日志输入输出、JSON 拓扑读取和 JSON 格式化展示。
+- 协议状态机和路由决策保持纯 C++20；第三方库和 Windows API 仅用于外围设施，例如命令行交互、颜色输出、JSON 拓扑读取、BMP 日志持久化和可视化窗口。
 - 如果需要在核心层暴露运行状态，应返回标准库数据结构；由外围适配层负责转换成 JSON、日志文本或控制台输出。
 
 主要模块：
@@ -58,7 +60,8 @@ BGP Test Framework
 - `TopoManager`：管理整个拓扑的生命周期，负责启动、停止、链路状态变化、节点状态变化，以及路由器之间的报文转发。
 - `TopoManager` 会在延迟报文真正投递前重新检查链路和节点状态，避免链路或节点已关闭后仍投递旧报文。
 - `ThreadPool`：提供多线程任务执行能力，用于并发模拟报文投递和节点处理。
-- `BmpCollector`：模拟 BMP collector，把 BGP 节点收到的报文和拓扑事件写入日志。
+- `BmpLogManager`：模拟 BMP collector，把 BGP 节点收到的报文和拓扑事件写入 JSON Lines 与 SQLite，并维护实时窗口使用的内存缓冲。
+- `BmpLogViewer`：基于 ImGui 的轻量窗口，用于实时观察收敛过程和查询分析历史 BMP 报文。
 - `BgpTypes`：定义 BGP 消息、路径属性、邻居配置、路由条目和拓扑配置等数据结构。
 
 默认无参数启动时，模拟器只会检查当前工作目录下的 `topo/` 文件夹，并列出其中可用的 `*.json` 拓扑文件。如果没有可用拓扑，会提示后退出。
@@ -88,8 +91,9 @@ BGP Test Framework
 3. 启动 `TopoSimulator`。
 4. 模拟器读取拓扑，创建路由器节点和 BGP 邻居关系。
 5. 网络开始交换 BGP 报文并收敛。
-6. 模拟器生成 `tmp/<run>/bmp_collector.log`，记录 BGP 报文和拓扑事件。
-7. 收敛后进入交互模式，可继续执行链路断开、节点关闭、路由发布或撤销等操作。
+6. 模拟器生成 `tmp/<run>/bmp_collector.log` 和 `tmp/<run>/bmp_collector.sqlite`，记录 BGP 报文和拓扑事件。
+7. 交互式运行时自动打开 BMP 日志窗口；批处理或测试场景可使用 `--bmp-viewer off` 禁用窗口。
+8. 收敛后进入交互模式，可继续执行链路断开、节点关闭、路由发布或撤销等操作。
 
 ## 目录结构
 
@@ -131,6 +135,13 @@ ctest --test-dir TopoSimulator\build -C Release --output-on-failure
 
 ```powershell
 .\TopoSimulator\build\Release\TopoSimulator.exe
+```
+
+显式控制 BMP 日志窗口：
+
+```powershell
+.\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\topo\sample_topology.json --bmp-viewer auto
+.\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\topo\sample_topology.json --bmp-viewer off
 ```
 
 运行拓扑生成器：
