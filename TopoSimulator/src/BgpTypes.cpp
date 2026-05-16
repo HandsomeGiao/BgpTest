@@ -195,6 +195,7 @@ void to_json(nlohmann::json &j, const NeighborConfig &config) {
       {"rr_client", config.rr_client},
       {"enabled", config.enabled},
       {"hold_time_seconds", config.hold_time_seconds},
+      {"mrai_ms", config.mrai_ms},
   };
 }
 
@@ -208,6 +209,7 @@ void from_json(const nlohmann::json &j, NeighborConfig &config) {
   getIfPresent(j, "rr_client", config.rr_client);
   getIfPresent(j, "enabled", config.enabled);
   getIfPresent(j, "hold_time_seconds", config.hold_time_seconds);
+  getIfPresent(j, "mrai_ms", config.mrai_ms);
 }
 
 void to_json(nlohmann::json &j, const RouterConfig &config) {

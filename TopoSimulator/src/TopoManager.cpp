@@ -110,7 +110,8 @@ void TopoManager::stop() {
 }
 
 void TopoManager::sendMessage(const std::string &from, const std::string &to,
-                              BgpMessage message) {
+                              BgpMessage message,
+                              std::chrono::milliseconds extra_delay) {
   std::shared_ptr<BgpRouter> destination;
   std::uint32_t delay_ms = 0;
   {
@@ -135,8 +136,11 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
   }
 
   auto *collector = bmp_.get();
-  pool_->enqueue([destination = std::move(destination), collector, delay_ms,
+  pool_->enqueue([destination = std::move(destination), collector, delay_ms, extra_delay,
                   message = std::move(message)]() mutable {
+    if (extra_delay.count() > 0) {
+      std::this_thread::sleep_for(extra_delay);
+    }
     if (delay_ms > 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
     }

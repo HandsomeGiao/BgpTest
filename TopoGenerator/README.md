@@ -15,7 +15,7 @@ python -m topogenerator.main
 - Add routers directly on the canvas.
 - Double-click an existing router to configure router id, ASN, cluster id and originated prefixes.
 - Toggle `Link Mode (Q)`, then click two routers to create a link with `delay_ms` set to 0.
-- Select an existing link and click `Edit` to configure state, delay and route-reflector client direction.
+- Select an existing link and click `Edit` to configure state, link delay, A->B/B->A MRAI and route-reflector client direction.
 - Right-drag the canvas to pan the view, and use the mouse wheel to zoom.
 - Export JSON into the simulator's current working directory `topo/` folder, or pass it explicitly with `TopoSimulator --topology`.
 

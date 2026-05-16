@@ -13,6 +13,7 @@
 - 模拟 BGP OPEN、KEEPALIVE、UPDATE、NOTIFICATION 等基础报文。
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
+- 支持邻居级 MRAI，用于控制同一前缀向同一邻居重复广告的最小间隔。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 生成 `bmp_collector.log`，以 JSON Lines 形式记录所有节点收到的 BGP 报文。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
@@ -61,7 +62,7 @@ BGP Test Framework
 - 添加、编辑和删除路由器节点。
 - 配置 router id、ASN、cluster id 和本地起源前缀。
 - 添加和编辑节点之间的链路。
-- 配置链路状态、延迟和 RR client 方向。
+- 配置链路状态、链路延迟、双向 MRAI 和 RR client 方向。
 - 导出 `TopoSimulator` 可读取的 JSON 拓扑文件。
 
 详细使用说明见 [TopoGenerator/README.md](TopoGenerator/README.md)。

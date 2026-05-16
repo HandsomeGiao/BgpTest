@@ -55,6 +55,8 @@ The simulator accepts:
 
 Neighbor entries may be explicit. If a link exists but one side omits the neighbor, `TopoManager` derives a symmetric neighbor using the routers' ASNs.
 
+Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE advertisements. `mrai_ms=0` disables MRAI. Withdrawals are sent immediately.
+
 Route reflector support is modeled through:
 
 - Per-neighbor flag on the reflector: `"rr_client": true`

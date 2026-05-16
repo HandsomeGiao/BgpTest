@@ -127,6 +127,7 @@ void BgpRouter::stop() {
   adj_rib_in_.clear();
   loc_rib_.clear();
   adj_rib_out_.clear();
+  mrai_next_advertisement_.clear();
   for (auto &[_, state] : peer_states_) {
     state = PeerState::Idle;
   }
@@ -170,6 +171,7 @@ void BgpRouter::neighborDown(const std::string &peer_id) {
       adj_rib_in_.erase(it);
     }
     adj_rib_out_.erase(peer_id);
+    mrai_next_advertisement_.erase(peer_id);
   }
 
   if (!changed_prefixes.empty()) {
@@ -237,6 +239,7 @@ nlohmann::json BgpRouter::peerSnapshot() const {
         {"remote_asn", neighbor.remote_asn},
         {"session_type", toString(neighbor.session_type)},
         {"rr_client", neighbor.rr_client},
+        {"mrai_ms", neighbor.mrai_ms},
         {"enabled", neighbor.enabled},
         {"state", toString(peer_states_.at(peer_id))},
     });
@@ -436,13 +439,14 @@ BgpRouter::selectBestRoute(const std::string &,
 }
 
 void BgpRouter::sendMessage(const std::string &peer_id,
-                            BgpMessage message) const {
+                            BgpMessage message,
+                            std::chrono::milliseconds extra_delay) const {
   if (!manager_) {
     return;
   }
   message.from = config_.id;
   message.to = peer_id;
-  manager_->sendMessage(config_.id, peer_id, std::move(message));
+  manager_->sendMessage(config_.id, peer_id, std::move(message), extra_delay);
 }
 
 void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
@@ -484,7 +488,41 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
     update.path_attributes = route->attributes;
   }
   message.update = std::move(update);
-  sendMessage(neighbor.id, std::move(message));
+  const auto mrai_delay = mraiDelayForUpdate(neighbor, nlri, withdrawn);
+  sendMessage(neighbor.id, std::move(message), mrai_delay);
+}
+
+std::chrono::milliseconds
+BgpRouter::mraiDelayForUpdate(const NeighborConfig &neighbor,
+                              const std::vector<std::string> &nlri,
+                              const std::vector<std::string> &withdrawn) {
+  if (neighbor.mrai_ms == 0 || nlri.empty() || !withdrawn.empty()) {
+    return std::chrono::milliseconds{0};
+  }
+
+  const auto interval = std::chrono::milliseconds(neighbor.mrai_ms);
+  const auto now = std::chrono::steady_clock::now();
+  auto delay = std::chrono::milliseconds{0};
+
+  std::lock_guard lock(mutex_);
+  for (const auto &prefix : nlri) {
+    auto &next_available = mrai_next_advertisement_[neighbor.id][prefix];
+    if (next_available.time_since_epoch().count() == 0 ||
+        next_available <= now) {
+      next_available = now + interval;
+      continue;
+    }
+
+    const auto prefix_delay =
+        std::chrono::duration_cast<std::chrono::milliseconds>(next_available -
+                                                              now);
+    if (prefix_delay > delay) {
+      delay = prefix_delay;
+    }
+    next_available += interval;
+  }
+
+  return delay;
 }
 
 void BgpRouter::runDecisionProcessFor(

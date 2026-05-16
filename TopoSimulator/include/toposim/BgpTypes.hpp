@@ -63,6 +63,7 @@ struct NeighborConfig {
   bool rr_client = false;
   bool enabled = true;
   std::uint32_t hold_time_seconds = 90;
+  std::uint32_t mrai_ms = 0;
 };
 
 struct RouterConfig {

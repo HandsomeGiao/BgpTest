@@ -36,6 +36,8 @@ class LinkEdge:
     delay_ms: int = 0
     rr_client_from_a: bool = False
     rr_client_from_b: bool = False
+    mrai_ms_from_a: int = 0
+    mrai_ms_from_b: int = 0
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "LinkEdge":
@@ -46,6 +48,8 @@ class LinkEdge:
             delay_ms=int(data.get("delay_ms", 0)),
             rr_client_from_a=bool(data.get("rr_client_from_a", False)),
             rr_client_from_b=bool(data.get("rr_client_from_b", False)),
+            mrai_ms_from_a=int(data.get("mrai_ms_from_a", 0)),
+            mrai_ms_from_b=int(data.get("mrai_ms_from_b", 0)),
         )
 
 
@@ -106,6 +110,7 @@ class TopologyModel:
                     "remote_asn": router_b.asn,
                     "session_type": session_type,
                     "rr_client": link.rr_client_from_a,
+                    "mrai_ms": link.mrai_ms_from_a,
                     "enabled": link.enabled,
                 }
             )
@@ -115,6 +120,7 @@ class TopologyModel:
                     "remote_asn": router_a.asn,
                     "session_type": session_type,
                     "rr_client": link.rr_client_from_b,
+                    "mrai_ms": link.mrai_ms_from_b,
                     "enabled": link.enabled,
                 }
             )
@@ -149,6 +155,8 @@ class TopologyModel:
                     "delay_ms": link.delay_ms,
                     "rr_client_from_a": link.rr_client_from_a,
                     "rr_client_from_b": link.rr_client_from_b,
+                    "mrai_ms_from_a": link.mrai_ms_from_a,
+                    "mrai_ms_from_b": link.mrai_ms_from_b,
                 }
                 for link in self.links
             ],

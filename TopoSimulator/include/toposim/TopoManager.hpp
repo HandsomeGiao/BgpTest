@@ -33,7 +33,8 @@ public:
   void start();
   void stop();
   void sendMessage(const std::string &from, const std::string &to,
-                   BgpMessage message);
+                   BgpMessage message,
+                   std::chrono::milliseconds extra_delay = std::chrono::milliseconds{0});
   void setLinkState(const std::string &a, const std::string &b, bool enabled);
   void setRouterState(const std::string &router_id, bool enabled);
   void originatePrefix(const std::string &router_id, const std::string &prefix);

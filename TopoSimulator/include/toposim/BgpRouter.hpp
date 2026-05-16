@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -65,7 +66,8 @@ protected:
   selectBestRoute(const std::string &prefix,
                   const std::vector<RouteEntry> &candidates) const;
 
-  void sendMessage(const std::string &peer_id, BgpMessage message) const;
+  void sendMessage(const std::string &peer_id, BgpMessage message,
+                   std::chrono::milliseconds extra_delay = std::chrono::milliseconds{0}) const;
 
 private:
   void sendOpenToNeighbor(const NeighborConfig &neighbor);
@@ -74,6 +76,9 @@ private:
                             const std::vector<std::string> &nlri,
                             const std::vector<std::string> &withdrawn,
                             const std::optional<RouteEntry> &route);
+  std::chrono::milliseconds mraiDelayForUpdate(const NeighborConfig &neighbor,
+                                               const std::vector<std::string> &nlri,
+                                               const std::vector<std::string> &withdrawn);
   void runDecisionProcessFor(const std::set<std::string> &changed_prefixes);
   void disseminateChangedRoutes(
       const std::map<std::string, std::optional<RouteEntry>> &changes);
@@ -95,6 +100,8 @@ private:
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_in_;
   std::map<std::string, RouteEntry> loc_rib_;
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out_;
+  std::map<std::string, std::map<std::string, std::chrono::steady_clock::time_point>>
+      mrai_next_advertisement_;
 };
 
 } // namespace toposim

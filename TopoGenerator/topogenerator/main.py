@@ -123,6 +123,12 @@ class LinkDialog(QDialog):
         self.delay_spin = QSpinBox()
         self.delay_spin.setRange(0, 60_000)
         self.delay_spin.setValue(0)
+        self.mrai_a_spin = QSpinBox()
+        self.mrai_a_spin.setRange(0, 3_600_000)
+        self.mrai_a_spin.setValue(0)
+        self.mrai_b_spin = QSpinBox()
+        self.mrai_b_spin.setRange(0, 3_600_000)
+        self.mrai_b_spin.setValue(0)
         self.rr_a_check = QCheckBox("A treats B as RR client")
         self.rr_b_check = QCheckBox("B treats A as RR client")
 
@@ -131,6 +137,8 @@ class LinkDialog(QDialog):
             self.b_combo.setCurrentText(link.b)
             self.enabled_check.setChecked(link.enabled)
             self.delay_spin.setValue(link.delay_ms)
+            self.mrai_a_spin.setValue(link.mrai_ms_from_a)
+            self.mrai_b_spin.setValue(link.mrai_ms_from_b)
             self.rr_a_check.setChecked(link.rr_client_from_a)
             self.rr_b_check.setChecked(link.rr_client_from_b)
 
@@ -139,6 +147,8 @@ class LinkDialog(QDialog):
         form.addRow("B", self.b_combo)
         form.addRow("Enabled", self.enabled_check)
         form.addRow("Delay ms", self.delay_spin)
+        form.addRow("A -> B MRAI ms", self.mrai_a_spin)
+        form.addRow("B -> A MRAI ms", self.mrai_b_spin)
         form.addRow("RR client", self.rr_a_check)
         form.addRow("RR client", self.rr_b_check)
 
@@ -164,6 +174,8 @@ class LinkDialog(QDialog):
             delay_ms=self.delay_spin.value(),
             rr_client_from_a=self.rr_a_check.isChecked(),
             rr_client_from_b=self.rr_b_check.isChecked(),
+            mrai_ms_from_a=self.mrai_a_spin.value(),
+            mrai_ms_from_b=self.mrai_b_spin.value(),
         )
 
 
@@ -457,6 +469,8 @@ class MainWindow(QMainWindow):
                 item.link.delay_ms = updated.delay_ms
                 item.link.rr_client_from_a = updated.rr_client_from_a
                 item.link.rr_client_from_b = updated.rr_client_from_b
+                item.link.mrai_ms_from_a = updated.mrai_ms_from_a
+                item.link.mrai_ms_from_b = updated.mrai_ms_from_b
                 self.scene.rebuild()
                 self.clear_pending_link()
 
