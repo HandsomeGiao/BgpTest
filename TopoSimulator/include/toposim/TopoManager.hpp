@@ -10,8 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include "toposim/BgpRouter.hpp"
 #include "toposim/BgpTypes.hpp"
 #include "toposim/BmpCollector.hpp"
@@ -27,9 +25,6 @@ public:
   TopoManager(const TopoManager &) = delete;
   TopoManager &operator=(const TopoManager &) = delete;
 
-  static TopologyConfig
-  loadTopology(const std::filesystem::path &topology_file);
-
   void start();
   void stop();
   void sendMessage(const std::string &from, const std::string &to,
@@ -41,9 +36,9 @@ public:
   void withdrawPrefix(const std::string &router_id, const std::string &prefix);
   bool waitForConvergence(std::chrono::milliseconds timeout);
 
-  [[nodiscard]] nlohmann::json routersSnapshot() const;
-  [[nodiscard]] nlohmann::json ribSnapshot(const std::string &router_id) const;
-  [[nodiscard]] nlohmann::json
+  [[nodiscard]] std::vector<RouterSnapshot> routersSnapshot() const;
+  [[nodiscard]] RibSnapshot ribSnapshot(const std::string &router_id) const;
+  [[nodiscard]] std::vector<PeerSnapshot>
   peersSnapshot(const std::string &router_id) const;
   [[nodiscard]] const std::filesystem::path &logFile() const;
 

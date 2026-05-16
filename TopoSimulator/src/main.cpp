@@ -17,6 +17,7 @@
 #include <spdlog/spdlog.h>
 
 #include "toposim/TopoManager.hpp"
+#include "toposim/TopologyJson.hpp"
 
 namespace {
 
@@ -123,7 +124,7 @@ std::vector<std::string> splitForCompletion(const std::string &line) {
 std::vector<std::string> routerIds(const toposim::TopoManager &manager) {
   std::vector<std::string> ids;
   for (const auto &router : manager.routersSnapshot()) {
-    ids.push_back(router.at("id").get<std::string>());
+    ids.push_back(router.id);
   }
   std::sort(ids.begin(), ids.end());
   return ids;
@@ -431,7 +432,7 @@ int main(int argc, char **argv) {
     if (!topology_path) {
       return 1;
     }
-    auto topology = toposim::TopoManager::loadTopology(*topology_path);
+    auto topology = toposim::loadTopologyConfig(*topology_path);
     toposim::TopoManager manager(std::move(topology));
 
     manager.start();
@@ -462,13 +463,16 @@ int main(int argc, char **argv) {
           printHelp();
         } else if (parts.size() == 2 && parts[0] == "show" &&
                    parts[1] == "routers") {
-          std::cout << manager.routersSnapshot().dump(2) << '\n';
+          std::cout << toposim::toJson(manager.routersSnapshot()).dump(2)
+                    << '\n';
         } else if (parts.size() == 3 && parts[0] == "show" &&
                    parts[1] == "rib") {
-          std::cout << manager.ribSnapshot(parts[2]).dump(2) << '\n';
+          std::cout << toposim::toJson(manager.ribSnapshot(parts[2])).dump(2)
+                    << '\n';
         } else if (parts.size() == 3 && parts[0] == "show" &&
                    parts[1] == "peers") {
-          std::cout << manager.peersSnapshot(parts[2]).dump(2) << '\n';
+          std::cout << toposim::toJson(manager.peersSnapshot(parts[2])).dump(2)
+                    << '\n';
         } else if (parts.size() == 4 && parts[0] == "link") {
           manager.setLinkState(parts[2], parts[3], parts[1] == "up");
           manager.waitForConvergence(std::chrono::seconds(20));

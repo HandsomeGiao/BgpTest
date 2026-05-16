@@ -2,13 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
-
-#include <spdlog/spdlog.h>
 
 namespace toposim {
 namespace {
@@ -50,18 +47,6 @@ TopoManager::TopoManager(TopologyConfig config) : config_(std::move(config)) {
 
 TopoManager::~TopoManager() { stop(); }
 
-TopologyConfig
-TopoManager::loadTopology(const std::filesystem::path &topology_file) {
-  std::ifstream in(topology_file);
-  if (!in) {
-    throw std::runtime_error("Unable to open topology file: " +
-                             topology_file.string());
-  }
-  nlohmann::json j;
-  in >> j;
-  return j.get<TopologyConfig>();
-}
-
 void TopoManager::start() {
   std::vector<std::shared_ptr<BgpRouter>> routers;
   {
@@ -72,12 +57,15 @@ void TopoManager::start() {
     }
   }
 
-  bmp_->recordTopologyEvent("simulation_started",
-                            {
-                                {"name", config_.simulation.name},
-                                {"router_count", routers.size()},
-                                {"link_count", links_.size()},
-                            });
+  bmp_->recordTopologyEvent(
+      "simulation_started",
+      {
+          {"name", config_.simulation.name},
+          {"router_count",
+           BmpEventValue{static_cast<std::uint64_t>(routers.size())}},
+          {"link_count",
+           BmpEventValue{static_cast<std::uint64_t>(links_.size())}},
+      });
 
   for (const auto &router : routers) {
     router->start();
@@ -105,7 +93,7 @@ void TopoManager::stop() {
     pool_.reset();
   }
   if (bmp_) {
-    bmp_->recordTopologyEvent("simulation_stopped", {});
+    bmp_->recordTopologyEvent("simulation_stopped", BmpEventDetail{});
   }
 }
 
@@ -126,8 +114,6 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
     }
     const auto link = linkFor(from, to);
     if (!link || !link->config.enabled) {
-      spdlog::debug("Dropped {} from {} to {} because link is down",
-                    toString(message.type), from, to);
       return;
     }
     destination = dst_it->second;
@@ -244,22 +230,23 @@ bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
   return pool_->waitForIdle(std::max(timeout, quiet_period), quiet_period);
 }
 
-nlohmann::json TopoManager::routersSnapshot() const {
+std::vector<RouterSnapshot> TopoManager::routersSnapshot() const {
   std::lock_guard lock(mutex_);
-  nlohmann::json result = nlohmann::json::array();
+  std::vector<RouterSnapshot> result;
+  result.reserve(routers_.size());
   for (const auto &[id, router] : routers_) {
     result.push_back({
-        {"id", id},
-        {"router_id", router->routerId()},
-        {"asn", router->asn()},
-        {"active", router->isActive()},
-        {"has_rr_clients", router->isRouteReflector()},
+        .id = id,
+        .router_id = router->routerId(),
+        .asn = router->asn(),
+        .active = router->isActive(),
+        .has_rr_clients = router->isRouteReflector(),
     });
   }
   return result;
 }
 
-nlohmann::json TopoManager::ribSnapshot(const std::string &router_id) const {
+RibSnapshot TopoManager::ribSnapshot(const std::string &router_id) const {
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
@@ -268,7 +255,8 @@ nlohmann::json TopoManager::ribSnapshot(const std::string &router_id) const {
   return router->ribSnapshot();
 }
 
-nlohmann::json TopoManager::peersSnapshot(const std::string &router_id) const {
+std::vector<PeerSnapshot>
+TopoManager::peersSnapshot(const std::string &router_id) const {
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);

@@ -4,6 +4,10 @@
 
 Supported environment: Windows + MSVC + vcpkg only.
 
+## Dependency Boundary
+
+Core simulation code must stay pure C++20: `BgpRouter`, `TopoManager`, `ThreadPool`, `BgpTypes` and their protocol/state-machine logic may only use the C++ standard library plus project headers. Third-party libraries and Windows APIs are limited to peripheral facilities such as the CLI, colored console output, log I/O, JSON topology loading and JSON display adapters. Core APIs should expose standard-library data structures; peripheral adapters convert them to JSON, text logs or console output.
+
 ## Build
 
 ```powershell

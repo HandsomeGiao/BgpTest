@@ -10,8 +10,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include "toposim/BgpTypes.hpp"
 
 namespace toposim {
@@ -46,8 +44,8 @@ public:
   void originatePrefix(const std::string &prefix);
   void withdrawLocalPrefix(const std::string &prefix);
 
-  [[nodiscard]] nlohmann::json ribSnapshot() const;
-  [[nodiscard]] nlohmann::json peerSnapshot() const;
+  [[nodiscard]] RibSnapshot ribSnapshot() const;
+  [[nodiscard]] std::vector<PeerSnapshot> peerSnapshot() const;
 
 protected:
   virtual void onMessageReceived(const BgpMessage &message);

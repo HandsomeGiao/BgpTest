@@ -42,6 +42,12 @@ BGP Test Framework
 
 `TopoSimulator` 是核心仿真引擎，只支持 Windows + MSVC + vcpkg，使用 C++20、CMake 和 vcpkg manifest 构建。
 
+依赖边界规则：
+
+- 核心模拟层只能使用纯 C++20 标准库和项目自身头文件，包括 `BgpRouter`、`TopoManager`、`ThreadPool`、`BgpTypes` 等路由器节点、BGP 管理器、协议状态机和决策逻辑。
+- 第三方库和 Windows API 只能用于外围设施，例如命令行交互、颜色输出、日志输入输出、JSON 拓扑读取和 JSON 格式化展示。
+- 如果需要在核心层暴露运行状态，应返回标准库数据结构；由外围适配层负责转换成 JSON、日志文本或控制台输出。
+
 主要模块：
 
 - `BgpRouter`：表示一个 BGP 路由器节点，维护邻居状态、RIB 数据结构和基础 BGP 行为。该类保留了多个虚函数扩展点，便于子类重写接收报文、导入策略、导出策略、路径选择和属性转换逻辑。

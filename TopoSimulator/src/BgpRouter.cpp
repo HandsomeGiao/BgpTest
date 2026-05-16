@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <tuple>
 
-#include <spdlog/spdlog.h>
-
 #include "toposim/TopoManager.hpp"
 
 namespace toposim {
@@ -217,39 +215,38 @@ void BgpRouter::withdrawLocalPrefix(const std::string &prefix) {
   runDecisionProcessFor({prefix});
 }
 
-nlohmann::json BgpRouter::ribSnapshot() const {
+RibSnapshot BgpRouter::ribSnapshot() const {
   std::lock_guard lock(mutex_);
-  nlohmann::json result;
-  result["router"] = config_.id;
-  result["loc_rib"] = nlohmann::json::array();
+  RibSnapshot result;
+  result.router = config_.id;
   for (const auto &[_, route] : loc_rib_) {
-    result["loc_rib"].push_back(route);
+    result.loc_rib.push_back(route);
   }
-  result["adj_rib_in"] = adj_rib_in_;
-  result["adj_rib_out"] = adj_rib_out_;
+  result.adj_rib_in = adj_rib_in_;
+  result.adj_rib_out = adj_rib_out_;
   return result;
 }
 
-nlohmann::json BgpRouter::peerSnapshot() const {
+std::vector<PeerSnapshot> BgpRouter::peerSnapshot() const {
   std::lock_guard lock(mutex_);
-  nlohmann::json result = nlohmann::json::array();
+  std::vector<PeerSnapshot> result;
+  result.reserve(neighbors_.size());
   for (const auto &[peer_id, neighbor] : neighbors_) {
     result.push_back({
-        {"id", peer_id},
-        {"remote_asn", neighbor.remote_asn},
-        {"session_type", toString(neighbor.session_type)},
-        {"rr_client", neighbor.rr_client},
-        {"mrai_ms", neighbor.mrai_ms},
-        {"enabled", neighbor.enabled},
-        {"state", toString(peer_states_.at(peer_id))},
+        .id = peer_id,
+        .remote_asn = neighbor.remote_asn,
+        .session_type = neighbor.session_type,
+        .rr_client = neighbor.rr_client,
+        .enabled = neighbor.enabled,
+        .mrai_ms = neighbor.mrai_ms,
+        .state = peer_states_.at(peer_id),
     });
   }
   return result;
 }
 
 void BgpRouter::onMessageReceived(const BgpMessage &message) {
-  spdlog::debug("{} received {} from {}", config_.id, toString(message.type),
-                message.from);
+  (void)message;
 }
 
 void BgpRouter::onOpenMessage(const BgpMessage &message) {
@@ -308,9 +305,6 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
       route.local_origin = false;
 
       if (containsOwnAs(route.attributes)) {
-        spdlog::debug(
-            "{} rejected route from {} because AS_PATH contains local AS {}",
-            config_.id, message.from, config_.asn);
         return;
       }
 
@@ -552,9 +546,7 @@ void BgpRouter::runDecisionProcessFor(
 
       const bool changed = (!old_route && selected) ||
                            (old_route && !selected) ||
-                           (old_route && selected &&
-                            nlohmann::json(*old_route).dump() !=
-                                nlohmann::json(*selected).dump());
+                           (old_route && selected && *old_route != *selected);
 
       if (!changed) {
         continue;

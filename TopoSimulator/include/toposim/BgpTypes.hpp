@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 namespace toposim {
 
 enum class BgpMessageType { Open, Update, Notification, Keepalive };
@@ -25,6 +23,8 @@ struct PathAttributes {
   std::optional<std::string> originator_id;
   std::optional<std::string> cluster_list;
   std::map<std::string, std::string> communities;
+
+  bool operator==(const PathAttributes &) const = default;
 };
 
 struct BgpOpenPayload {
@@ -32,18 +32,24 @@ struct BgpOpenPayload {
   std::uint32_t asn = 0;
   std::uint32_t hold_time_seconds = 90;
   std::string router_id;
+
+  bool operator==(const BgpOpenPayload &) const = default;
 };
 
 struct BgpUpdatePayload {
   std::vector<std::string> withdrawn_routes;
   std::vector<std::string> nlri;
   PathAttributes path_attributes;
+
+  bool operator==(const BgpUpdatePayload &) const = default;
 };
 
 struct BgpNotificationPayload {
   std::uint32_t error_code = 0;
   std::uint32_t error_subcode = 0;
   std::string data;
+
+  bool operator==(const BgpNotificationPayload &) const = default;
 };
 
 struct BgpMessage {
@@ -54,6 +60,8 @@ struct BgpMessage {
   std::optional<BgpOpenPayload> open;
   std::optional<BgpUpdatePayload> update;
   std::optional<BgpNotificationPayload> notification;
+
+  bool operator==(const BgpMessage &) const = default;
 };
 
 struct NeighborConfig {
@@ -64,6 +72,8 @@ struct NeighborConfig {
   bool enabled = true;
   std::uint32_t hold_time_seconds = 90;
   std::uint32_t mrai_ms = 0;
+
+  bool operator==(const NeighborConfig &) const = default;
 };
 
 struct RouterConfig {
@@ -73,6 +83,8 @@ struct RouterConfig {
   std::string cluster_id;
   std::vector<std::string> originated_prefixes;
   std::vector<NeighborConfig> neighbors;
+
+  bool operator==(const RouterConfig &) const = default;
 };
 
 struct LinkConfig {
@@ -80,6 +92,8 @@ struct LinkConfig {
   std::string b;
   bool enabled = true;
   std::uint32_t delay_ms = 1;
+
+  bool operator==(const LinkConfig &) const = default;
 };
 
 struct SimulationConfig {
@@ -87,12 +101,16 @@ struct SimulationConfig {
   std::string log_dir = "tmp";
   std::uint32_t worker_threads = 0;
   std::uint32_t convergence_quiet_ms = 300;
+
+  bool operator==(const SimulationConfig &) const = default;
 };
 
 struct TopologyConfig {
   SimulationConfig simulation;
   std::vector<RouterConfig> routers;
   std::vector<LinkConfig> links;
+
+  bool operator==(const TopologyConfig &) const = default;
 };
 
 struct RouteEntry {
@@ -101,6 +119,33 @@ struct RouteEntry {
   std::string learned_from;
   SessionType source_session = SessionType::Ibgp;
   bool local_origin = false;
+
+  bool operator==(const RouteEntry &) const = default;
+};
+
+struct RouterSnapshot {
+  std::string id;
+  std::string router_id;
+  std::uint32_t asn = 0;
+  bool active = false;
+  bool has_rr_clients = false;
+};
+
+struct PeerSnapshot {
+  std::string id;
+  std::uint32_t remote_asn = 0;
+  SessionType session_type = SessionType::Ibgp;
+  bool rr_client = false;
+  bool enabled = true;
+  std::uint32_t mrai_ms = 0;
+  PeerState state = PeerState::Idle;
+};
+
+struct RibSnapshot {
+  std::string router;
+  std::vector<RouteEntry> loc_rib;
+  std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_in;
+  std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out;
 };
 
 std::string toString(BgpMessageType type);
@@ -108,27 +153,5 @@ std::string toString(SessionType type);
 std::string toString(PeerState state);
 BgpMessageType bgpMessageTypeFromString(const std::string &value);
 SessionType sessionTypeFromString(const std::string &value);
-
-void to_json(nlohmann::json &j, const PathAttributes &attrs);
-void from_json(const nlohmann::json &j, PathAttributes &attrs);
-void to_json(nlohmann::json &j, const BgpOpenPayload &payload);
-void from_json(const nlohmann::json &j, BgpOpenPayload &payload);
-void to_json(nlohmann::json &j, const BgpUpdatePayload &payload);
-void from_json(const nlohmann::json &j, BgpUpdatePayload &payload);
-void to_json(nlohmann::json &j, const BgpNotificationPayload &payload);
-void from_json(const nlohmann::json &j, BgpNotificationPayload &payload);
-void to_json(nlohmann::json &j, const BgpMessage &message);
-void from_json(const nlohmann::json &j, BgpMessage &message);
-void to_json(nlohmann::json &j, const NeighborConfig &config);
-void from_json(const nlohmann::json &j, NeighborConfig &config);
-void to_json(nlohmann::json &j, const RouterConfig &config);
-void from_json(const nlohmann::json &j, RouterConfig &config);
-void to_json(nlohmann::json &j, const LinkConfig &config);
-void from_json(const nlohmann::json &j, LinkConfig &config);
-void to_json(nlohmann::json &j, const SimulationConfig &config);
-void from_json(const nlohmann::json &j, SimulationConfig &config);
-void to_json(nlohmann::json &j, const TopologyConfig &config);
-void from_json(const nlohmann::json &j, TopologyConfig &config);
-void to_json(nlohmann::json &j, const RouteEntry &route);
 
 } // namespace toposim

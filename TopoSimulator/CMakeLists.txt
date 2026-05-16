@@ -30,16 +30,22 @@ target_include_directories(toposim
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(toposim
-    PUBLIC
-        nlohmann_json::nlohmann_json
-        spdlog::spdlog
-)
-
 target_compile_options(toposim PRIVATE /W4 /permissive-)
 
+add_library(toposim_io
+    src/TopologyJson.cpp
+)
+
+target_link_libraries(toposim_io
+    PUBLIC
+        toposim
+        nlohmann_json::nlohmann_json
+)
+
+target_compile_options(toposim_io PRIVATE /W4 /permissive-)
+
 add_executable(TopoSimulator src/main.cpp)
-target_link_libraries(TopoSimulator PRIVATE toposim)
+target_link_libraries(TopoSimulator PRIVATE toposim_io spdlog::spdlog)
 
 add_custom_command(TARGET TopoSimulator POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
