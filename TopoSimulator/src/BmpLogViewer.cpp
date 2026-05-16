@@ -189,6 +189,35 @@ bool containsCaseInsensitive(const std::string &value,
   return lower_value.find(lower_needle) != std::string::npos;
 }
 
+std::string upperAscii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::toupper(ch));
+  });
+  return value;
+}
+
+std::string recordActionLabel(const BmpLogRecord &record) {
+  return record.action.empty() ? record.msg_type : record.action;
+}
+
+bool recordTypeMatches(const BmpLogRecord &record, const std::string &filter) {
+  if (filter.empty()) {
+    return true;
+  }
+  const auto requested = upperAscii(filter);
+  const auto action = upperAscii(recordActionLabel(record));
+  if (requested == "WITHDRAWAL") {
+    return action == "WITHDRAW";
+  }
+  if (requested == "UPDATE") {
+    return action == "UPDATE" || action == "UPDATE+WITHDRAW";
+  }
+  if (requested == "MIXED") {
+    return action == "UPDATE+WITHDRAW";
+  }
+  return action == requested;
+}
+
 bool liveRecordMatches(const BmpLogRecord &record, const BmpLogQuery &query) {
   if (!query.router.empty() && record.router != query.router) {
     return false;
@@ -196,7 +225,7 @@ bool liveRecordMatches(const BmpLogRecord &record, const BmpLogQuery &query) {
   if (!query.peer.empty() && record.from != query.peer && record.to != query.peer) {
     return false;
   }
-  if (!query.msg_type.empty() && record.msg_type != query.msg_type) {
+  if (!recordTypeMatches(record, query.msg_type)) {
     return false;
   }
   if (!query.prefix.empty() &&
@@ -235,7 +264,7 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
   ImGui::TableSetupColumn("Router", ImGuiTableColumnFlags_WidthFixed, 90.0f);
   ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 80.0f);
   ImGui::TableSetupColumn("To", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-  ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 95.0f);
+  ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 125.0f);
   ImGui::TableSetupColumn("Prefixes");
   ImGui::TableSetupColumn("AS_PATH");
   ImGui::TableSetupColumn("Next Hop", ImGuiTableColumnFlags_WidthFixed, 110.0f);
@@ -264,7 +293,8 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
       ImGui::TableSetColumnIndex(5);
       ImGui::TextUnformatted(record.to.c_str());
       ImGui::TableSetColumnIndex(6);
-      ImGui::TextUnformatted(record.msg_type.c_str());
+      const auto action = recordActionLabel(record);
+      ImGui::TextUnformatted(action.c_str());
       ImGui::TableSetColumnIndex(7);
       ImGui::TextUnformatted(record.prefixes.empty() ? record.withdrawn.c_str()
                                                      : record.prefixes.c_str());
@@ -402,7 +432,7 @@ void viewerLoop() {
     ImGui::SameLine();
     ImGui::InputText("Peer", peer_filter.data(), peer_filter.size());
     ImGui::SameLine();
-    ImGui::InputText("Msg Type", msg_type_filter.data(),
+    ImGui::InputText("Type/Action", msg_type_filter.data(),
                      msg_type_filter.size());
     ImGui::InputText("Prefix", prefix_filter.data(), prefix_filter.size());
     ImGui::SameLine();

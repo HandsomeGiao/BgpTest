@@ -29,6 +29,7 @@ struct BmpLogRecord {
   std::string from;
   std::string to;
   std::string msg_type;
+  std::string action;
   std::uint64_t sequence = 0;
   std::string prefixes;
   std::string withdrawn;

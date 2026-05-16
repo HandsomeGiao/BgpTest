@@ -118,6 +118,19 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   query.limit = 20;
   require(!toposim::BmpLogManager::instance().queryHistory(query).empty(),
           "BMP SQLite history query returned no records for R2");
+  toposim::BmpLogQuery withdraw_query;
+  withdraw_query.router = "R2";
+  withdraw_query.msg_type = "WITHDRAW";
+  withdraw_query.prefix = prefix;
+  withdraw_query.limit = 20;
+  const auto withdrawals =
+      toposim::BmpLogManager::instance().queryHistory(withdraw_query);
+  require(!withdrawals.empty(),
+          "BMP SQLite history query returned no withdrawals for R2");
+  require(std::all_of(withdrawals.begin(), withdrawals.end(), [](const auto &r) {
+            return r.action == "WITHDRAW";
+          }),
+          "BMP withdrawal query returned records not labeled WITHDRAW");
   require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
           "delayed MRAI advertisement revived a withdrawn route");
   manager.stop();

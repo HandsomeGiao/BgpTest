@@ -1,6 +1,7 @@
 #include "toposim/BmpLogManager.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <iomanip>
 #include <optional>
@@ -239,6 +240,36 @@ std::string columnText(sqlite3_stmt *stmt, int column) {
   return text ? reinterpret_cast<const char *>(text) : std::string{};
 }
 
+std::string upperAscii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+    return static_cast<char>(std::toupper(ch));
+  });
+  return value;
+}
+
+std::string updateAction(const BgpUpdatePayload &update) {
+  if (!update.withdrawn_routes.empty() && update.nlri.empty()) {
+    return "WITHDRAW";
+  }
+  if (!update.withdrawn_routes.empty() && !update.nlri.empty()) {
+    return "UPDATE+WITHDRAW";
+  }
+  return "UPDATE";
+}
+
+std::string recordAction(const BmpLogRecord &record) {
+  if (record.msg_type != "UPDATE") {
+    return record.msg_type;
+  }
+  if (!record.withdrawn.empty() && record.prefixes.empty()) {
+    return "WITHDRAW";
+  }
+  if (!record.withdrawn.empty() && !record.prefixes.empty()) {
+    return "UPDATE+WITHDRAW";
+  }
+  return "UPDATE";
+}
+
 class SqliteStatement {
 public:
   SqliteStatement(sqlite3 *db, const char *sql, const char *context) : db_(db) {
@@ -386,9 +417,11 @@ void BmpLogManager::recordReceive(const std::string &router_id,
   record.from = message.from;
   record.to = message.to;
   record.msg_type = toString(message.type);
+  record.action = record.msg_type;
   record.sequence = message.sequence;
   if (message.update) {
     const auto &update = *message.update;
+    record.action = updateAction(update);
     record.prefixes = joinVector(update.nlri, ",");
     record.withdrawn = joinVector(update.withdrawn_routes, ",");
     record.next_hop = update.path_attributes.next_hop;
@@ -404,6 +437,7 @@ void BmpLogManager::recordReceive(const std::string &router_id,
        << jsonString("from") << ':' << jsonString(record.from) << ','
        << jsonString("to") << ':' << jsonString(record.to) << ','
        << jsonString("msg_type") << ':' << jsonString(record.msg_type) << ','
+       << jsonString("action") << ':' << jsonString(record.action) << ','
        << jsonString("sequence") << ':' << record.sequence << ','
        << jsonString("message") << ':' << messageJson(message) << '}';
   record.raw_json = line.str();
@@ -416,6 +450,7 @@ void BmpLogManager::recordTopologyEvent(const std::string &event_name,
   record.id = next_id_.fetch_add(1);
   record.timestamp = timestampNow();
   record.event = event_name;
+  record.action = event_name;
 
   std::ostringstream line;
   line << '{' << jsonString("timestamp") << ':' << jsonString(record.timestamp)
@@ -467,8 +502,18 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
     params.push_back({QueryParam::Type::Text, query.peer, 0});
   }
   if (!query.msg_type.empty()) {
-    sql += "AND e.msg_type=? ";
-    params.push_back({QueryParam::Type::Text, query.msg_type, 0});
+    const auto type_filter = upperAscii(query.msg_type);
+    if (type_filter == "WITHDRAW" || type_filter == "WITHDRAWAL") {
+      sql += "AND e.msg_type='UPDATE' AND e.withdrawn<>'' AND e.prefixes='' ";
+    } else if (type_filter == "UPDATE") {
+      sql += "AND e.msg_type='UPDATE' AND NOT "
+             "(e.withdrawn<>'' AND e.prefixes='') ";
+    } else if (type_filter == "UPDATE+WITHDRAW" || type_filter == "MIXED") {
+      sql += "AND e.msg_type='UPDATE' AND e.withdrawn<>'' AND e.prefixes<>'' ";
+    } else {
+      sql += "AND e.msg_type=? ";
+      params.push_back({QueryParam::Type::Text, query.msg_type, 0});
+    }
   }
   if (!query.prefix.empty()) {
     sql += "AND p.prefix=? ";
@@ -531,6 +576,7 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
           static_cast<std::uint32_t>(sqlite3_column_int64(stmt.get(), 13));
     }
     record.raw_json = columnText(stmt.get(), 14);
+    record.action = recordAction(record);
     result.push_back(std::move(record));
   }
   return result;

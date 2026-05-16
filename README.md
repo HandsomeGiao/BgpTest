@@ -20,7 +20,7 @@
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
 - 生成 `bmp_collector.log` 和 `bmp_collector.sqlite`，分别用于 JSON Lines 原始记录和 SQLite 历史查询。
-- 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、实时过滤报文，并按路由器、邻居、消息类型、前缀、AS_PATH、NEXT_HOP 和 local-pref 等条件查询历史报文。
+- 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、实时过滤报文，并按路由器、邻居、动作类型、前缀、AS_PATH、NEXT_HOP 和 local-pref 等条件查询历史报文；withdraw-only UPDATE 会直接标识为 `WITHDRAW`。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
 - 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置。
 - 提供 CTest 测试目标，覆盖核心拓扑校验和 MRAI 撤销场景。
