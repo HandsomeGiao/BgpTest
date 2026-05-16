@@ -46,6 +46,59 @@ toposim::TopologyConfig twoRouterTopology(std::uint32_t r1_to_r2_mrai_ms) {
   };
 }
 
+toposim::TopologyConfig fiveRouterTransientTopology(std::uint32_t mrai_ms) {
+  auto r1 = makeRouter("R1", "1.1.1.1", 111);
+  r1.originated_prefixes.push_back("1.1.1.0/24");
+  auto r2 = makeRouter("R2", "2.2.2.2", 222);
+  auto r3 = makeRouter("R3", "3.3.3.3", 333);
+  auto r4 = makeRouter("R4", "4.4.4.4", 444);
+  auto r5 = makeRouter("R5", "5.5.5.5", 555);
+
+  auto addNeighbor = [mrai_ms](toposim::RouterConfig &router, std::string id,
+                               std::uint32_t remote_asn) {
+    router.neighbors.push_back({
+        .id = std::move(id),
+        .remote_asn = remote_asn,
+        .session_type = toposim::SessionType::Ebgp,
+        .rr_client = false,
+        .enabled = true,
+        .hold_time_seconds = 90,
+        .mrai_ms = mrai_ms,
+    });
+  };
+
+  addNeighbor(r1, "R2", 222);
+  addNeighbor(r2, "R1", 111);
+  addNeighbor(r2, "R3", 333);
+  addNeighbor(r2, "R4", 444);
+  addNeighbor(r3, "R2", 222);
+  addNeighbor(r3, "R5", 555);
+  addNeighbor(r4, "R2", 222);
+  addNeighbor(r4, "R5", 555);
+  addNeighbor(r5, "R3", 333);
+  addNeighbor(r5, "R4", 444);
+
+  return toposim::TopologyConfig{
+      .simulation =
+          {
+              .name = "transient-withdraw-tests",
+              .log_dir = "tmp/tests",
+              .worker_threads = 4,
+              .convergence_quiet_ms = 30,
+          },
+      .routers = {std::move(r2), std::move(r3), std::move(r4), std::move(r5),
+                  std::move(r1)},
+      .links =
+          {
+              {.a = "R1", .b = "R2", .enabled = true, .delay_ms = 10},
+              {.a = "R2", .b = "R3", .enabled = true, .delay_ms = 5},
+              {.a = "R3", .b = "R5", .enabled = true, .delay_ms = 4},
+              {.a = "R2", .b = "R4", .enabled = true, .delay_ms = 0},
+              {.a = "R4", .b = "R5", .enabled = true, .delay_ms = 0},
+          },
+  };
+}
+
 void require(bool condition, const std::string &message) {
   if (!condition) {
     throw std::runtime_error(message);
@@ -202,6 +255,24 @@ void ebgpRouteIsNotWithdrawnBackToOriginPeer() {
   manager.stop();
 }
 
+void canceledTransientAdvertisementDoesNotEmitWithdraw() {
+  auto config = fiveRouterTransientTopology(250);
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(3s),
+          "five-router topology convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery query;
+  query.from_routers = {"R3"};
+  query.to_routers = {"R2"};
+  query.actions = {"WITHDRAW"};
+  query.limit = 10;
+  require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
+          "R3 withdrew a route from R2 that was never delivered to R2");
+  manager.stop();
+}
+
 } // namespace
 
 int main() {
@@ -213,6 +284,7 @@ int main() {
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();
+    canceledTransientAdvertisementDoesNotEmitWithdraw();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';
     return 1;

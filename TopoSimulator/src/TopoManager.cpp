@@ -170,10 +170,10 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       if (delay_ms > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
-      if (delivery_guard && !delivery_guard()) {
+      if (!messageStillDeliverable(message.from, message.to)) {
         return;
       }
-      if (!messageStillDeliverable(message.from, message.to)) {
+      if (delivery_guard && !delivery_guard()) {
         return;
       }
       BmpLogManager::instance().recordReceive(message.to, message, from_as,

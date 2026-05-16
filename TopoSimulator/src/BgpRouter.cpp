@@ -482,14 +482,11 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
   }
   message.update = std::move(update);
   auto schedule = scheduleUpdate(neighbor, nlri, withdrawn);
-  std::function<bool()> delivery_guard;
-  if (!schedule.generations.empty()) {
-    delivery_guard =
-        [this, peer_id = neighbor.id,
-         generations = std::move(schedule.generations)]() {
-          return updateStillCurrent(peer_id, generations);
-        };
-  }
+  auto generations = std::move(schedule.generations);
+  auto delivery_guard = [this, peer_id = neighbor.id, nlri, withdrawn, route,
+                         generations = std::move(generations)]() {
+    return commitUpdateDelivery(peer_id, nlri, withdrawn, route, generations);
+  };
   sendMessage(neighbor.id, std::move(message), schedule.delay,
               std::move(delivery_guard));
 }
@@ -502,7 +499,9 @@ BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
   std::lock_guard lock(mutex_);
 
   for (const auto &prefix : withdrawn) {
-    update_generations_[neighbor.id][prefix] = ++update_generation_counter_;
+    const auto generation = ++update_generation_counter_;
+    update_generations_[neighbor.id][prefix] = generation;
+    schedule.generations[prefix] = generation;
   }
 
   for (const auto &prefix : nlri) {
@@ -537,15 +536,24 @@ BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
   return schedule;
 }
 
-bool BgpRouter::updateStillCurrent(
-    const std::string &peer_id,
-    const std::map<std::string, std::uint64_t> &generations) const {
+bool BgpRouter::commitUpdateDelivery(
+    const std::string &peer_id, const std::vector<std::string> &nlri,
+    const std::vector<std::string> &withdrawn,
+    const std::optional<RouteEntry> &route,
+    const std::map<std::string, std::uint64_t> &generations) {
   std::lock_guard lock(mutex_);
   if (!active_) {
     return false;
   }
+  const auto neighbor_it = neighbors_.find(peer_id);
+  const auto state_it = peer_states_.find(peer_id);
+  if (neighbor_it == neighbors_.end() || !neighbor_it->second.enabled ||
+      state_it == peer_states_.end() ||
+      state_it->second != PeerState::Established) {
+    return false;
+  }
   const auto peer_it = update_generations_.find(peer_id);
-  if (peer_it == update_generations_.end()) {
+  if (!generations.empty() && peer_it == update_generations_.end()) {
     return false;
   }
   for (const auto &[prefix, generation] : generations) {
@@ -555,7 +563,30 @@ bool BgpRouter::updateStillCurrent(
       return false;
     }
   }
+
+  for (const auto &prefix : withdrawn) {
+    if (auto peer_out = adj_rib_out_.find(peer_id);
+        peer_out != adj_rib_out_.end()) {
+      peer_out->second.erase(prefix);
+    }
+  }
+  if (!nlri.empty()) {
+    if (!route) {
+      return false;
+    }
+    for (const auto &prefix : nlri) {
+      auto committed = *route;
+      committed.prefix = prefix;
+      adj_rib_out_[peer_id][prefix] = std::move(committed);
+    }
+  }
   return true;
+}
+
+void BgpRouter::cancelPendingUpdate(const std::string &peer_id,
+                                    const std::string &prefix) {
+  std::lock_guard lock(mutex_);
+  update_generations_[peer_id][prefix] = ++update_generation_counter_;
 }
 
 void BgpRouter::runDecisionProcessFor(
@@ -650,20 +681,18 @@ void BgpRouter::disseminateChangedRoutes(
           std::lock_guard lock(mutex_);
           if (auto peer_out = adj_rib_out_.find(neighbor.id);
               peer_out != adj_rib_out_.end()) {
-            was_advertised = peer_out->second.erase(prefix) > 0;
+            was_advertised = peer_out->second.contains(prefix);
           }
         }
         if (was_advertised) {
           sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
+        } else {
+          cancelPendingUpdate(neighbor.id, prefix);
         }
         continue;
       }
       auto transformed = transformRouteForPeer(*maybe_route, neighbor);
       transformed.prefix = prefix;
-      {
-        std::lock_guard lock(mutex_);
-        adj_rib_out_[neighbor.id][prefix] = transformed;
-      }
       sendUpdateToNeighbor(neighbor, {prefix}, {}, transformed);
     }
   }

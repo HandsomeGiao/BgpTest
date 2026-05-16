@@ -83,10 +83,13 @@ private:
   UpdateSchedule scheduleUpdate(const NeighborConfig &neighbor,
                                 const std::vector<std::string> &nlri,
                                 const std::vector<std::string> &withdrawn);
-  [[nodiscard]] bool
-  updateStillCurrent(const std::string &peer_id,
-                     const std::map<std::string, std::uint64_t> &generations)
-      const;
+  [[nodiscard]] bool commitUpdateDelivery(
+      const std::string &peer_id, const std::vector<std::string> &nlri,
+      const std::vector<std::string> &withdrawn,
+      const std::optional<RouteEntry> &route,
+      const std::map<std::string, std::uint64_t> &generations);
+  void cancelPendingUpdate(const std::string &peer_id,
+                           const std::string &prefix);
   void runDecisionProcessFor(const std::set<std::string> &changed_prefixes);
   void disseminateChangedRoutes(
       const std::map<std::string, std::optional<RouteEntry>> &changes);
