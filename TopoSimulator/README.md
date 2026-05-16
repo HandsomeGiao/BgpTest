@@ -126,7 +126,7 @@ The build copies `TopoSimulator/topo/` next to the executable, so double-clickin
 TopoSimulator/build/Release/topo/sample_topology.json
 ```
 
-Each run creates a directory below `tmp/` and writes both `bmp_collector.log` and `bmp_collector.sqlite`. The JSON Lines file preserves the raw event stream. The SQLite database stores indexed event rows plus prefix and AS_PATH helper tables so the viewer can query by router, peer, action type, prefix, AS number, NEXT_HOP and local-pref without reparsing the log. Withdrawal-only UPDATE messages keep the raw BGP message type as `UPDATE`, but the viewer labels their action as `WITHDRAW`.
+Each run creates a directory below `tmp/` and writes both `bmp_collector.log` and `bmp_collector.sqlite`. The JSON Lines file preserves the raw event stream. The SQLite database stores indexed event rows plus prefix and AS_PATH helper tables so the viewer can query by router, peer, action type, prefix, AS number, NEXT_HOP and local-pref without reparsing the log. The viewer table has a `Columns` menu for choosing visible fields. Withdrawal-only UPDATE messages keep the raw BGP message type as `UPDATE`, but the viewer labels their action as `WITHDRAW`.
 
 ## JSON Topology
 

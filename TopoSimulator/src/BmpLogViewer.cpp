@@ -200,6 +200,116 @@ std::string recordActionLabel(const BmpLogRecord &record) {
   return record.action.empty() ? record.msg_type : record.action;
 }
 
+enum class BmpViewerColumn : std::size_t {
+  Id,
+  Time,
+  Event,
+  Router,
+  From,
+  To,
+  Action,
+  Prefixes,
+  Withdrawn,
+  AsPath,
+  NextHop,
+  LocalPref,
+  Med,
+  Sequence,
+  RawJson,
+  Count
+};
+
+constexpr std::size_t columnIndex(BmpViewerColumn column) {
+  return static_cast<std::size_t>(column);
+}
+
+constexpr std::size_t kBmpViewerColumnCount =
+    columnIndex(BmpViewerColumn::Count);
+
+struct BmpViewerColumnDefinition {
+  BmpViewerColumn column;
+  const char *label;
+  float width;
+  bool default_visible;
+};
+
+constexpr std::array<BmpViewerColumnDefinition, kBmpViewerColumnCount>
+    kBmpViewerColumns = {{
+        {BmpViewerColumn::Id, "ID", 64.0f, true},
+        {BmpViewerColumn::Time, "Time", 170.0f, true},
+        {BmpViewerColumn::Event, "Event", 150.0f, true},
+        {BmpViewerColumn::Router, "Router", 90.0f, false},
+        {BmpViewerColumn::From, "From", 80.0f, true},
+        {BmpViewerColumn::To, "To", 80.0f, true},
+        {BmpViewerColumn::Action, "Action", 125.0f, true},
+        {BmpViewerColumn::Prefixes, "Prefixes", 0.0f, true},
+        {BmpViewerColumn::Withdrawn, "Withdrawn", 0.0f, false},
+        {BmpViewerColumn::AsPath, "AS_PATH", 0.0f, true},
+        {BmpViewerColumn::NextHop, "Next Hop", 110.0f, true},
+        {BmpViewerColumn::LocalPref, "Local Pref", 95.0f, false},
+        {BmpViewerColumn::Med, "MED", 70.0f, false},
+        {BmpViewerColumn::Sequence, "Sequence", 95.0f, false},
+        {BmpViewerColumn::RawJson, "Raw JSON", 360.0f, false},
+    }};
+
+using BmpViewerColumnVisibility =
+    std::array<bool, kBmpViewerColumnCount>;
+
+BmpViewerColumnVisibility defaultColumnVisibility() {
+  BmpViewerColumnVisibility visibility{};
+  for (const auto &definition : kBmpViewerColumns) {
+    visibility[columnIndex(definition.column)] = definition.default_visible;
+  }
+  return visibility;
+}
+
+void setAllColumns(BmpViewerColumnVisibility &visibility, bool value) {
+  visibility.fill(value);
+}
+
+int visibleColumnCount(const BmpViewerColumnVisibility &visibility) {
+  return static_cast<int>(
+      std::count(visibility.begin(), visibility.end(), true));
+}
+
+std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
+  switch (column) {
+  case BmpViewerColumn::Id:
+    return std::to_string(record.id);
+  case BmpViewerColumn::Time:
+    return record.timestamp;
+  case BmpViewerColumn::Event:
+    return record.event;
+  case BmpViewerColumn::Router:
+    return record.router;
+  case BmpViewerColumn::From:
+    return record.from;
+  case BmpViewerColumn::To:
+    return record.to;
+  case BmpViewerColumn::Action:
+    return recordActionLabel(record);
+  case BmpViewerColumn::Prefixes:
+    return record.prefixes;
+  case BmpViewerColumn::Withdrawn:
+    return record.withdrawn;
+  case BmpViewerColumn::AsPath:
+    return record.as_path;
+  case BmpViewerColumn::NextHop:
+    return record.next_hop;
+  case BmpViewerColumn::LocalPref:
+    return record.local_pref ? std::to_string(*record.local_pref) : "";
+  case BmpViewerColumn::Med:
+    return record.med ? std::to_string(*record.med) : "";
+  case BmpViewerColumn::Sequence:
+    return std::to_string(record.sequence);
+  case BmpViewerColumn::RawJson:
+    return record.raw_json;
+  case BmpViewerColumn::Count:
+    break;
+  }
+  return {};
+}
+
 bool recordTypeMatches(const BmpLogRecord &record, const std::string &filter) {
   if (filter.empty()) {
     return true;
@@ -247,26 +357,65 @@ bool liveRecordMatches(const BmpLogRecord &record, const BmpLogQuery &query) {
   return true;
 }
 
+void drawColumnController(BmpViewerColumnVisibility &visible_columns) {
+  if (ImGui::Button("Columns")) {
+    ImGui::OpenPopup("bmp-column-controller");
+  }
+  if (!ImGui::BeginPopup("bmp-column-controller")) {
+    return;
+  }
+
+  ImGui::TextUnformatted("Visible columns");
+  ImGui::Separator();
+  for (const auto &definition : kBmpViewerColumns) {
+    ImGui::Checkbox(definition.label,
+                    &visible_columns[columnIndex(definition.column)]);
+  }
+
+  ImGui::Separator();
+  if (ImGui::Button("Show All")) {
+    setAllColumns(visible_columns, true);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Hide All")) {
+    setAllColumns(visible_columns, false);
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Reset")) {
+    visible_columns = defaultColumnVisibility();
+  }
+
+  ImGui::EndPopup();
+}
+
 void drawRecordTable(const std::vector<BmpLogRecord> &records,
-                     int &selected_index, float height) {
+                     int &selected_index, float height,
+                     const BmpViewerColumnVisibility &visible_columns) {
   constexpr ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
       ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
       ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
 
-  if (!ImGui::BeginTable("bmp-records", 9, flags, ImVec2(0, height))) {
+  const int column_count = visibleColumnCount(visible_columns);
+  if (column_count == 0) {
+    ImGui::TextDisabled("No columns selected.");
+    return;
+  }
+
+  if (!ImGui::BeginTable("bmp-records", column_count, flags,
+                         ImVec2(0, height))) {
     return;
   }
   ImGui::TableSetupScrollFreeze(0, 1);
-  ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 64.0f);
-  ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 170.0f);
-  ImGui::TableSetupColumn("Event", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-  ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-  ImGui::TableSetupColumn("To", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-  ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 125.0f);
-  ImGui::TableSetupColumn("Prefixes");
-  ImGui::TableSetupColumn("AS_PATH");
-  ImGui::TableSetupColumn("Next Hop", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+  for (const auto &definition : kBmpViewerColumns) {
+    if (!visible_columns[columnIndex(definition.column)]) {
+      continue;
+    }
+    const ImGuiTableColumnFlags column_flags =
+        definition.width > 0.0f ? ImGuiTableColumnFlags_WidthFixed
+                                : ImGuiTableColumnFlags_None;
+    ImGui::TableSetupColumn(definition.label, column_flags, definition.width);
+  }
   ImGui::TableHeadersRow();
 
   ImGuiListClipper clipper;
@@ -275,30 +424,28 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
     for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
       const auto &record = records[static_cast<std::size_t>(row)];
       ImGui::TableNextRow();
-      ImGui::TableSetColumnIndex(0);
-      const bool selected = selected_index == row;
-      if (ImGui::Selectable(std::to_string(record.id).c_str(), selected,
-                            ImGuiSelectableFlags_SpanAllColumns)) {
-        selected_index = row;
+      int visible_index = 0;
+      bool first_visible_column = true;
+      for (const auto &definition : kBmpViewerColumns) {
+        if (!visible_columns[columnIndex(definition.column)]) {
+          continue;
+        }
+        ImGui::TableSetColumnIndex(visible_index++);
+        auto value = columnValue(record, definition.column);
+        if (first_visible_column) {
+          if (value.empty()) {
+            value = "(empty)";
+          }
+          const auto label = value + "##row-" + std::to_string(row);
+          if (ImGui::Selectable(label.c_str(), selected_index == row,
+                                ImGuiSelectableFlags_SpanAllColumns)) {
+            selected_index = row;
+          }
+          first_visible_column = false;
+        } else {
+          ImGui::TextUnformatted(value.c_str());
+        }
       }
-      ImGui::TableSetColumnIndex(1);
-      ImGui::TextUnformatted(record.timestamp.c_str());
-      ImGui::TableSetColumnIndex(2);
-      ImGui::TextUnformatted(record.event.c_str());
-      ImGui::TableSetColumnIndex(3);
-      ImGui::TextUnformatted(record.from.c_str());
-      ImGui::TableSetColumnIndex(4);
-      ImGui::TextUnformatted(record.to.c_str());
-      ImGui::TableSetColumnIndex(5);
-      const auto action = recordActionLabel(record);
-      ImGui::TextUnformatted(action.c_str());
-      ImGui::TableSetColumnIndex(6);
-      ImGui::TextUnformatted(record.prefixes.empty() ? record.withdrawn.c_str()
-                                                      : record.prefixes.c_str());
-      ImGui::TableSetColumnIndex(7);
-      ImGui::TextUnformatted(record.as_path.c_str());
-      ImGui::TableSetColumnIndex(8);
-      ImGui::TextUnformatted(record.next_hop.c_str());
     }
   }
   ImGui::EndTable();
@@ -359,6 +506,7 @@ void viewerLoop() {
   std::array<char, 128> next_hop_filter{};
   std::vector<BmpLogRecord> visible_records;
   std::vector<BmpLogRecord> history_records;
+  auto visible_columns = defaultColumnVisibility();
 
   while (!g_stop_requested) {
     MSG msg;
@@ -424,6 +572,8 @@ void viewerLoop() {
       history_records = BmpLogManager::instance().queryHistory(query);
       selected_index = history_records.empty() ? -1 : 0;
     }
+    ImGui::SameLine();
+    drawColumnController(visible_columns);
 
     ImGui::InputText("Router", router_filter.data(), router_filter.size());
     ImGui::SameLine();
@@ -479,7 +629,8 @@ void viewerLoop() {
         (std::max)(220.0f, ImGui::GetContentRegionAvail().y -
                                raw_json_height - ImGui::GetFrameHeightWithSpacing() -
                                ImGui::GetStyle().ItemSpacing.y * 2.0f);
-    drawRecordTable(visible_records, selected_index, table_height);
+    drawRecordTable(visible_records, selected_index, table_height,
+                    visible_columns);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Selected Raw JSON");
