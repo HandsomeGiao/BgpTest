@@ -96,6 +96,23 @@ void rejectsInvalidLinks() {
                 "duplicate link should be rejected");
 }
 
+void startupDoesNotEmitKeepalives() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "no-keepalive-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery query;
+  query.msg_type = "KEEPALIVE";
+  query.limit = 10;
+  require(toposim::BmpLogManager::instance().queryHistory(query).empty(),
+          "startup emitted KEEPALIVE messages");
+  manager.stop();
+}
+
 void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   auto config = twoRouterTopology(250);
   toposim::TopoManager manager(std::move(config));
@@ -197,6 +214,7 @@ int main() {
     rejectsDuplicateRouterIds();
     rejectsInvalidBgpRouterIds();
     rejectsInvalidLinks();
+    startupDoesNotEmitKeepalives();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     bmpHistorySupportsCombinedAttributeFilters();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();

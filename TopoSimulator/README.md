@@ -1,6 +1,6 @@
 # TopoSimulator
 
-`TopoSimulator` is a C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, KEEPALIVE, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, opens a lightweight BMP observation window for interactive runs, waits for convergence, then accepts interactive topology changes.
+`TopoSimulator` is a C++20 BGP network simulation skeleton for large-scale convergence experiments. It reads a single JSON topology, starts all configured BGP speakers, exchanges simplified RFC4271-style OPEN, UPDATE and NOTIFICATION messages, writes BMP-like receive logs, opens a lightweight BMP observation window for interactive runs, waits for convergence, then accepts interactive topology changes.
 
 Supported environment: Windows + MSVC + vcpkg only.
 
@@ -33,7 +33,7 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 1. The CLI finds a topology file from `--topology` or the current directory's `topo/` folder.
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
 3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
-4. Each router starts by sending OPEN messages to enabled neighbors. After sessions become established, routers exchange KEEPALIVE and UPDATE messages.
+4. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
 5. `TopoManager::sendMessage` is the only message transport path. It checks router/link state, assigns a sequence number, applies MRAI/link delay through the worker pool, rechecks delivery state immediately before receipt, records the receive event, then delivers the message to the destination router.
 6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so MRAI-delayed UPDATEs are included in the stability test.
 7. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
@@ -158,7 +158,6 @@ Subclass `toposim::BgpRouter` and override:
 
 - `onMessageReceived`
 - `onOpenMessage`
-- `onKeepaliveMessage`
 - `onUpdateMessage`
 - `onNotificationMessage`
 - `importRouteAllowed`

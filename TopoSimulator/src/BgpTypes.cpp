@@ -14,8 +14,6 @@ std::string toString(BgpMessageType type) {
     return "UPDATE";
   case BgpMessageType::Notification:
     return "NOTIFICATION";
-  case BgpMessageType::Keepalive:
-    return "KEEPALIVE";
   }
   return "UNKNOWN";
 }
@@ -49,9 +47,6 @@ BgpMessageType bgpMessageTypeFromString(const std::string &value) {
   }
   if (upper == "NOTIFICATION") {
     return BgpMessageType::Notification;
-  }
-  if (upper == "KEEPALIVE") {
-    return BgpMessageType::Keepalive;
   }
   throw std::invalid_argument("Unknown BGP message type: " + value);
 }

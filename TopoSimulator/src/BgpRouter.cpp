@@ -146,9 +146,6 @@ void BgpRouter::receiveMessage(const BgpMessage &message) {
   case BgpMessageType::Open:
     onOpenMessage(message);
     break;
-  case BgpMessageType::Keepalive:
-    onKeepaliveMessage(message);
-    break;
   case BgpMessageType::Update:
     onUpdateMessage(message);
     break;
@@ -266,15 +263,7 @@ void BgpRouter::onOpenMessage(const BgpMessage &message) {
       current_routes[prefix] = route;
     }
   }
-  sendKeepaliveToNeighbor(*neighbor_config);
   disseminateChangedRoutes(current_routes);
-}
-
-void BgpRouter::onKeepaliveMessage(const BgpMessage &message) {
-  std::lock_guard lock(mutex_);
-  if (auto it = peer_states_.find(message.from); it != peer_states_.end()) {
-    it->second = PeerState::Established;
-  }
 }
 
 void BgpRouter::onUpdateMessage(const BgpMessage &message) {
@@ -476,12 +465,6 @@ void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
       .hold_time_seconds = neighbor.hold_time_seconds,
       .router_id = config_.router_id,
   };
-  sendMessage(neighbor.id, std::move(message));
-}
-
-void BgpRouter::sendKeepaliveToNeighbor(const NeighborConfig &neighbor) {
-  BgpMessage message;
-  message.type = BgpMessageType::Keepalive;
   sendMessage(neighbor.id, std::move(message));
 }
 

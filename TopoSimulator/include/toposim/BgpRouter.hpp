@@ -51,7 +51,6 @@ public:
 protected:
   virtual void onMessageReceived(const BgpMessage &message);
   virtual void onOpenMessage(const BgpMessage &message);
-  virtual void onKeepaliveMessage(const BgpMessage &message);
   virtual void onUpdateMessage(const BgpMessage &message);
   virtual void onNotificationMessage(const BgpMessage &message);
 
@@ -77,7 +76,6 @@ private:
   };
 
   void sendOpenToNeighbor(const NeighborConfig &neighbor);
-  void sendKeepaliveToNeighbor(const NeighborConfig &neighbor);
   void sendUpdateToNeighbor(const NeighborConfig &neighbor,
                             const std::vector<std::string> &nlri,
                             const std::vector<std::string> &withdrawn,

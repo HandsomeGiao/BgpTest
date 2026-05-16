@@ -8,7 +8,7 @@
 
 namespace toposim {
 
-enum class BgpMessageType { Open, Update, Notification, Keepalive };
+enum class BgpMessageType { Open, Update, Notification };
 
 enum class SessionType { Ibgp, Ebgp };
 
@@ -53,7 +53,7 @@ struct BgpNotificationPayload {
 };
 
 struct BgpMessage {
-  BgpMessageType type = BgpMessageType::Keepalive;
+  BgpMessageType type = BgpMessageType::Open;
   std::string from;
   std::string to;
   std::uint64_t sequence = 0;

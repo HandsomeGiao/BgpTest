@@ -11,7 +11,7 @@
 
 - 从 JSON 文件读取网络拓扑、路由器配置、BGP 邻居关系和链路状态。
 - 邻居连接是模拟器内存里的消息投递，不使用真实 socket 或接口 IP；`router_id` 是 BGP router-id，用于协议标识和 NEXT_HOP 字段。
-- 模拟 BGP OPEN、KEEPALIVE、UPDATE、NOTIFICATION 等基础报文。
+- 模拟 BGP OPEN、UPDATE、NOTIFICATION 等基础报文；为减少仿真报文量，当前不生成 KEEPALIVE，邻居在线状态由拓扑 link/node 状态控制。
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
 - 支持邻居级 MRAI，用于控制同一前缀向同一邻居重复广告的最小间隔。
@@ -167,7 +167,6 @@ python -m topogenerator.main
 
 - `onMessageReceived`
 - `onOpenMessage`
-- `onKeepaliveMessage`
 - `onUpdateMessage`
 - `onNotificationMessage`
 - `importRouteAllowed`
