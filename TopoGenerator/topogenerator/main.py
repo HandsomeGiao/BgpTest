@@ -384,7 +384,6 @@ class LinkLegendWidget(QFrame):
             True,
             "Disabled RR -> Client",
         )
-        self._add_row(layout, QColor(AS_COLORS[0]), True, False, "AS group")
         self.setLayout(layout)
 
     def _add_row(
@@ -526,12 +525,16 @@ class TopologyView(QGraphicsView):
         super().resizeEvent(event)
         self._position_legend()
 
+    def scrollContentsBy(self, dx: int, dy: int) -> None:
+        super().scrollContentsBy(dx, dy)
+        self._position_legend()
+
     def _position_legend(self) -> None:
         if self.legend_widget is None:
             return
         margin = 12
         self.legend_widget.adjustSize()
-        x = max(margin, self.viewport().width() - self.legend_widget.width() - margin)
+        x = max(margin, self.width() - self.legend_widget.width() - margin)
         self.legend_widget.move(x, margin)
         self.legend_widget.raise_()
 
@@ -594,7 +597,7 @@ class MainWindow(QMainWindow):
         self.view = TopologyView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
         self.setCentralWidget(self.view)
-        self.link_legend = LinkLegendWidget(self.view.viewport())
+        self.link_legend = LinkLegendWidget(self.view)
         self.link_legend.show()
         self.view.set_legend_widget(self.link_legend)
         self._build_toolbar()
