@@ -53,6 +53,8 @@ private:
   };
 
   static std::string edgeKey(const std::string &a, const std::string &b);
+  static std::string directedKey(const std::string &from,
+                                 const std::string &to);
 
   void validateConfig() const;
   void buildRouters();
@@ -68,6 +70,7 @@ private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<BgpRouter>> routers_;
   std::unordered_map<std::string, LinkRuntime> links_;
+  std::unordered_map<std::string, std::shared_ptr<std::mutex>> delivery_locks_;
   std::unique_ptr<ThreadPool> pool_;
   std::filesystem::path run_dir_;
   std::filesystem::path bmp_log_file_;

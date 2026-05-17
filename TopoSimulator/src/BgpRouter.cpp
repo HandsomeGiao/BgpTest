@@ -257,7 +257,6 @@ void BgpRouter::onOpenMessage(const BgpMessage &message) {
   }
 
   std::optional<NeighborConfig> neighbor_config;
-  std::map<std::string, std::optional<RouteEntry>> current_routes;
   {
     std::lock_guard lock(mutex_);
     if (!active_) {
@@ -274,11 +273,8 @@ void BgpRouter::onOpenMessage(const BgpMessage &message) {
     }
     peer_states_[message.from] = PeerState::Established;
     neighbor_config = it->second;
-    for (const auto &[prefix, route] : loc_rib_) {
-      current_routes[prefix] = route;
-    }
   }
-  disseminateChangedRoutes(current_routes);
+  advertiseCurrentRoutesToNeighbor(*neighbor_config);
 }
 
 void BgpRouter::onUpdateMessage(const BgpMessage &message) {
@@ -686,6 +682,32 @@ void BgpRouter::runDecisionProcessFor(
 
   if (!changes.empty()) {
     disseminateChangedRoutes(changes);
+  }
+}
+
+void BgpRouter::advertiseCurrentRoutesToNeighbor(
+    const NeighborConfig &neighbor) {
+  std::map<std::string, RouteEntry> current_routes;
+  {
+    std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
+    }
+    const auto state_it = peer_states_.find(neighbor.id);
+    if (state_it == peer_states_.end() ||
+        state_it->second != PeerState::Established) {
+      return;
+    }
+    current_routes = loc_rib_;
+  }
+
+  for (const auto &[prefix, route] : current_routes) {
+    if (!exportRouteAllowed(route, neighbor)) {
+      continue;
+    }
+    auto transformed = transformRouteForPeer(route, neighbor);
+    transformed.prefix = prefix;
+    sendUpdateToNeighbor(neighbor, {prefix}, {}, transformed);
   }
 }
 

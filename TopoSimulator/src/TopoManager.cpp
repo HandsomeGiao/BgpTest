@@ -179,6 +179,7 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
                               BgpMessage message,
                               std::chrono::milliseconds extra_delay,
                               std::function<bool()> delivery_guard) {
+  std::shared_ptr<std::mutex> delivery_lock;
   {
     std::lock_guard lock(mutex_);
     if (!running_ || !pool_ || !BmpLogManager::instance().initialized()) {
@@ -198,15 +199,21 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
     const auto to_as = dst_it->second->asn();
     const auto delay_ms = link->config.delay_ms;
     message.sequence = ++sequence_;
+    auto &lock_slot = delivery_locks_[directedKey(from, to)];
+    if (!lock_slot) {
+      lock_slot = std::make_shared<std::mutex>();
+    }
+    delivery_lock = lock_slot;
 
     pool_->enqueue([this, destination = std::move(destination), delay_ms,
                     extra_delay,
                     delivery_guard = std::move(delivery_guard),
-                    from_as, to_as,
+                    from_as, to_as, delivery_lock = std::move(delivery_lock),
                     message = std::move(message)]() mutable {
       if (extra_delay.count() > 0) {
         std::this_thread::sleep_for(extra_delay);
       }
+      std::lock_guard ordered_delivery(*delivery_lock);
       if (delay_ms > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
@@ -389,6 +396,11 @@ const std::filesystem::path &TopoManager::databaseFile() const {
 
 std::string TopoManager::edgeKey(const std::string &a, const std::string &b) {
   return a < b ? a + "|" + b : b + "|" + a;
+}
+
+std::string TopoManager::directedKey(const std::string &from,
+                                     const std::string &to) {
+  return from + ">" + to;
 }
 
 void TopoManager::validateConfig() const {

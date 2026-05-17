@@ -91,6 +91,7 @@ private:
   void cancelPendingUpdate(const std::string &peer_id,
                            const std::string &prefix);
   void runDecisionProcessFor(const std::set<std::string> &changed_prefixes);
+  void advertiseCurrentRoutesToNeighbor(const NeighborConfig &neighbor);
   void disseminateChangedRoutes(
       const std::map<std::string, std::optional<RouteEntry>> &changes);
   [[nodiscard]] std::vector<RouteEntry>

@@ -419,6 +419,56 @@ void canceledTransientAdvertisementDoesNotEmitWithdraw() {
   manager.stop();
 }
 
+void restartedRouterAdvertisesBestRouteToReestablishedPeer() {
+  auto config = fiveRouterTransientTopology(5000);
+  config.simulation.name = "restart-advertise-best-route-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(10s),
+          "five-router topology convergence timed out");
+
+  require(manager.setRouterState("R4", false),
+          "R4 down should change router state");
+  require(manager.waitForConvergence(10s), "R4 down convergence timed out");
+  require(manager.setRouterState("R4", true),
+          "R4 up should change router state");
+  require(manager.waitForConvergence(10s), "R4 restart convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery all_records_query;
+  all_records_query.limit = 10000;
+  const auto records =
+      toposim::BmpLogManager::instance().queryHistory(all_records_query);
+
+  std::uint64_t last_router_up_id = 0;
+  for (const auto &record : records) {
+    if (record.event == "router_up") {
+      last_router_up_id = std::max(last_router_up_id, record.id);
+    }
+  }
+
+  const auto advertised_to_r5 =
+      std::any_of(records.begin(), records.end(), [&](const auto &record) {
+        return record.id > last_router_up_id && record.from == "R4" &&
+               record.to == "R5" && record.action == "UPDATE" &&
+               record.prefixes == "1.1.1.0/24" &&
+               record.as_path == "444 222 111";
+      });
+  require(advertised_to_r5,
+          "R4 restart did not advertise the R2-learned best route to R5");
+
+  const auto repeated_to_r3 =
+      std::any_of(records.begin(), records.end(), [&](const auto &record) {
+        return record.id > last_router_up_id && record.from == "R2" &&
+               record.to == "R3" && record.action == "UPDATE" &&
+               record.prefixes == "1.1.1.0/24";
+      });
+  require(!repeated_to_r3,
+          "R4 restart caused R2 to repeat an unchanged UPDATE to R3");
+  manager.stop();
+}
+
 } // namespace
 
 int main() {
@@ -438,6 +488,7 @@ int main() {
     redundantLinkStateChangeIsNoop();
     redundantNodeStateChangeIsNoop();
     canceledTransientAdvertisementDoesNotEmitWithdraw();
+    restartedRouterAdvertisesBestRouteToReestablishedPeer();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';
     return 1;
