@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsLineItem,
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsView,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
@@ -31,6 +33,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QToolBar,
     QVBoxLayout,
+    QWidget,
 )
 
 try:
@@ -294,6 +297,111 @@ class LinkItem(QGraphicsLineItem):
         painter.drawPolygon(QPolygonF([tip, left, right]))
 
 
+class LineLegendSample(QWidget):
+    def __init__(
+        self,
+        color: QColor,
+        dashed: bool = False,
+        arrow: bool = False,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.color = QColor(color)
+        self.dashed = dashed
+        self.arrow = arrow
+        self.setFixedSize(58, 18)
+
+    def paintEvent(self, event) -> None:
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        pen_style = Qt.PenStyle.DashLine if self.dashed else Qt.PenStyle.SolidLine
+        painter.setPen(QPen(self.color, 2, pen_style))
+        y = self.height() / 2
+        start = QPointF(5, y)
+        end = QPointF(self.width() - 6, y)
+        painter.drawLine(start, end)
+
+        if self.arrow:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(self.color))
+            tip = QPointF(self.width() - 12, y)
+            base_x = tip.x() - 12
+            painter.drawPolygon(
+                QPolygonF(
+                    [
+                        tip,
+                        QPointF(base_x, y - 5),
+                        QPointF(base_x, y + 5),
+                    ]
+                )
+            )
+
+
+class LinkLegendWidget(QFrame):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("linkLegend")
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            """
+            QFrame#linkLegend {
+                background: rgba(255, 255, 255, 225);
+                border: 1px solid #c8d1dc;
+                border-radius: 6px;
+            }
+            QLabel {
+                color: #1f2933;
+                font-size: 12px;
+            }
+            QLabel#legendTitle {
+                font-weight: 600;
+            }
+            """
+        )
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(5)
+
+        title = QLabel("Legend")
+        title.setObjectName("legendTitle")
+        layout.addWidget(title)
+
+        self._add_row(layout, LinkItem.NORMAL_COLOR, False, False, "Normal link")
+        self._add_row(layout, LinkItem.DISABLED_COLOR, True, False, "Disabled link")
+        self._add_row(
+            layout,
+            LinkItem.ROUTE_CLIENT_COLOR,
+            False,
+            True,
+            "RR -> Client",
+        )
+        self._add_row(
+            layout,
+            LinkItem.DISABLED_ROUTE_CLIENT_COLOR,
+            True,
+            True,
+            "Disabled RR -> Client",
+        )
+        self._add_row(layout, QColor(AS_COLORS[0]), True, False, "AS group")
+        self.setLayout(layout)
+
+    def _add_row(
+        self,
+        layout: QVBoxLayout,
+        color: QColor,
+        dashed: bool,
+        arrow: bool,
+        label: str,
+    ) -> None:
+        row = QHBoxLayout()
+        row.setSpacing(7)
+        row.addWidget(LineLegendSample(color, dashed, arrow, self))
+        row.addWidget(QLabel(label))
+        layout.addLayout(row)
+
+
 class AsGroupItem(QGraphicsRectItem):
     def __init__(self, asn: int) -> None:
         super().__init__()
@@ -405,9 +513,27 @@ class TopologyView(QGraphicsView):
         self._min_zoom = 0.2
         self._max_zoom = 4.0
         self._current_zoom = 1.0
+        self.legend_widget: Optional[QWidget] = None
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+
+    def set_legend_widget(self, widget: QWidget) -> None:
+        self.legend_widget = widget
+        self._position_legend()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_legend()
+
+    def _position_legend(self) -> None:
+        if self.legend_widget is None:
+            return
+        margin = 12
+        self.legend_widget.adjustSize()
+        x = max(margin, self.viewport().width() - self.legend_widget.width() - margin)
+        self.legend_widget.move(x, margin)
+        self.legend_widget.raise_()
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.RightButton:
@@ -468,6 +594,9 @@ class MainWindow(QMainWindow):
         self.view = TopologyView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
         self.setCentralWidget(self.view)
+        self.link_legend = LinkLegendWidget(self.view.viewport())
+        self.link_legend.show()
+        self.view.set_legend_widget(self.link_legend)
         self._build_toolbar()
         self._restore_last_topology()
 
