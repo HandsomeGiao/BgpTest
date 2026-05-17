@@ -83,7 +83,7 @@ std::vector<NeighborConfig> BgpRouter::neighbors() const {
   return result;
 }
 
-void BgpRouter::start() {
+void BgpRouter::start(bool send_open_messages) {
   std::vector<NeighborConfig> enabled_neighbors;
   {
     std::lock_guard lock(mutex_);
@@ -114,8 +114,10 @@ void BgpRouter::start() {
     }
   }
 
-  for (const auto &neighbor : enabled_neighbors) {
-    sendOpenToNeighbor(neighbor);
+  if (send_open_messages) {
+    for (const auto &neighbor : enabled_neighbors) {
+      sendOpenToNeighbor(neighbor);
+    }
   }
 }
 

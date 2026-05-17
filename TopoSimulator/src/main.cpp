@@ -346,17 +346,46 @@ std::string formatDuration(std::chrono::steady_clock::duration duration) {
 
 std::string convergenceDuration(const toposim::TopoManager &manager,
                                 std::chrono::steady_clock::time_point start) {
-  const auto last_message = manager.lastMessageProcessedAt();
-  if (last_message <= start) {
+  const auto last_activity = manager.lastConvergenceActivityAt();
+  if (last_activity <= start) {
     return "0.000s";
   }
-  return formatDuration(last_message - start);
+  return formatDuration(last_activity - start);
+}
+
+void updateProgressLine(const std::string &message, bool &printed,
+                        std::size_t &previous_width) {
+  if (!stdoutIsTerminal()) {
+    if (!printed) {
+      printInfoLine(message);
+      printed = true;
+    }
+    return;
+  }
+
+  std::cout << '\r' << message;
+  if (previous_width > message.size()) {
+    std::cout << std::string(previous_width - message.size(), ' ');
+  }
+  std::cout.flush();
+  previous_width = (std::max)(previous_width, message.size());
+  printed = true;
+}
+
+void clearProgressLine(bool printed, std::size_t previous_width) {
+  if (!printed || !stdoutIsTerminal()) {
+    return;
+  }
+  std::cout << '\r' << std::string(previous_width, ' ') << '\r';
+  std::cout.flush();
 }
 
 void waitUntilConverged(const toposim::TopoManager &manager,
                         const std::string &reason,
                         std::chrono::steady_clock::time_point start) {
   auto last_reported = std::uint64_t{0};
+  bool progress_printed = false;
+  std::size_t progress_width = 0;
 
   printInfoLine(reason + ": waiting for topology convergence...");
   while (!manager.isConverged()) {
@@ -366,12 +395,15 @@ void waitUntilConverged(const toposim::TopoManager &manager,
             .count();
     if (static_cast<std::uint64_t>(elapsed) != last_reported) {
       last_reported = static_cast<std::uint64_t>(elapsed);
-      printInfoLine("Waiting for convergence: " +
-                    std::to_string(last_reported) + "s elapsed");
+      updateProgressLine("Waiting for convergence: " +
+                             std::to_string(last_reported) + "s elapsed",
+                         progress_printed, progress_width);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
+  clearProgressLine(progress_printed, progress_width);
+  toposim::BmpLogManager::instance().flush();
   printSuccessLine(reason + ": topology converged after " +
                    convergenceDuration(manager, start));
 }

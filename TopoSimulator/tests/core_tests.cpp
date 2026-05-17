@@ -267,6 +267,30 @@ void startupDoesNotEmitKeepalives() {
   manager.stop();
 }
 
+void startupActivatesRoutersBeforeSendingOpens() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "startup-open-order-tests";
+  config.simulation.worker_threads = 8;
+  config.links[0].delay_ms = 0;
+  config.routers[0].originated_prefixes.push_back("203.0.113.0/24");
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "startup convergence timed out");
+
+  const auto r1_peers = manager.peersSnapshot("R1");
+  const auto r2_peers = manager.peersSnapshot("R2");
+  require(r1_peers.size() == 1 &&
+              r1_peers.front().state == toposim::PeerState::Established,
+          "R1 did not establish its zero-delay startup session");
+  require(r2_peers.size() == 1 &&
+              r2_peers.front().state == toposim::PeerState::Established,
+          "R2 did not establish its zero-delay startup session");
+  require(ribHasPrefix(manager.ribSnapshot("R2"), "203.0.113.0/24"),
+          "zero-delay startup dropped the initial route advertisement");
+  manager.stop();
+}
+
 void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   auto config = twoRouterTopology(250);
   toposim::TopoManager manager(std::move(config));
@@ -529,6 +553,7 @@ int main() {
     stoppedTopoManagerCannotRestart();
     bmpFlushDrainsInflightBatch();
     startupDoesNotEmitKeepalives();
+    startupActivatesRoutersBeforeSendingOpens();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     mraiAppliesToWithdrawalsForSamePeerAndPrefix();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();

@@ -41,6 +41,8 @@ public:
   [[nodiscard]] bool isConverged() const;
   [[nodiscard]] std::chrono::steady_clock::time_point
   lastMessageProcessedAt() const;
+  [[nodiscard]] std::chrono::steady_clock::time_point
+  lastConvergenceActivityAt() const;
 
   [[nodiscard]] std::vector<RouterSnapshot> routersSnapshot() const;
   [[nodiscard]] RibSnapshot ribSnapshot(const std::string &router_id) const;
@@ -67,6 +69,7 @@ private:
                                                    const std::string &b) const;
   [[nodiscard]] std::chrono::milliseconds convergenceQuietPeriod() const;
   [[nodiscard]] std::filesystem::path makeRunDirectory() const;
+  void markConvergenceActivity();
 
   TopologyConfig config_;
   mutable std::mutex mutex_;
@@ -78,6 +81,7 @@ private:
   std::filesystem::path bmp_log_file_;
   std::filesystem::path bmp_database_file_;
   std::chrono::steady_clock::time_point last_message_processed_at_{};
+  std::chrono::steady_clock::time_point last_convergence_activity_at_{};
   std::atomic<std::uint64_t> sequence_{0};
   bool running_ = false;
 };

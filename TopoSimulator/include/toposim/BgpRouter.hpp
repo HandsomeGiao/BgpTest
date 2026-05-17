@@ -37,7 +37,7 @@ public:
   neighbor(const std::string &peer_id) const;
   [[nodiscard]] std::vector<NeighborConfig> neighbors() const;
 
-  void start();
+  void start(bool send_open_messages = true);
   void stop();
   void receiveMessage(const BgpMessage &message);
   void neighborDown(const std::string &peer_id);

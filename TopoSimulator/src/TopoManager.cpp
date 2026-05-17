@@ -130,6 +130,8 @@ void TopoManager::start() {
           "TopoManager for another simulation run.");
     }
     running_ = true;
+    last_message_processed_at_ = {};
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
     for (const auto &[_, router] : routers_) {
       routers.push_back(router);
     }
@@ -146,7 +148,14 @@ void TopoManager::start() {
       });
 
   for (const auto &router : routers) {
-    router->start();
+    router->start(false);
+  }
+  for (const auto &router : routers) {
+    for (const auto &neighbor : router->neighbors()) {
+      if (neighbor.enabled) {
+        router->neighborUp(neighbor.id);
+      }
+    }
   }
 }
 
@@ -204,6 +213,7 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       lock_slot = std::make_shared<std::mutex>();
     }
     delivery_lock = lock_slot;
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
 
     pool_->enqueue([this, destination = std::move(destination), delay_ms,
                     extra_delay,
@@ -218,9 +228,11 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
       if (!messageStillDeliverable(message.from, message.to)) {
+        markConvergenceActivity();
         return;
       }
       if (delivery_guard && !delivery_guard()) {
+        markConvergenceActivity();
         return;
       }
       BmpLogManager::instance().recordReceive(message.to, message, from_as,
@@ -228,7 +240,9 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       destination->receiveMessage(message);
       {
         std::lock_guard lock(mutex_);
-        last_message_processed_at_ = std::chrono::steady_clock::now();
+        const auto now = std::chrono::steady_clock::now();
+        last_message_processed_at_ = now;
+        last_convergence_activity_at_ = now;
       }
     });
   }
@@ -248,6 +262,7 @@ bool TopoManager::setLinkState(const std::string &a, const std::string &b,
       return false;
     }
     it->second.config.enabled = enabled;
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
     router_a = routers_.at(a);
     router_b = routers_.at(b);
   }
@@ -278,6 +293,7 @@ bool TopoManager::setRouterState(const std::string &router_id, bool enabled) {
     if (router->isActive() == enabled) {
       return false;
     }
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
     for (const auto &[_, link] : links_) {
       std::string peer;
       if (link.config.a == router_id) {
@@ -317,6 +333,7 @@ void TopoManager::originatePrefix(const std::string &router_id,
   {
     std::lock_guard lock(mutex_);
     router = routers_.at(router_id);
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
   }
   BmpLogManager::instance().recordTopologyEvent(
       "manual_advertise", {{"router", router_id}, {"prefix", prefix}});
@@ -329,6 +346,7 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
   {
     std::lock_guard lock(mutex_);
     router = routers_.at(router_id);
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
   }
   BmpLogManager::instance().recordTopologyEvent(
       "manual_withdraw", {{"router", router_id}, {"prefix", prefix}});
@@ -339,18 +357,40 @@ bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
   if (!pool_) {
     return !running_;
   }
-  const auto quiet_period = convergenceQuietPeriod();
-  return pool_->waitForIdle(std::max(timeout, quiet_period), quiet_period);
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::max(timeout, convergenceQuietPeriod());
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (isConverged()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return isConverged();
 }
 
 bool TopoManager::isConverged() const {
-  return pool_ && pool_->isIdleFor(convergenceQuietPeriod());
+  const auto quiet_period = convergenceQuietPeriod();
+  std::chrono::steady_clock::time_point last_activity;
+  {
+    std::lock_guard lock(mutex_);
+    last_activity = last_convergence_activity_at_;
+  }
+  const auto activity_is_quiet =
+      last_activity.time_since_epoch().count() == 0 ||
+      last_activity + quiet_period <= std::chrono::steady_clock::now();
+  return pool_ && pool_->isIdleFor(quiet_period) && activity_is_quiet;
 }
 
 std::chrono::steady_clock::time_point
 TopoManager::lastMessageProcessedAt() const {
   std::lock_guard lock(mutex_);
   return last_message_processed_at_;
+}
+
+std::chrono::steady_clock::time_point
+TopoManager::lastConvergenceActivityAt() const {
+  std::lock_guard lock(mutex_);
+  return last_convergence_activity_at_;
 }
 
 std::vector<RouterSnapshot> TopoManager::routersSnapshot() const {
@@ -619,6 +659,11 @@ std::filesystem::path TopoManager::makeRunDirectory() const {
   run_dir += "_" + std::to_string(++run_counter);
   std::filesystem::create_directories(run_dir);
   return run_dir;
+}
+
+void TopoManager::markConvergenceActivity() {
+  std::lock_guard lock(mutex_);
+  last_convergence_activity_at_ = std::chrono::steady_clock::now();
 }
 
 } // namespace toposim
