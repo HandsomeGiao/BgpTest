@@ -1,0 +1,2 @@
+[console_scripts]
+topogenerator = topogenerator.main:main

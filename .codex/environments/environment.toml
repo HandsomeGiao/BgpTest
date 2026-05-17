@@ -6,6 +6,11 @@ name = "BgpTest"
 script = ""
 
 [[actions]]
-name = "Run"
+name = "Simulator"
 icon = "run"
 command = ".\\TopoSimulator\\build\\Release\\TopoSimulator.exe"
+
+[[actions]]
+name = "TopoGenerator"
+icon = "run"
+command = ".\\TopoGenerator\\.venv\\Scripts\\python.exe -m topogenerator.main"
