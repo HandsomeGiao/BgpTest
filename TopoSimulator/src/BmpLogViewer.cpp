@@ -86,7 +86,7 @@ void loadReadableFont(ImGuiIO &io, float dpi_scale) {
   config.OversampleV = 2;
   config.PixelSnapH = true;
 
-  const float font_size = 16.0f * dpi_scale;
+  const float font_size = 20.0f * dpi_scale;
   const auto windows_dir = [] {
     std::array<char, MAX_PATH> buffer{};
     const UINT size =
@@ -121,8 +121,8 @@ void applyReadableStyle(float dpi_scale) {
   style.WindowBorderSize = 0.0f;
   style.FrameRounding = 3.0f * dpi_scale;
   style.GrabRounding = 3.0f * dpi_scale;
-  style.CellPadding = ImVec2(7.0f * dpi_scale, 4.0f * dpi_scale);
-  style.ItemSpacing = ImVec2(8.0f * dpi_scale, 6.0f * dpi_scale);
+  style.CellPadding = ImVec2(8.0f * dpi_scale, 5.0f * dpi_scale);
+  style.ItemSpacing = ImVec2(9.0f * dpi_scale, 7.0f * dpi_scale);
 }
 
 void cleanupRenderTarget() {
@@ -689,11 +689,13 @@ void viewerLoop() {
       selected_index = visible_records.empty() ? -1 : 0;
     }
 
-    constexpr float raw_json_height = 170.0f;
+    const float raw_json_input_height = 180.0f * dpi_scale;
+    const float detail_region_height =
+        raw_json_input_height + ImGui::GetTextLineHeightWithSpacing() +
+        ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 3.0f;
     const float table_height =
-        (std::max)(220.0f, ImGui::GetContentRegionAvail().y -
-                               raw_json_height - ImGui::GetFrameHeightWithSpacing() -
-                               ImGui::GetStyle().ItemSpacing.y * 2.0f);
+        (std::max)(220.0f * dpi_scale,
+                   ImGui::GetContentRegionAvail().y - detail_region_height);
     drawRecordTable(visible_records, selected_index, table_height,
                     visible_columns);
 
@@ -706,7 +708,8 @@ void viewerLoop() {
                 .raw_json.c_str();
     }
     ImGui::InputTextMultiline("##raw-json", const_cast<char *>(raw),
-                              std::strlen(raw) + 1, ImVec2(-1.0f, 160.0f),
+                              std::strlen(raw) + 1,
+                              ImVec2(-1.0f, raw_json_input_height),
                               ImGuiInputTextFlags_ReadOnly);
     ImGui::End();
 

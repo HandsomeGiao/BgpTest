@@ -64,7 +64,7 @@ BGP Test Framework
 - `BmpLogViewer`：基于 ImGui 的轻量窗口，用于实时观察收敛过程和查询分析历史 BMP 报文。
 - `BgpTypes`：定义 BGP 消息、路径属性、邻居配置、路由条目和拓扑配置等数据结构。
 
-默认无参数启动时，模拟器只会检查当前工作目录下的 `topo/` 文件夹，并列出其中可用的 `*.json` 拓扑文件。如果没有可用拓扑，会提示后退出。
+默认无参数启动时，模拟器只会检查 `TopoSimulator.exe` 所在目录下的 `topo/` 文件夹，并列出其中可用的 `*.json` 拓扑文件。如果没有可用拓扑，会提示后退出。
 
 详细构建和运行说明见 [TopoSimulator/README.md](TopoSimulator/README.md)。
 
@@ -87,7 +87,7 @@ BGP Test Framework
 ## 运行流程
 
 1. 使用 `TopoGenerator` 创建网络拓扑，或手写 JSON 拓扑文件。
-2. 将拓扑 JSON 放入模拟器当前工作目录的 `topo/` 文件夹，或使用 `--topology` 参数显式指定文件。
+2. 将拓扑 JSON 放入 `TopoSimulator.exe` 所在目录的 `topo/` 文件夹，或使用 `--topology` 参数显式指定文件。
 3. 启动 `TopoSimulator`。
 4. 模拟器读取拓扑，创建路由器节点和 BGP 邻居关系。
 5. 网络开始交换 BGP 报文并收敛。

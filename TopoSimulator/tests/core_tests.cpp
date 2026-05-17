@@ -255,6 +255,40 @@ void ebgpRouteIsNotWithdrawnBackToOriginPeer() {
   manager.stop();
 }
 
+void redundantLinkStateChangeIsNoop() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "redundant-link-state-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  require(!manager.setLinkState("R1", "R2", true),
+          "link up on an already enabled link should be a no-op");
+  require(manager.setLinkState("R1", "R2", false),
+          "link down on an enabled link should change state");
+  require(!manager.setLinkState("R1", "R2", false),
+          "link down on an already disabled link should be a no-op");
+  manager.stop();
+}
+
+void redundantNodeStateChangeIsNoop() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "redundant-node-state-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  require(!manager.setRouterState("R1", true),
+          "node up on an already active router should be a no-op");
+  require(manager.setRouterState("R1", false),
+          "node down on an active router should change state");
+  require(!manager.setRouterState("R1", false),
+          "node down on an already stopped router should be a no-op");
+  manager.stop();
+}
+
 void canceledTransientAdvertisementDoesNotEmitWithdraw() {
   auto config = fiveRouterTransientTopology(250);
   toposim::TopoManager manager(std::move(config));
@@ -295,6 +329,8 @@ int main() {
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();
+    redundantLinkStateChangeIsNoop();
+    redundantNodeStateChangeIsNoop();
     canceledTransientAdvertisementDoesNotEmitWithdraw();
   } catch (const std::exception &ex) {
     std::cerr << "FAILED: " << ex.what() << '\n';

@@ -356,8 +356,52 @@ void waitBeforeExitIfDoubleClicked() {
   std::getline(std::cin, ignored);
 }
 
+std::filesystem::path executablePath() {
+  std::vector<wchar_t> buffer(MAX_PATH);
+  while (true) {
+    const DWORD size = GetModuleFileNameW(
+        nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (size == 0) {
+      throw std::runtime_error("Unable to resolve executable path.");
+    }
+    if (size < buffer.size()) {
+      return std::filesystem::path(buffer.data());
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+}
+
+std::filesystem::path executableDirectory() {
+  return executablePath().parent_path();
+}
+
+std::filesystem::path topologyDirectory() {
+  return executableDirectory() / "topo";
+}
+
+std::filesystem::path resolveTopologyArgument(std::filesystem::path path) {
+  if (path.is_absolute()) {
+    return path;
+  }
+  if (std::filesystem::exists(path)) {
+    return path;
+  }
+
+  const auto exe_relative = executableDirectory() / path;
+  if (std::filesystem::exists(exe_relative)) {
+    return exe_relative;
+  }
+
+  const auto topo_relative = topologyDirectory() / path;
+  if (std::filesystem::exists(topo_relative)) {
+    return topo_relative;
+  }
+
+  return path;
+}
+
 std::vector<std::filesystem::path> discoverTopologies() {
-  const auto topo_dir = std::filesystem::current_path() / "topo";
+  const auto topo_dir = topologyDirectory();
   std::vector<std::filesystem::path> topologies;
   if (!std::filesystem::exists(topo_dir) ||
       !std::filesystem::is_directory(topo_dir)) {
@@ -382,14 +426,14 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if ((arg == "--topology" || arg == "-t") && i + 1 < argc) {
-      return argv[++i];
+      return resolveTopologyArgument(argv[++i]);
     }
     if (arg == "--debug") {
       spdlog::set_level(spdlog::level::debug);
     }
   }
 
-  const auto topo_dir = std::filesystem::current_path() / "topo";
+  const auto topo_dir = topologyDirectory();
   const auto topologies = discoverTopologies();
   if (topologies.empty()) {
     printWarningLine("No available topologies in: " + topo_dir.string());
@@ -563,7 +607,13 @@ int main(int argc, char **argv) {
           if (!requireConverged(manager)) {
             continue;
           }
-          manager.setLinkState(parts[2], parts[3], parts[1] == "up");
+          const bool changed =
+              manager.setLinkState(parts[2], parts[3], parts[1] == "up");
+          if (!changed) {
+            printWarningLine(parts[1] == "up" ? "Link is already up."
+                                               : "Link is already down.");
+            continue;
+          }
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "node") {
           if (parts[1] != "up" && parts[1] != "down") {
@@ -573,7 +623,13 @@ int main(int argc, char **argv) {
           if (!requireConverged(manager)) {
             continue;
           }
-          manager.setRouterState(parts[2], parts[1] == "up");
+          const bool changed =
+              manager.setRouterState(parts[2], parts[1] == "up");
+          if (!changed) {
+            printWarningLine(parts[1] == "up" ? "Router is already running."
+                                               : "Router is already stopped.");
+            continue;
+          }
           manager.waitForConvergence(std::chrono::seconds(20));
         } else if (parts.size() == 3 && parts[0] == "advertise") {
           if (!requireConverged(manager)) {

@@ -33,8 +33,8 @@ public:
                    std::chrono::milliseconds extra_delay =
                        std::chrono::milliseconds{0},
                    std::function<bool()> delivery_guard = {});
-  void setLinkState(const std::string &a, const std::string &b, bool enabled);
-  void setRouterState(const std::string &router_id, bool enabled);
+  bool setLinkState(const std::string &a, const std::string &b, bool enabled);
+  bool setRouterState(const std::string &router_id, bool enabled);
   void originatePrefix(const std::string &router_id, const std::string &prefix);
   void withdrawPrefix(const std::string &router_id, const std::string &prefix);
   bool waitForConvergence(std::chrono::milliseconds timeout);

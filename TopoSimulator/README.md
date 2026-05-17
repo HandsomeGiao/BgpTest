@@ -30,7 +30,7 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 ### Runtime Flow
 
-1. The CLI finds a topology file from `--topology` or the current directory's `topo/` folder.
+1. The CLI finds a topology file from `--topology` or the executable directory's `topo/` folder.
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
 3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
 4. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
@@ -110,7 +110,7 @@ The current tests cover topology validation and an MRAI regression where a delay
 .\TopoSimulator\build\Release\TopoSimulator.exe --topology TopoSimulator\config\sample_topology.json
 ```
 
-You can also double-click `TopoSimulator.exe` after building. Without `--topology`, it only looks in the current working directory's `topo/` folder, lists the available `*.json` topology files, and lets you choose one. If no JSON topology exists there, it prints a message and exits.
+You can also double-click `TopoSimulator.exe` after building. Without `--topology`, it only looks in the `topo/` folder next to `TopoSimulator.exe`, lists the available `*.json` topology files, and lets you choose one. If no JSON topology exists there, it prints a message and exits.
 
 The BMP viewer mode is controlled with `--bmp-viewer auto|on|off`:
 

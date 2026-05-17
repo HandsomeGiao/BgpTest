@@ -183,7 +183,7 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
   }
 }
 
-void TopoManager::setLinkState(const std::string &a, const std::string &b,
+bool TopoManager::setLinkState(const std::string &a, const std::string &b,
                                bool enabled) {
   std::shared_ptr<BgpRouter> router_a;
   std::shared_ptr<BgpRouter> router_b;
@@ -192,6 +192,9 @@ void TopoManager::setLinkState(const std::string &a, const std::string &b,
     auto it = links_.find(edgeKey(a, b));
     if (it == links_.end()) {
       throw std::runtime_error("Unknown link: " + a + " - " + b);
+    }
+    if (it->second.config.enabled == enabled) {
+      return false;
     }
     it->second.config.enabled = enabled;
     router_a = routers_.at(a);
@@ -208,9 +211,10 @@ void TopoManager::setLinkState(const std::string &a, const std::string &b,
     router_a->neighborDown(b);
     router_b->neighborDown(a);
   }
+  return true;
 }
 
-void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
+bool TopoManager::setRouterState(const std::string &router_id, bool enabled) {
   std::vector<std::shared_ptr<BgpRouter>> peer_routers;
   std::shared_ptr<BgpRouter> router;
   {
@@ -220,6 +224,9 @@ void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
       throw std::runtime_error("Unknown router: " + router_id);
     }
     router = it->second;
+    if (router->isActive() == enabled) {
+      return false;
+    }
     for (const auto &[_, link] : links_) {
       std::string peer;
       if (link.config.a == router_id) {
@@ -250,6 +257,7 @@ void TopoManager::setRouterState(const std::string &router_id, bool enabled) {
       peer_router->neighborDown(router_id);
     }
   }
+  return true;
 }
 
 void TopoManager::originatePrefix(const std::string &router_id,
