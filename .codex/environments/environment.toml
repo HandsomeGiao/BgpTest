@@ -11,6 +11,16 @@ icon = "run"
 command = ".\\TopoSimulator\\build\\Release\\TopoSimulator.exe"
 
 [[actions]]
+name = "Build Simulator"
+icon = "terminal"
+command = "powershell -ExecutionPolicy Bypass -File .\\TopoSimulator\\build.ps1 -NoPause"
+
+[[actions]]
 name = "TopoGenerator"
 icon = "run"
 command = ".\\TopoGenerator\\.venv\\Scripts\\python.exe -m topogenerator.main"
+
+[[actions]]
+name = "Install TopoGenerator Env"
+icon = "terminal"
+command = "powershell -ExecutionPolicy Bypass -Command \"if (!(Test-Path -LiteralPath '.\\TopoGenerator\\.venv\\Scripts\\python.exe')) { py -3 -m venv '.\\TopoGenerator\\.venv' }; .\\TopoGenerator\\.venv\\Scripts\\python.exe -m pip install -r '.\\TopoGenerator\\requirements.txt'\""
