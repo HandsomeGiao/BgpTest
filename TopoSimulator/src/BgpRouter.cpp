@@ -1,6 +1,7 @@
 #include "toposim/BgpRouter.hpp"
 
 #include <algorithm>
+#include <random>
 #include <tuple>
 
 #include "toposim/TopoManager.hpp"
@@ -21,6 +22,17 @@ std::string clusterAppend(const std::string &existing,
     return cluster_id;
   }
   return existing + "," + cluster_id;
+}
+
+std::chrono::milliseconds randomInitialMraiDelay(std::uint32_t mrai_ms) {
+  if (mrai_ms == 0) {
+    return std::chrono::milliseconds{0};
+  }
+  const auto min_delay = (mrai_ms + 1) / 2;
+  thread_local std::mt19937 rng{std::random_device{}()};
+  std::uniform_int_distribution<std::uint32_t> distribution(min_delay,
+                                                            mrai_ms);
+  return std::chrono::milliseconds{distribution(rng)};
 }
 
 } // namespace
@@ -545,10 +557,15 @@ BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
   for (const auto &prefix : affected_prefixes) {
     const auto peer_it = mrai_next_update_.find(neighbor.id);
     if (peer_it == mrai_next_update_.end()) {
+      send_at =
+          std::max(send_at, now + randomInitialMraiDelay(neighbor.mrai_ms));
       continue;
     }
     const auto prefix_it = peer_it->second.find(prefix);
-    if (prefix_it != peer_it->second.end() && prefix_it->second > send_at) {
+    if (prefix_it == peer_it->second.end()) {
+      send_at =
+          std::max(send_at, now + randomInitialMraiDelay(neighbor.mrai_ms));
+    } else if (prefix_it->second > send_at) {
       send_at = prefix_it->second;
     }
   }

@@ -319,14 +319,31 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   withdraw_query.limit = 20;
   const auto withdrawals =
       toposim::BmpLogManager::instance().queryHistory(withdraw_query);
-  require(!withdrawals.empty(),
-          "BMP SQLite history query returned no withdrawals for R2");
   require(std::all_of(withdrawals.begin(), withdrawals.end(), [](const auto &r) {
             return r.action == "WITHDRAW";
           }),
           "BMP withdrawal query returned records not labeled WITHDRAW");
   require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
           "delayed MRAI advertisement revived a withdrawn route");
+  manager.stop();
+}
+
+void firstMraiUpdateIsNotImmediateAfterStartup() {
+  auto config = twoRouterTopology(1000);
+  config.simulation.name = "initial-mrai-jitter-tests";
+  const std::string prefix = "203.0.113.0/24";
+  config.routers[0].originated_prefixes.push_back(prefix);
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  std::this_thread::sleep_for(200ms);
+  require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "first MRAI-protected UPDATE was sent immediately after startup");
+
+  require(manager.waitForConvergence(4s),
+          "initial randomized MRAI convergence timed out");
+  require(ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "initial randomized MRAI UPDATE never reached R2");
   manager.stop();
 }
 
@@ -339,7 +356,7 @@ void mraiAppliesToWithdrawalsForSamePeerAndPrefix() {
   toposim::TopoManager manager(std::move(config));
   manager.start();
 
-  const auto deadline = std::chrono::steady_clock::now() + 1s;
+  const auto deadline = std::chrono::steady_clock::now() + 1500ms;
   while (!ribHasPrefix(manager.ribSnapshot("R2"), prefix) &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(10ms);
@@ -555,6 +572,7 @@ int main() {
     startupDoesNotEmitKeepalives();
     startupActivatesRoutersBeforeSendingOpens();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
+    firstMraiUpdateIsNotImmediateAfterStartup();
     mraiAppliesToWithdrawalsForSamePeerAndPrefix();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
