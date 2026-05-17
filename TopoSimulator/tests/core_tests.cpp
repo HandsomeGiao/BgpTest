@@ -119,6 +119,45 @@ bool ribHasPrefix(const toposim::RibSnapshot &rib, const std::string &prefix) {
                      [&](const auto &route) { return route.prefix == prefix; });
 }
 
+std::size_t locRibPrefixCount(const toposim::RibSnapshot &rib) {
+  return rib.loc_rib.size();
+}
+
+void sendingOpenDoesNotDowngradeEstablishedPeer() {
+  auto config = makeRouter("R1", "1.1.1.1", 65000);
+  config.neighbors.push_back({
+      .id = "R2",
+      .remote_asn = 65000,
+      .session_type = toposim::SessionType::Ibgp,
+      .rr_client = false,
+      .enabled = true,
+      .hold_time_seconds = 90,
+      .mrai_ms = 0,
+  });
+
+  toposim::BgpRouter router(std::move(config));
+  router.start(false);
+
+  toposim::BgpMessage open;
+  open.type = toposim::BgpMessageType::Open;
+  open.from = "R2";
+  open.to = "R1";
+  open.open = toposim::BgpOpenPayload{
+      .version = 4,
+      .asn = 65000,
+      .hold_time_seconds = 90,
+      .router_id = "2.2.2.2",
+  };
+  router.receiveMessage(open);
+  router.neighborUp("R2");
+
+  const auto peers = router.peerSnapshot();
+  require(peers.size() == 1 &&
+              peers.front().state == toposim::PeerState::Established,
+          "sending our OPEN after receiving peer OPEN downgraded the session");
+  router.stop();
+}
+
 void rejectsDuplicateRouterIds() {
   auto config = twoRouterTopology(0);
   config.routers.push_back(makeRouter("R1", "3.3.3.3", 65000));
@@ -367,12 +406,40 @@ void mraiAppliesToWithdrawalsForSamePeerAndPrefix() {
   manager.withdrawPrefix("R1", prefix);
   std::this_thread::sleep_for(150ms);
   require(ribHasPrefix(manager.ribSnapshot("R2"), prefix),
-          "withdrawal UPDATE bypassed the per-peer/prefix MRAI timer");
+          "withdrawal UPDATE bypassed the per-peer MRAI timer");
 
   require(manager.waitForConvergence(4s),
           "MRAI-delayed withdrawal convergence timed out");
   require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
           "MRAI-delayed withdrawal never reached R2");
+  manager.stop();
+}
+
+void mraiIsSharedByAllPrefixesForPeer() {
+  auto config = twoRouterTopology(1000);
+  config.simulation.name = "peer-mrai-spacing-tests";
+  config.routers[0].originated_prefixes.push_back("198.51.100.0/24");
+  config.routers[0].originated_prefixes.push_back("203.0.113.0/24");
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+
+  const auto deadline = std::chrono::steady_clock::now() + 1500ms;
+  while (locRibPrefixCount(manager.ribSnapshot("R2")) == 0 &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 1,
+          "peer-level MRAI did not serialize the first two prefixes");
+
+  std::this_thread::sleep_for(400ms);
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 1,
+          "second prefix bypassed the peer-level MRAI timer");
+
+  require(manager.waitForConvergence(4s),
+          "peer-level MRAI convergence timed out");
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 2,
+          "peer-level MRAI second prefix never reached R2");
   manager.stop();
 }
 
@@ -561,6 +628,7 @@ void restartedRouterAdvertisesBestRouteToReestablishedPeer() {
 
 int main() {
   try {
+    sendingOpenDoesNotDowngradeEstablishedPeer();
     rejectsDuplicateRouterIds();
     rejectsInvalidBgpRouterIds();
     rejectsInvalidLinks();
@@ -574,6 +642,7 @@ int main() {
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     firstMraiUpdateIsNotImmediateAfterStartup();
     mraiAppliesToWithdrawalsForSamePeerAndPrefix();
+    mraiIsSharedByAllPrefixesForPeer();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();

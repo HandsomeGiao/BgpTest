@@ -49,7 +49,7 @@ Routers do not create real TCP sockets or bind real interface addresses. BGP ses
 
 Route reflector behavior is derived from per-neighbor `rr_client`. A router with at least one RR client is treated as a reflector. Client-learned IBGP routes may be reflected to other peers; non-client-learned IBGP routes are reflected only to clients.
 
-MRAI is tracked per neighbor and prefix inside each router. Advertisements may be delayed, while withdrawals are sent immediately. Delayed advertisements carry a per-prefix generation guard, so an older UPDATE is dropped if the prefix is withdrawn or superseded before the delay expires. This keeps the timing behavior close to the router that owns the export policy without allowing stale delayed advertisements to revive withdrawn routes.
+MRAI is tracked per neighbor inside each router. All UPDATE messages sent from one router to the same neighbor share the same timer, even when they carry different prefixes or are withdrawal-only UPDATEs. Delayed messages carry per-prefix generation guards, so an older UPDATE is dropped if the prefix is withdrawn or superseded before the delay expires. This keeps the timing behavior close to the router that owns the export policy without allowing stale delayed advertisements to revive withdrawn routes.
 
 ### Concurrency Model
 
@@ -102,7 +102,7 @@ The simulator has a small CTest target for core correctness checks:
 ctest --test-dir TopoSimulator\build -C Release --output-on-failure
 ```
 
-The current tests cover topology validation and an MRAI regression where a delayed advertisement must not revive a prefix after it has been withdrawn.
+The current tests cover topology validation, MRAI regressions where delayed advertisements must not revive withdrawn prefixes, and peer-level MRAI spacing across multiple prefixes.
 
 ## Run
 
@@ -142,9 +142,9 @@ Neighbor entries may be explicit. If a link exists but one side omits the neighb
 
 Topology validation rejects empty router ids, duplicate router ids, duplicate or invalid BGP router-ids, ASN 0, invalid originated IPv4 CIDR prefixes, self-neighbors, duplicate neighbors, explicit neighbors without a backing link, neighbor `remote_asn` or `session_type` mismatches, links with empty endpoints, self-links, duplicate links and links or neighbors that reference unknown routers. BGP router-ids must be dotted decimal `x.x.x.x` values with each octet in `0..255`, excluding `0.0.0.0`. These checks run before any routers, worker threads or logs are created.
 
-Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE advertisements. `mrai_ms=0` disables MRAI. Withdrawals are sent immediately.
+Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE messages. `mrai_ms=0` disables MRAI. Withdrawal-only UPDATEs use the same per-neighbor MRAI timer as advertisements.
 
-If an MRAI-delayed advertisement becomes stale because a newer UPDATE or withdraw supersedes it before delivery, the delayed task is dropped instead of being logged or delivered.
+If an MRAI-delayed message becomes stale because a newer UPDATE or withdraw supersedes it before delivery, the delayed task is dropped instead of being logged or delivered.
 
 Convergence waits for the worker queue to stay idle for at least `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so configured MRAI timers are included in the stability window.
 
