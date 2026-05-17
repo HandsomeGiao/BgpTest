@@ -109,6 +109,35 @@ class RouterDialog(QDialog):
         )
 
 
+class BatchRouterAsnDialog(QDialog):
+    def __init__(self, routers: list[RouterNode], parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit Routers")
+        self.asn_spin = QSpinBox()
+        self.asn_spin.setRange(1, 10_000_000)
+        self.asn_spin.setValue(routers[0].asn if routers else 65000)
+
+        form = QFormLayout()
+        form.addRow(f"ASN for {len(routers)} routers", self.asn_spin)
+
+        ok = QPushButton("OK")
+        cancel = QPushButton("Cancel")
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(ok)
+        buttons.addWidget(cancel)
+
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addLayout(buttons)
+        self.setLayout(layout)
+
+    def asn(self) -> int:
+        return self.asn_spin.value()
+
+
 class LinkDialog(QDialog):
     def __init__(
         self,
@@ -657,10 +686,22 @@ class MainWindow(QMainWindow):
         selected = self.scene.selectedItems()
         if not selected:
             return
-        item = selected[0]
-        if isinstance(item, RouterItem):
-            self.edit_router_item(item)
-        elif isinstance(item, LinkItem):
+        router_items = [item for item in selected if isinstance(item, RouterItem)]
+        if router_items:
+            if len(router_items) == 1:
+                self.edit_router_item(router_items[0])
+            else:
+                self.edit_router_items_asn(router_items)
+            return
+
+        link_items = [item for item in selected if isinstance(item, LinkItem)]
+        if len(link_items) != 1:
+            self.scene.clearSelection()
+            self.clear_pending_link()
+            return
+
+        item = link_items[0]
+        if isinstance(item, LinkItem):
             dialog = LinkDialog(sorted(self.model.routers.keys()), item.link, self)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 updated = dialog.link()
@@ -674,6 +715,22 @@ class MainWindow(QMainWindow):
                 item.link.mrai_ms_from_b = updated.mrai_ms_from_b
                 self.scene.rebuild()
                 self.clear_pending_link()
+
+    def edit_router_items_asn(self, items: list[RouterItem]) -> None:
+        routers = [item.router for item in items]
+        dialog = BatchRouterAsnDialog(routers, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        asn = dialog.asn()
+        selected_ids = [router.id for router in routers]
+        for router in routers:
+            router.asn = asn
+        self.scene.rebuild()
+        self.clear_pending_link()
+        for router_id in selected_ids:
+            if router_id in self.scene.router_items:
+                self.scene.router_items[router_id].setSelected(True)
 
     def edit_router_item(self, item: RouterItem) -> None:
         dialog = RouterDialog(item.router, self)
