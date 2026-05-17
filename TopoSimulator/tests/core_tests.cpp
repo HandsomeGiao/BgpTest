@@ -149,6 +149,107 @@ void rejectsInvalidLinks() {
                 "duplicate link should be rejected");
 }
 
+void rejectsInvalidNeighborConfig() {
+  auto remote_asn_mismatch = twoRouterTopology(0);
+  remote_asn_mismatch.routers[0].neighbors[0].remote_asn = 65001;
+  requireThrows([&] { toposim::TopoManager manager(remote_asn_mismatch); },
+                "remote_asn mismatch should be rejected");
+
+  auto session_type_mismatch = twoRouterTopology(0);
+  session_type_mismatch.routers[0].neighbors[0].session_type =
+      toposim::SessionType::Ebgp;
+  requireThrows([&] { toposim::TopoManager manager(session_type_mismatch); },
+                "session_type mismatch should be rejected");
+
+  auto missing_link = twoRouterTopology(0);
+  missing_link.links.clear();
+  requireThrows([&] { toposim::TopoManager manager(missing_link); },
+                "explicit neighbor without a backing link should be rejected");
+}
+
+void rejectsDuplicateBgpRouterIdsAndInvalidPrefixes() {
+  auto duplicate_bgp_id = twoRouterTopology(0);
+  duplicate_bgp_id.routers[1].router_id = duplicate_bgp_id.routers[0].router_id;
+  requireThrows([&] { toposim::TopoManager manager(duplicate_bgp_id); },
+                "duplicate BGP router id should be rejected");
+
+  auto invalid_prefix = twoRouterTopology(0);
+  invalid_prefix.routers[0].originated_prefixes.push_back("not-a-prefix");
+  requireThrows([&] { toposim::TopoManager manager(invalid_prefix); },
+                "invalid originated prefix should be rejected");
+}
+
+void updateBeforeOpenIsRejected() {
+  auto r1 = makeRouter("R1", "1.1.1.1", 65000);
+  r1.neighbors.push_back({
+      .id = "R2",
+      .remote_asn = 65001,
+      .session_type = toposim::SessionType::Ebgp,
+      .rr_client = false,
+      .enabled = true,
+  });
+
+  toposim::BgpRouter router(std::move(r1));
+  router.start();
+
+  toposim::BgpMessage update_message;
+  update_message.type = toposim::BgpMessageType::Update;
+  update_message.from = "R2";
+  update_message.to = "R1";
+  update_message.update = toposim::BgpUpdatePayload{
+      .nlri = {"203.0.113.0/24"},
+      .path_attributes =
+          {
+              .as_path = {65001},
+              .next_hop = "2.2.2.2",
+          },
+  };
+
+  router.receiveMessage(update_message);
+
+  const auto peers = router.peerSnapshot();
+  const auto peer = std::find_if(peers.begin(), peers.end(), [](const auto &p) {
+    return p.id == "R2";
+  });
+  require(peer != peers.end(), "test peer should exist");
+  require(peer->state != toposim::PeerState::Established,
+          "UPDATE before OPEN established a session");
+  require(!ribHasPrefix(router.ribSnapshot(), "203.0.113.0/24"),
+          "UPDATE before OPEN polluted the Loc-RIB");
+  router.stop();
+}
+
+void stoppedTopoManagerCannotRestart() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "restart-rejection-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+  manager.stop();
+  requireThrows([&] { manager.start(); },
+                "TopoManager restart after stop should be rejected");
+}
+
+void bmpFlushDrainsInflightBatch() {
+  auto &logger = toposim::BmpLogManager::instance();
+  logger.initialize("tmp/tests/bmp-flush/bmp.log",
+                    "tmp/tests/bmp-flush/bmp.sqlite", 2048);
+
+  for (std::uint64_t i = 0; i < 1000; ++i) {
+    logger.recordTopologyEvent("flush_test", {{"index", i}});
+  }
+  logger.flush();
+
+  toposim::BmpLogQuery query;
+  query.actions = {"flush_test"};
+  query.limit = 1200;
+  const auto records = logger.queryHistory(query);
+  require(records.size() == 1000,
+          "BMP flush returned before all records reached SQLite");
+  logger.shutdown();
+}
+
 void startupDoesNotEmitKeepalives() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "no-keepalive-tests";
@@ -325,6 +426,11 @@ int main() {
     rejectsDuplicateRouterIds();
     rejectsInvalidBgpRouterIds();
     rejectsInvalidLinks();
+    rejectsInvalidNeighborConfig();
+    rejectsDuplicateBgpRouterIdsAndInvalidPrefixes();
+    updateBeforeOpenIsRejected();
+    stoppedTopoManagerCannotRestart();
+    bmpFlushDrainsInflightBatch();
     startupDoesNotEmitKeepalives();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     bmpHistorySupportsMessageFilterFields();

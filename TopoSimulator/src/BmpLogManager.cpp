@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
+#include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -318,32 +319,47 @@ void BmpLogManager::initialize(std::filesystem::path log_file,
     database_file_ = std::move(database_file);
     live_capacity_ = std::max<std::size_t>(1, live_capacity);
     stopping_ = false;
-    initialized_ = true;
+    initialized_ = false;
     next_id_ = 1;
     total_events_ = 0;
+    inflight_ = 0;
+    writer_error_.clear();
     queue_.clear();
     live_records_.clear();
   }
 
-  std::filesystem::create_directories(log_file_.parent_path());
-  std::filesystem::create_directories(database_file_.parent_path());
-  std::error_code ec;
-  std::filesystem::remove(database_file_, ec);
-  std::filesystem::remove(database_file_.string() + "-wal", ec);
-  std::filesystem::remove(database_file_.string() + "-shm", ec);
+  try {
+    std::filesystem::create_directories(log_file_.parent_path());
+    std::filesystem::create_directories(database_file_.parent_path());
+    std::error_code ec;
+    std::filesystem::remove(database_file_, ec);
+    std::filesystem::remove(database_file_.string() + "-wal", ec);
+    std::filesystem::remove(database_file_.string() + "-shm", ec);
 
-  {
-    std::lock_guard io_lock(io_mutex_);
-    out_.open(log_file_, std::ios::out | std::ios::trunc);
-    if (!out_) {
-      throw std::runtime_error("Unable to open BMP collector log: " +
-                               log_file_.string());
+    {
+      std::lock_guard io_lock(io_mutex_);
+      out_.open(log_file_, std::ios::out | std::ios::trunc);
+      if (!out_) {
+        throw std::runtime_error("Unable to open BMP collector log: " +
+                                 log_file_.string());
+      }
+      openDatabase();
+      createSchema();
     }
-    openDatabase();
-    createSchema();
-  }
 
-  writer_thread_ = std::thread([this] { writerLoop(); });
+    writer_thread_ = std::thread([this] { writerLoop(); });
+    {
+      std::lock_guard lock(mutex_);
+      initialized_ = true;
+    }
+  } catch (...) {
+    std::lock_guard io_lock(io_mutex_);
+    if (out_.is_open()) {
+      out_.close();
+    }
+    closeDatabase();
+    throw;
+  }
 }
 
 void BmpLogManager::shutdown() {
@@ -373,18 +389,16 @@ void BmpLogManager::shutdown() {
     initialized_ = false;
     stopping_ = false;
     queue_.clear();
+    inflight_ = 0;
   }
+  drained_cv_.notify_all();
 }
 
 void BmpLogManager::flush() {
-  while (true) {
-    {
-      std::lock_guard lock(mutex_);
-      if (queue_.empty()) {
-        break;
-      }
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  {
+    std::unique_lock lock(mutex_);
+    drained_cv_.wait(lock,
+                     [this] { return queue_.empty() && inflight_ == 0; });
   }
   std::lock_guard io_lock(io_mutex_);
   if (out_.is_open()) {
@@ -550,7 +564,8 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
                      static_cast<sqlite3_int64>(std::max<std::size_t>(
                          1, std::min<std::size_t>(query.limit, 10000))));
 
-  while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+  int rc = SQLITE_OK;
+  while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
     BmpLogRecord record;
     record.id =
         static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));
@@ -586,6 +601,7 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
     record.raw_json = columnText(stmt.get(), 17);
     result.push_back(std::move(record));
   }
+  sqliteCheck(rc, asDb(db_), "read BMP query results");
   return result;
 }
 
@@ -621,6 +637,7 @@ void BmpLogManager::enqueue(BmpLogRecord record) {
 void BmpLogManager::writerLoop() {
   std::vector<BmpLogRecord> batch;
   while (true) {
+    std::size_t batch_size = 0;
     {
       std::unique_lock lock(mutex_);
       cv_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
@@ -631,9 +648,11 @@ void BmpLogManager::writerLoop() {
         batch.push_back(std::move(queue_.front()));
         queue_.pop_front();
       }
+      batch_size = batch.size();
+      inflight_ += batch_size;
     }
 
-    {
+    try {
       std::lock_guard io_lock(io_mutex_);
       std::optional<SqliteTransaction> transaction;
       if (db_) {
@@ -648,9 +667,29 @@ void BmpLogManager::writerLoop() {
       if (out_.is_open()) {
         out_.flush();
       }
+    } catch (const std::exception &ex) {
+      rememberWriterError(ex.what());
+      std::cerr << "BMP log writer error: " << ex.what() << '\n';
+    } catch (...) {
+      rememberWriterError("unknown BMP log writer error");
+      std::cerr << "BMP log writer error: unknown error\n";
     }
     batch.clear();
+    markBatchDrained(batch_size);
   }
+}
+
+void BmpLogManager::markBatchDrained(std::size_t batch_size) {
+  std::lock_guard lock(mutex_);
+  inflight_ = batch_size > inflight_ ? 0 : inflight_ - batch_size;
+  if (queue_.empty() && inflight_ == 0) {
+    drained_cv_.notify_all();
+  }
+}
+
+void BmpLogManager::rememberWriterError(std::string message) {
+  std::lock_guard lock(mutex_);
+  writer_error_ = std::move(message);
 }
 
 void BmpLogManager::openDatabase() {

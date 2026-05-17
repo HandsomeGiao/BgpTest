@@ -41,7 +41,7 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 ### Core Simulation Model
 
-`TopoManager` owns topology-wide runtime state: routers, links, the worker pool, sequence numbers and BMP logging integration. It exposes high-level operations rather than letting routers mutate global topology directly. This gives all topology disturbances a single coordination point.
+`TopoManager` owns topology-wide runtime state: routers, links, the worker pool, sequence numbers and BMP logging integration. It exposes high-level operations rather than letting routers mutate global topology directly. This gives all topology disturbances a single coordination point. A manager instance is a single-run object: after `stop()` releases the worker pool, create a new `TopoManager` for another run instead of calling `start()` again.
 
 `BgpRouter` models one BGP speaker. It owns neighbor configuration, peer states, local originated routes, Adj-RIB-In, Loc-RIB and Adj-RIB-Out. The base implementation provides simplified RFC4271-style behavior: session establishment, UPDATE import, best-path selection, export policy, route reflection, EBGP AS_PATH prepending and MRAI scheduling.
 
@@ -140,7 +140,7 @@ The simulator accepts:
 
 Neighbor entries may be explicit. If a link exists but one side omits the neighbor, `TopoManager` derives a symmetric neighbor using the routers' ASNs.
 
-Topology validation rejects empty router ids, duplicate router ids, invalid BGP router-ids, ASN 0, self-neighbors, duplicate neighbors, links with empty endpoints, self-links, duplicate links and links or neighbors that reference unknown routers. BGP router-ids must be dotted decimal `x.x.x.x` values with each octet in `0..255`, excluding `0.0.0.0`. These checks run before any routers, worker threads or logs are created.
+Topology validation rejects empty router ids, duplicate router ids, duplicate or invalid BGP router-ids, ASN 0, invalid originated IPv4 CIDR prefixes, self-neighbors, duplicate neighbors, explicit neighbors without a backing link, neighbor `remote_asn` or `session_type` mismatches, links with empty endpoints, self-links, duplicate links and links or neighbors that reference unknown routers. BGP router-ids must be dotted decimal `x.x.x.x` values with each octet in `0..255`, excluding `0.0.0.0`. These checks run before any routers, worker threads or logs are created.
 
 Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE advertisements. `mrai_ms=0` disables MRAI. Withdrawals are sent immediately.
 

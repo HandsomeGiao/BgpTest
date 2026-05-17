@@ -86,6 +86,8 @@ private:
 
   void enqueue(BmpLogRecord record);
   void writerLoop();
+  void markBatchDrained(std::size_t batch_size);
+  void rememberWriterError(std::string message);
   void openDatabase();
   void createSchema();
   void writeRecord(const BmpLogRecord &record);
@@ -95,9 +97,12 @@ private:
   mutable std::mutex mutex_;
   mutable std::mutex io_mutex_;
   std::condition_variable cv_;
+  std::condition_variable drained_cv_;
   std::deque<BmpLogRecord> queue_;
   std::deque<BmpLogRecord> live_records_;
   std::size_t live_capacity_ = 20000;
+  std::size_t inflight_ = 0;
+  std::string writer_error_;
   std::thread writer_thread_;
   std::filesystem::path log_file_;
   std::filesystem::path database_file_;

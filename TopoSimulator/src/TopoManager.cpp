@@ -1,6 +1,7 @@
 #include "toposim/TopoManager.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <iomanip>
@@ -23,15 +24,19 @@ std::uint32_t defaultWorkerCount(std::uint32_t configured) {
 std::string runTimestamp() {
   const auto now = std::chrono::system_clock::now();
   const auto time = std::chrono::system_clock::to_time_t(now);
+  const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          now.time_since_epoch()) %
+                      1000;
   std::tm tm{};
   localtime_s(&tm, &time);
   std::ostringstream oss;
-  oss << std::put_time(&tm, "%Y%m%d_%H%M%S");
+  oss << std::put_time(&tm, "%Y%m%d_%H%M%S") << '_' << std::setw(3)
+      << std::setfill('0') << millis.count();
   return oss.str();
 }
 
-bool isValidBgpRouterId(const std::string &value) {
-  if (value == "0.0.0.0") {
+bool isValidIpv4Address(const std::string &value, bool allow_zero) {
+  if (!allow_zero && value == "0.0.0.0") {
     return false;
   }
 
@@ -63,6 +68,33 @@ bool isValidBgpRouterId(const std::string &value) {
   return pos == value.size();
 }
 
+bool isValidBgpRouterId(const std::string &value) {
+  return isValidIpv4Address(value, false);
+}
+
+bool isValidIpv4Cidr(const std::string &value) {
+  const auto slash = value.find('/');
+  if (slash == std::string::npos || slash == 0 || slash + 1 == value.size()) {
+    return false;
+  }
+
+  if (!isValidIpv4Address(value.substr(0, slash), true)) {
+    return false;
+  }
+
+  const auto prefix_length = value.substr(slash + 1);
+  if (prefix_length.size() > 2 ||
+      !std::all_of(prefix_length.begin(), prefix_length.end(),
+                   [](unsigned char ch) { return std::isdigit(ch); })) {
+    return false;
+  }
+
+  const auto length = std::stoul(prefix_length);
+  return length <= 32;
+}
+
+std::atomic<std::uint64_t> run_counter{0};
+
 } // namespace
 
 TopoManager::TopoManager(TopologyConfig config) : config_(std::move(config)) {
@@ -89,6 +121,14 @@ void TopoManager::start() {
   std::vector<std::shared_ptr<BgpRouter>> routers;
   {
     std::lock_guard lock(mutex_);
+    if (running_) {
+      return;
+    }
+    if (!pool_) {
+      throw std::runtime_error(
+          "TopoManager cannot be restarted after stop(); create a new "
+          "TopoManager for another simulation run.");
+    }
     running_ = true;
     for (const auto &[_, router] : routers_) {
       routers.push_back(router);
@@ -353,6 +393,8 @@ std::string TopoManager::edgeKey(const std::string &a, const std::string &b) {
 
 void TopoManager::validateConfig() const {
   std::unordered_set<std::string> router_ids;
+  std::unordered_set<std::string> bgp_router_ids;
+  std::unordered_map<std::string, const RouterConfig *> routers_by_id;
   for (const auto &router : config_.routers) {
     if (router.id.empty()) {
       throw std::runtime_error("Router id cannot be empty");
@@ -360,36 +402,23 @@ void TopoManager::validateConfig() const {
     if (!router_ids.insert(router.id).second) {
       throw std::runtime_error("Duplicate router id: " + router.id);
     }
+    routers_by_id.emplace(router.id, &router);
     if (!isValidBgpRouterId(router.router_id)) {
       throw std::runtime_error(
           "Router " + router.id +
           " has an invalid BGP router id. Expected dotted decimal x.x.x.x "
           "with each octet in 0..255, excluding 0.0.0.0");
     }
+    if (!bgp_router_ids.insert(router.router_id).second) {
+      throw std::runtime_error("Duplicate BGP router id: " + router.router_id);
+    }
     if (router.asn == 0) {
       throw std::runtime_error("Router " + router.id + " has invalid ASN 0");
     }
-  }
-
-  for (const auto &router : config_.routers) {
-    std::unordered_set<std::string> neighbor_ids;
-    for (const auto &neighbor : router.neighbors) {
-      if (neighbor.id.empty()) {
+    for (const auto &prefix : router.originated_prefixes) {
+      if (!isValidIpv4Cidr(prefix)) {
         throw std::runtime_error("Router " + router.id +
-                                 " has an empty neighbor id");
-      }
-      if (neighbor.id == router.id) {
-        throw std::runtime_error("Router " + router.id +
-                                 " cannot peer with itself");
-      }
-      if (!router_ids.contains(neighbor.id)) {
-        throw std::runtime_error("Router " + router.id +
-                                 " references unknown neighbor: " +
-                                 neighbor.id);
-      }
-      if (!neighbor_ids.insert(neighbor.id).second) {
-        throw std::runtime_error("Router " + router.id +
-                                 " has duplicate neighbor: " + neighbor.id);
+                                 " has invalid originated prefix: " + prefix);
       }
     }
   }
@@ -412,6 +441,45 @@ void TopoManager::validateConfig() const {
     const auto key = edgeKey(link.a, link.b);
     if (!link_keys.insert(key).second) {
       throw std::runtime_error("Duplicate link: " + link.a + " - " + link.b);
+    }
+  }
+
+  for (const auto &router : config_.routers) {
+    std::unordered_set<std::string> neighbor_ids;
+    for (const auto &neighbor : router.neighbors) {
+      if (neighbor.id.empty()) {
+        throw std::runtime_error("Router " + router.id +
+                                 " has an empty neighbor id");
+      }
+      if (neighbor.id == router.id) {
+        throw std::runtime_error("Router " + router.id +
+                                 " cannot peer with itself");
+      }
+      const auto peer_it = routers_by_id.find(neighbor.id);
+      if (peer_it == routers_by_id.end()) {
+        throw std::runtime_error("Router " + router.id +
+                                 " references unknown neighbor: " +
+                                 neighbor.id);
+      }
+      if (!neighbor_ids.insert(neighbor.id).second) {
+        throw std::runtime_error("Router " + router.id +
+                                 " has duplicate neighbor: " + neighbor.id);
+      }
+      if (!link_keys.contains(edgeKey(router.id, neighbor.id))) {
+        throw std::runtime_error("Router " + router.id + " neighbor " +
+                                 neighbor.id + " has no backing link");
+      }
+      const auto &peer = *peer_it->second;
+      if (neighbor.remote_asn != peer.asn) {
+        throw std::runtime_error("Router " + router.id + " neighbor " +
+                                 neighbor.id + " has remote_asn mismatch");
+      }
+      const auto expected_session =
+          router.asn == peer.asn ? SessionType::Ibgp : SessionType::Ebgp;
+      if (neighbor.session_type != expected_session) {
+        throw std::runtime_error("Router " + router.id + " neighbor " +
+                                 neighbor.id + " has session_type mismatch");
+      }
     }
   }
 }
@@ -522,6 +590,7 @@ std::filesystem::path TopoManager::makeRunDirectory() const {
           ? std::filesystem::path{"tmp"}
           : std::filesystem::path{config_.simulation.log_dir};
   auto run_dir = base / (config_.simulation.name + "_" + runTimestamp());
+  run_dir += "_" + std::to_string(++run_counter);
   std::filesystem::create_directories(run_dir);
   return run_dir;
 }

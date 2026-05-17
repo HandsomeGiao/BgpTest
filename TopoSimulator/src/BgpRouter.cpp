@@ -135,7 +135,7 @@ void BgpRouter::stop() {
 void BgpRouter::receiveMessage(const BgpMessage &message) {
   {
     std::lock_guard lock(mutex_);
-    if (!active_) {
+    if (!active_ || message.to != config_.id) {
       return;
     }
   }
@@ -159,6 +159,9 @@ void BgpRouter::neighborDown(const std::string &peer_id) {
   std::set<std::string> changed_prefixes;
   {
     std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
+    }
     peer_states_[peer_id] = PeerState::Idle;
     if (auto it = adj_rib_in_.find(peer_id); it != adj_rib_in_.end()) {
       for (const auto &[prefix, _] : it->second) {
@@ -249,12 +252,24 @@ void BgpRouter::onMessageReceived(const BgpMessage &message) {
 }
 
 void BgpRouter::onOpenMessage(const BgpMessage &message) {
+  if (!message.open) {
+    return;
+  }
+
   std::optional<NeighborConfig> neighbor_config;
   std::map<std::string, std::optional<RouteEntry>> current_routes;
   {
     std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
+    }
     const auto it = neighbors_.find(message.from);
     if (it == neighbors_.end() || !it->second.enabled) {
+      return;
+    }
+    if (message.open->version != 4 ||
+        message.open->asn != it->second.remote_asn ||
+        message.open->router_id.empty()) {
       return;
     }
     peer_states_[message.from] = PeerState::Established;
@@ -275,11 +290,16 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
   std::optional<NeighborConfig> from_peer;
   {
     std::lock_guard lock(mutex_);
-    const auto neighbor_it = neighbors_.find(message.from);
-    if (neighbor_it == neighbors_.end() || !neighbor_it->second.enabled) {
+    if (!active_) {
       return;
     }
-    peer_states_[message.from] = PeerState::Established;
+    const auto neighbor_it = neighbors_.find(message.from);
+    const auto state_it = peer_states_.find(message.from);
+    if (neighbor_it == neighbors_.end() || !neighbor_it->second.enabled ||
+        state_it == peer_states_.end() ||
+        state_it->second != PeerState::Established) {
+      return;
+    }
     from_peer = neighbor_it->second;
 
     for (const auto &prefix : message.update->withdrawn_routes) {
@@ -312,7 +332,10 @@ void BgpRouter::onUpdateMessage(const BgpMessage &message) {
   if (!imported_routes.empty()) {
     std::lock_guard lock(mutex_);
     const auto neighbor_it = neighbors_.find(message.from);
-    if (neighbor_it != neighbors_.end() && neighbor_it->second.enabled) {
+    const auto state_it = peer_states_.find(message.from);
+    if (active_ && neighbor_it != neighbors_.end() &&
+        neighbor_it->second.enabled && state_it != peer_states_.end() &&
+        state_it->second == PeerState::Established) {
       for (const auto &route : imported_routes) {
         adj_rib_in_[message.from][route.prefix] = route;
         changed_prefixes.insert(route.prefix);
@@ -594,6 +617,9 @@ void BgpRouter::runDecisionProcessFor(
   std::set<std::string> prefixes = changed_prefixes;
   {
     std::lock_guard lock(mutex_);
+    if (!active_) {
+      return;
+    }
     if (prefixes.empty()) {
       for (const auto &[prefix, _] : loc_rib_) {
         prefixes.insert(prefix);
@@ -611,6 +637,9 @@ void BgpRouter::runDecisionProcessFor(
       std::vector<RouteEntry> candidates;
       {
         std::lock_guard lock(mutex_);
+        if (!active_) {
+          return;
+        }
         const auto old_it = loc_rib_.find(prefix);
         if (old_it != loc_rib_.end()) {
           old_route = old_it->second;
@@ -622,6 +651,9 @@ void BgpRouter::runDecisionProcessFor(
 
       {
         std::lock_guard lock(mutex_);
+        if (!active_) {
+          return;
+        }
         if (candidatesForPrefix(prefix) != candidates) {
           continue;
         }

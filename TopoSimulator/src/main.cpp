@@ -294,7 +294,7 @@ readCommandLine(const std::string &prompt, const toposim::TopoManager &manager) 
       (void)_getch();
       continue;
     }
-    if (std::isprint(ch)) {
+    if (std::isprint(static_cast<unsigned char>(ch))) {
       line.push_back(static_cast<char>(ch));
       std::cout << static_cast<char>(ch);
       std::cout.flush();
@@ -425,7 +425,10 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
                                                           char **argv) {
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if ((arg == "--topology" || arg == "-t") && i + 1 < argc) {
+    if (arg == "--topology" || arg == "-t") {
+      if (i + 1 >= argc) {
+        throw std::runtime_error(arg + " requires a topology file path.");
+      }
       return resolveTopologyArgument(argv[++i]);
     }
     if (arg == "--debug") {
@@ -489,7 +492,10 @@ BmpViewerMode bmpViewerModeFromArgs(int argc, char **argv) {
   BmpViewerMode mode = BmpViewerMode::Auto;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--bmp-viewer" && i + 1 < argc) {
+    if (arg == "--bmp-viewer") {
+      if (i + 1 >= argc) {
+        throw std::runtime_error("--bmp-viewer requires auto, on or off.");
+      }
       const std::string value = argv[++i];
       if (value == "off") {
         mode = BmpViewerMode::Off;
