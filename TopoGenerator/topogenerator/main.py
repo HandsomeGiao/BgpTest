@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, QSettings, Qt
-from PyQt6.QtGui import QAction, QBrush, QColor, QPen
+from PyQt6.QtGui import QAction, QBrush, QColor, QPainter, QPen, QPolygonF
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -223,16 +224,74 @@ class RouterItem(QGraphicsEllipseItem):
 
 
 class LinkItem(QGraphicsLineItem):
+    ROUTE_CLIENT_COLOR = QColor("#1f9d55")
+    DISABLED_ROUTE_CLIENT_COLOR = QColor("#78b98f")
+    NORMAL_COLOR = QColor("#444444")
+    DISABLED_COLOR = QColor("#b0b0b0")
+
     def __init__(self, link: LinkEdge) -> None:
         super().__init__()
         self.link = link
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.update_pen()
 
+    def has_route_client(self) -> bool:
+        return self.link.rr_client_from_a or self.link.rr_client_from_b
+
     def update_pen(self) -> None:
-        color = QColor("#444444") if self.link.enabled else QColor("#b0b0b0")
+        if self.has_route_client():
+            color = self.ROUTE_CLIENT_COLOR if self.link.enabled else self.DISABLED_ROUTE_CLIENT_COLOR
+        elif not self.link.enabled:
+            color = self.DISABLED_COLOR
+        else:
+            color = self.NORMAL_COLOR
         pen = QPen(color, 2, Qt.PenStyle.SolidLine if self.link.enabled else Qt.PenStyle.DashLine)
         self.setPen(pen)
+
+    def paint(self, painter: QPainter, option, widget=None) -> None:
+        super().paint(painter, option, widget)
+        if not self.has_route_client():
+            return
+
+        painter.save()
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self.pen().color()))
+        if self.link.rr_client_from_a:
+            self._paint_arrow(painter, self.line().p1(), self.line().p2(), 0.62)
+        if self.link.rr_client_from_b:
+            self._paint_arrow(painter, self.line().p2(), self.line().p1(), 0.38)
+        painter.restore()
+
+    def _paint_arrow(
+        self,
+        painter: QPainter,
+        start: QPointF,
+        end: QPointF,
+        fraction: float,
+    ) -> None:
+        dx = end.x() - start.x()
+        dy = end.y() - start.y()
+        length = math.hypot(dx, dy)
+        if length < 1.0:
+            return
+
+        ux = dx / length
+        uy = dy / length
+        tip = QPointF(start.x() + dx * fraction, start.y() + dy * fraction)
+        arrow_len = 14.0
+        arrow_half_width = 6.0
+        base = QPointF(tip.x() - ux * arrow_len, tip.y() - uy * arrow_len)
+        normal_x = -uy
+        normal_y = ux
+        left = QPointF(
+            base.x() + normal_x * arrow_half_width,
+            base.y() + normal_y * arrow_half_width,
+        )
+        right = QPointF(
+            base.x() - normal_x * arrow_half_width,
+            base.y() - normal_y * arrow_half_width,
+        )
+        painter.drawPolygon(QPolygonF([tip, left, right]))
 
 
 class AsGroupItem(QGraphicsRectItem):
@@ -426,13 +485,15 @@ class MainWindow(QMainWindow):
         self.link_mode_action.toggled.connect(self.set_link_mode)
         toolbar.addAction(self.link_mode_action)
 
-        for text, callback in [
-            ("Edit", self.edit_selected),
-            ("Delete", self.delete_selected),
-            ("Load", self.load_json),
-            ("Export", self.export_json),
+        for text, shortcut, callback in [
+            ("Edit (E)", "E", self.edit_selected),
+            ("Delete", "", self.delete_selected),
+            ("Load", "", self.load_json),
+            ("Export", "", self.export_json),
         ]:
             action = QAction(text, self)
+            if shortcut:
+                action.setShortcut(shortcut)
             action.triggered.connect(callback)
             toolbar.addAction(action)
 
