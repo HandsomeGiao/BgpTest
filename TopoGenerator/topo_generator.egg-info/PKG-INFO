@@ -1,6 +1,0 @@
-Metadata-Version: 2.4
-Name: topo-generator
-Version: 0.1.0
-Summary: PyQt topology editor for the BGP TopoSimulator JSON schema
-Requires-Python: >=3.10
-Requires-Dist: PyQt6>=6.6

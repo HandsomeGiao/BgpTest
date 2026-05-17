@@ -92,6 +92,10 @@ struct LinkConfig {
   std::string b;
   bool enabled = true;
   std::uint32_t delay_ms = 1;
+  bool rr_client_from_a = false;
+  bool rr_client_from_b = false;
+  std::uint32_t mrai_ms_from_a = 0;
+  std::uint32_t mrai_ms_from_b = 0;
 
   bool operator==(const LinkConfig &) const = default;
 };

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import sys
 from pathlib import Path
 from typing import Optional
@@ -210,6 +211,94 @@ class LinkDialog(QDialog):
             mrai_ms_from_a=self.mrai_a_spin.value(),
             mrai_ms_from_b=self.mrai_b_spin.value(),
         )
+
+
+class BatchUpdateAllDialog(QDialog):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("BatchUpdateAll")
+
+        self.delay_mode = QComboBox()
+        self.delay_mode.addItems(["Fixed value", "Random closed range"])
+        self.delay_value_spin = QSpinBox()
+        self.delay_value_spin.setRange(0, 60_000)
+        self.delay_min_spin = QSpinBox()
+        self.delay_min_spin.setRange(0, 60_000)
+        self.delay_max_spin = QSpinBox()
+        self.delay_max_spin.setRange(0, 60_000)
+
+        self.mrai_mode = QComboBox()
+        self.mrai_mode.addItems(["Fixed value", "Random closed range"])
+        self.mrai_value_spin = QSpinBox()
+        self.mrai_value_spin.setRange(0, 3_600_000)
+        self.mrai_min_spin = QSpinBox()
+        self.mrai_min_spin.setRange(0, 3_600_000)
+        self.mrai_max_spin = QSpinBox()
+        self.mrai_max_spin.setRange(0, 3_600_000)
+
+        self.delay_mode.currentIndexChanged.connect(self._update_enabled_state)
+        self.mrai_mode.currentIndexChanged.connect(self._update_enabled_state)
+        self._update_enabled_state()
+
+        form = QFormLayout()
+        form.addRow("Delay mode", self.delay_mode)
+        form.addRow("Delay value ms", self.delay_value_spin)
+        form.addRow("Delay min ms", self.delay_min_spin)
+        form.addRow("Delay max ms", self.delay_max_spin)
+        form.addRow("MRAI mode", self.mrai_mode)
+        form.addRow("MRAI value ms", self.mrai_value_spin)
+        form.addRow("MRAI min ms", self.mrai_min_spin)
+        form.addRow("MRAI max ms", self.mrai_max_spin)
+
+        ok = QPushButton("OK")
+        cancel = QPushButton("Cancel")
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(ok)
+        buttons.addWidget(cancel)
+
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addLayout(buttons)
+        self.setLayout(layout)
+
+    def _update_enabled_state(self, *_args) -> None:
+        delay_random = self.delay_mode.currentIndex() == 1
+        self.delay_value_spin.setEnabled(not delay_random)
+        self.delay_min_spin.setEnabled(delay_random)
+        self.delay_max_spin.setEnabled(delay_random)
+
+        mrai_random = self.mrai_mode.currentIndex() == 1
+        self.mrai_value_spin.setEnabled(not mrai_random)
+        self.mrai_min_spin.setEnabled(mrai_random)
+        self.mrai_max_spin.setEnabled(mrai_random)
+
+    def accept(self) -> None:
+        if (
+            self.delay_mode.currentIndex() == 1
+            and self.delay_min_spin.value() > self.delay_max_spin.value()
+        ):
+            QMessageBox.warning(self, "BatchUpdateAll", "Delay min must be <= max.")
+            return
+        if (
+            self.mrai_mode.currentIndex() == 1
+            and self.mrai_min_spin.value() > self.mrai_max_spin.value()
+        ):
+            QMessageBox.warning(self, "BatchUpdateAll", "MRAI min must be <= max.")
+            return
+        super().accept()
+
+    def delay_ms(self) -> int:
+        if self.delay_mode.currentIndex() == 0:
+            return self.delay_value_spin.value()
+        return random.randint(self.delay_min_spin.value(), self.delay_max_spin.value())
+
+    def mrai_ms(self) -> int:
+        if self.mrai_mode.currentIndex() == 0:
+            return self.mrai_value_spin.value()
+        return random.randint(self.mrai_min_spin.value(), self.mrai_max_spin.value())
 
 
 class RouterItem(QGraphicsEllipseItem):
@@ -690,10 +779,11 @@ class MainWindow(QMainWindow):
 
         for text, shortcut, callback in [
             ("Edit (E)", "E", self.edit_selected),
-            ("Delete", "", self.delete_selected),
+            ("Delete (Del)", "Del", self.delete_selected),
             ("Load", "", self.load_json),
             ("Save (Ctrl+S)", "Ctrl+S", self.save_json),
             ("Export", "", self.export_json),
+            ("BatchUpdateAll", "", self.batch_update_all),
         ]:
             action = QAction(text, self)
             if shortcut:
@@ -817,6 +907,27 @@ class MainWindow(QMainWindow):
         self.scene.rebuild()
         self.clear_pending_link()
         self.mark_dirty()
+
+    def batch_update_all(self) -> None:
+        if not self.model.links:
+            self.statusBar().showMessage("No links to update.", 3000)
+            return
+
+        dialog = BatchUpdateAllDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        for link in self.model.links:
+            link.delay_ms = dialog.delay_ms()
+            link.mrai_ms_from_a = dialog.mrai_ms()
+            link.mrai_ms_from_b = dialog.mrai_ms()
+
+        self.scene.update_links()
+        self.mark_dirty()
+        self.statusBar().showMessage(
+            f"Updated delay and MRAI for {len(self.model.links)} links.",
+            3000,
+        )
 
     def load_json(self) -> None:
         start_dir = str(self.current_topology_path.parent) if self.current_topology_path else ""

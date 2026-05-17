@@ -1,13 +1,16 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <conio.h>
@@ -323,20 +326,63 @@ void printHelp() {
   command("node", "down <router>");
   command("advertise", "<router> <prefix>");
   command("withdraw", "<router> <prefix>");
-  command("converge", "[timeout_ms]");
+  command("converge");
   command("bmp", "viewer|open|close|status");
   command("quit");
   writeColored("[TAB] ", kWarning);
   std::cout << "complete commands and router names.\n";
 }
 
+std::string formatDuration(std::chrono::steady_clock::duration duration) {
+  const auto millis =
+      std::max<std::int64_t>(0, std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(duration)
+                                    .count());
+  std::ostringstream oss;
+  oss << (millis / 1000) << '.' << std::setw(3) << std::setfill('0')
+      << (millis % 1000) << 's';
+  return oss.str();
+}
+
+std::string convergenceDuration(const toposim::TopoManager &manager,
+                                std::chrono::steady_clock::time_point start) {
+  const auto last_message = manager.lastMessageProcessedAt();
+  if (last_message <= start) {
+    return "0.000s";
+  }
+  return formatDuration(last_message - start);
+}
+
+void waitUntilConverged(const toposim::TopoManager &manager,
+                        const std::string &reason,
+                        std::chrono::steady_clock::time_point start) {
+  auto last_reported = std::uint64_t{0};
+
+  printInfoLine(reason + ": waiting for topology convergence...");
+  while (!manager.isConverged()) {
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - start)
+            .count();
+    if (static_cast<std::uint64_t>(elapsed) != last_reported) {
+      last_reported = static_cast<std::uint64_t>(elapsed);
+      printInfoLine("Waiting for convergence: " +
+                    std::to_string(last_reported) + "s elapsed");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  printSuccessLine(reason + ": topology converged after " +
+                   convergenceDuration(manager, start));
+}
+
 bool requireConverged(const toposim::TopoManager &manager) {
   if (manager.isConverged()) {
     return true;
   }
-  printWarningLine("Network is not converged. Run 'converge [timeout_ms]' "
-                   "before changing links, nodes or routes.");
-  return false;
+  waitUntilConverged(manager, "Previous operation",
+                     std::chrono::steady_clock::now());
+  return true;
 }
 
 bool stdinIsTerminal() {
@@ -534,18 +580,14 @@ int main(int argc, char **argv) {
     auto topology = toposim::loadTopologyConfig(*topology_path);
     toposim::TopoManager manager(std::move(topology));
 
+    const auto startup_started_at = std::chrono::steady_clock::now();
     manager.start();
     if (shouldStartBmpViewer(bmp_viewer_mode)) {
       if (!toposim::BmpLogViewer::startDetached()) {
         printWarningLine("BMP viewer is already running.");
       }
     }
-    const bool converged = manager.waitForConvergence(std::chrono::seconds(20));
-    if (converged) {
-      printSuccessLine("Initial convergence: ok");
-    } else {
-      printWarningLine("Initial convergence: timeout");
-    }
+    waitUntilConverged(manager, "Initial convergence", startup_started_at);
     printInfoLine("BMP collector log: " + manager.logFile().string());
     printInfoLine("BMP SQLite DB: " + manager.databaseFile().string());
     printHelp();
@@ -613,6 +655,7 @@ int main(int argc, char **argv) {
           if (!requireConverged(manager)) {
             continue;
           }
+          const auto operation_started_at = std::chrono::steady_clock::now();
           const bool changed =
               manager.setLinkState(parts[2], parts[3], parts[1] == "up");
           if (!changed) {
@@ -620,7 +663,8 @@ int main(int argc, char **argv) {
                                                : "Link is already down.");
             continue;
           }
-          manager.waitForConvergence(std::chrono::seconds(20));
+          waitUntilConverged(manager, "Link state change",
+                             operation_started_at);
         } else if (parts.size() == 3 && parts[0] == "node") {
           if (parts[1] != "up" && parts[1] != "down") {
             printWarningLine("Usage: node <up|down> <router>");
@@ -629,6 +673,7 @@ int main(int argc, char **argv) {
           if (!requireConverged(manager)) {
             continue;
           }
+          const auto operation_started_at = std::chrono::steady_clock::now();
           const bool changed =
               manager.setRouterState(parts[2], parts[1] == "up");
           if (!changed) {
@@ -636,32 +681,31 @@ int main(int argc, char **argv) {
                                                : "Router is already stopped.");
             continue;
           }
-          manager.waitForConvergence(std::chrono::seconds(20));
+          waitUntilConverged(manager, "Router state change",
+                             operation_started_at);
         } else if (parts.size() == 3 && parts[0] == "advertise") {
           if (!requireConverged(manager)) {
             continue;
           }
+          const auto operation_started_at = std::chrono::steady_clock::now();
           manager.originatePrefix(parts[1], parts[2]);
-          manager.waitForConvergence(std::chrono::seconds(20));
+          waitUntilConverged(manager, "Route advertisement",
+                             operation_started_at);
         } else if (parts.size() == 3 && parts[0] == "withdraw") {
           if (!requireConverged(manager)) {
             continue;
           }
+          const auto operation_started_at = std::chrono::steady_clock::now();
           manager.withdrawPrefix(parts[1], parts[2]);
-          manager.waitForConvergence(std::chrono::seconds(20));
+          waitUntilConverged(manager, "Route withdrawal",
+                             operation_started_at);
         } else if (parts[0] == "converge") {
-          const auto timeout = parts.size() > 1 ? std::stoi(parts[1]) : 20000;
-          if (timeout <= 0) {
-            printWarningLine("Usage: converge [positive_timeout_ms]");
+          if (parts.size() != 1) {
+            printWarningLine("Usage: converge");
             continue;
           }
-          const bool ok =
-              manager.waitForConvergence(std::chrono::milliseconds(timeout));
-          if (ok) {
-            printSuccessLine("converged");
-          } else {
-            printWarningLine("timeout");
-          }
+          waitUntilConverged(manager, "Manual convergence wait",
+                             std::chrono::steady_clock::now());
         } else {
           printWarningLine("Unknown command. Type 'help'.");
         }

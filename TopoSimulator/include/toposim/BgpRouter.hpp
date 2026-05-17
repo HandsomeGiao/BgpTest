@@ -113,7 +113,7 @@ private:
   std::map<std::string, RouteEntry> loc_rib_;
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out_;
   std::map<std::string, std::map<std::string, std::chrono::steady_clock::time_point>>
-      mrai_next_advertisement_;
+      mrai_next_update_;
   std::map<std::string, std::map<std::string, std::uint64_t>>
       update_generations_;
   std::uint64_t update_generation_counter_ = 0;

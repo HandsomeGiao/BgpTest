@@ -177,6 +177,10 @@ void to_json(nlohmann::json &j, const LinkConfig &config) {
       {"b", config.b},
       {"enabled", config.enabled},
       {"delay_ms", config.delay_ms},
+      {"rr_client_from_a", config.rr_client_from_a},
+      {"rr_client_from_b", config.rr_client_from_b},
+      {"mrai_ms_from_a", config.mrai_ms_from_a},
+      {"mrai_ms_from_b", config.mrai_ms_from_b},
   };
 }
 
@@ -185,6 +189,10 @@ void from_json(const nlohmann::json &j, LinkConfig &config) {
   j.at("b").get_to(config.b);
   getIfPresent(j, "enabled", config.enabled);
   getIfPresent(j, "delay_ms", config.delay_ms);
+  getIfPresent(j, "rr_client_from_a", config.rr_client_from_a);
+  getIfPresent(j, "rr_client_from_b", config.rr_client_from_b);
+  getIfPresent(j, "mrai_ms_from_a", config.mrai_ms_from_a);
+  getIfPresent(j, "mrai_ms_from_b", config.mrai_ms_from_b);
 }
 
 void to_json(nlohmann::json &j, const SimulationConfig &config) {

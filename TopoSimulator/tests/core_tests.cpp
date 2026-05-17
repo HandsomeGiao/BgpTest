@@ -306,6 +306,53 @@ void mraiAdvertisementDoesNotReviveWithdrawnRoute() {
   manager.stop();
 }
 
+void mraiAppliesToWithdrawalsForSamePeerAndPrefix() {
+  auto config = twoRouterTopology(1000);
+  config.simulation.name = "mrai-withdrawal-spacing-tests";
+  const std::string prefix = "203.0.113.0/24";
+  config.routers[0].originated_prefixes.push_back(prefix);
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+
+  const auto deadline = std::chrono::steady_clock::now() + 1s;
+  while (!ribHasPrefix(manager.ribSnapshot("R2"), prefix) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "initial advertisement did not reach R2");
+
+  manager.withdrawPrefix("R1", prefix);
+  std::this_thread::sleep_for(150ms);
+  require(ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "withdrawal UPDATE bypassed the per-peer/prefix MRAI timer");
+
+  require(manager.waitForConvergence(4s),
+          "MRAI-delayed withdrawal convergence timed out");
+  require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "MRAI-delayed withdrawal never reached R2");
+  manager.stop();
+}
+
+void linkDirectionalMraiIsUsedForGeneratedNeighbors() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "link-mrai-normalization-tests";
+  config.routers[0].neighbors.clear();
+  config.links[0].mrai_ms_from_a = 1234;
+  config.links[0].mrai_ms_from_b = 5678;
+
+  toposim::TopoManager manager(std::move(config));
+  const auto r1_peers = manager.peersSnapshot("R1");
+  const auto r2_peers = manager.peersSnapshot("R2");
+
+  require(r1_peers.size() == 1 && r1_peers.front().mrai_ms == 1234,
+          "link A->B MRAI was not copied to the generated neighbor");
+  require(r2_peers.size() == 1 && r2_peers.front().mrai_ms == 5678,
+          "link B->A MRAI was not copied to the generated neighbor");
+  manager.stop();
+}
+
 void bmpHistorySupportsMessageFilterFields() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "bmp-query-tests";
@@ -394,7 +441,7 @@ void canceledTransientAdvertisementDoesNotEmitWithdraw() {
   auto config = fiveRouterTransientTopology(250);
   toposim::TopoManager manager(std::move(config));
   manager.start();
-  require(manager.waitForConvergence(3s),
+  require(manager.waitForConvergence(6s),
           "five-router topology convergence timed out");
   toposim::BmpLogManager::instance().flush();
 
@@ -420,20 +467,20 @@ void canceledTransientAdvertisementDoesNotEmitWithdraw() {
 }
 
 void restartedRouterAdvertisesBestRouteToReestablishedPeer() {
-  auto config = fiveRouterTransientTopology(5000);
+  auto config = fiveRouterTransientTopology(1000);
   config.simulation.name = "restart-advertise-best-route-tests";
 
   toposim::TopoManager manager(std::move(config));
   manager.start();
-  require(manager.waitForConvergence(10s),
+  require(manager.waitForConvergence(6s),
           "five-router topology convergence timed out");
 
   require(manager.setRouterState("R4", false),
           "R4 down should change router state");
-  require(manager.waitForConvergence(10s), "R4 down convergence timed out");
+  require(manager.waitForConvergence(6s), "R4 down convergence timed out");
   require(manager.setRouterState("R4", true),
           "R4 up should change router state");
-  require(manager.waitForConvergence(10s), "R4 restart convergence timed out");
+  require(manager.waitForConvergence(6s), "R4 restart convergence timed out");
   toposim::BmpLogManager::instance().flush();
 
   toposim::BmpLogQuery all_records_query;
@@ -483,6 +530,8 @@ int main() {
     bmpFlushDrainsInflightBatch();
     startupDoesNotEmitKeepalives();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
+    mraiAppliesToWithdrawalsForSamePeerAndPrefix();
+    linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();
     redundantLinkStateChangeIsNoop();

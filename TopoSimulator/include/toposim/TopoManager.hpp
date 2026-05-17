@@ -39,6 +39,8 @@ public:
   void withdrawPrefix(const std::string &router_id, const std::string &prefix);
   bool waitForConvergence(std::chrono::milliseconds timeout);
   [[nodiscard]] bool isConverged() const;
+  [[nodiscard]] std::chrono::steady_clock::time_point
+  lastMessageProcessedAt() const;
 
   [[nodiscard]] std::vector<RouterSnapshot> routersSnapshot() const;
   [[nodiscard]] RibSnapshot ribSnapshot(const std::string &router_id) const;
@@ -75,6 +77,7 @@ private:
   std::filesystem::path run_dir_;
   std::filesystem::path bmp_log_file_;
   std::filesystem::path bmp_database_file_;
+  std::chrono::steady_clock::time_point last_message_processed_at_{};
   std::atomic<std::uint64_t> sequence_{0};
   bool running_ = false;
 };

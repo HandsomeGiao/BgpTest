@@ -226,6 +226,10 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       BmpLogManager::instance().recordReceive(message.to, message, from_as,
                                               to_as);
       destination->receiveMessage(message);
+      {
+        std::lock_guard lock(mutex_);
+        last_message_processed_at_ = std::chrono::steady_clock::now();
+      }
     });
   }
 }
@@ -341,6 +345,12 @@ bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
 
 bool TopoManager::isConverged() const {
   return pool_ && pool_->isIdleFor(convergenceQuietPeriod());
+}
+
+std::chrono::steady_clock::time_point
+TopoManager::lastMessageProcessedAt() const {
+  std::lock_guard lock(mutex_);
+  return last_message_processed_at_;
 }
 
 std::vector<RouterSnapshot> TopoManager::routersSnapshot() const {
@@ -530,8 +540,10 @@ void TopoManager::normalizeNeighborsFromLinks() {
           .remote_asn = b_config.asn,
           .session_type = a_config.asn == b_config.asn ? SessionType::Ibgp
                                                        : SessionType::Ebgp,
-          .rr_client = false,
+          .rr_client = link.rr_client_from_a,
           .enabled = true,
+          .hold_time_seconds = 90,
+          .mrai_ms = link.mrai_ms_from_a,
       });
     }
     if (!b_router->neighbor(link.a)) {
@@ -540,8 +552,10 @@ void TopoManager::normalizeNeighborsFromLinks() {
           .remote_asn = a_config.asn,
           .session_type = a_config.asn == b_config.asn ? SessionType::Ibgp
                                                        : SessionType::Ebgp,
-          .rr_client = false,
+          .rr_client = link.rr_client_from_b,
           .enabled = true,
+          .hold_time_seconds = 90,
+          .mrai_ms = link.mrai_ms_from_b,
       });
     }
   }

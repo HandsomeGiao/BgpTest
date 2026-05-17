@@ -125,7 +125,7 @@ void BgpRouter::stop() {
   adj_rib_in_.clear();
   loc_rib_.clear();
   adj_rib_out_.clear();
-  mrai_next_advertisement_.clear();
+  mrai_next_update_.clear();
   update_generations_.clear();
   for (auto &[_, state] : peer_states_) {
     state = PeerState::Idle;
@@ -170,7 +170,7 @@ void BgpRouter::neighborDown(const std::string &peer_id) {
       adj_rib_in_.erase(it);
     }
     adj_rib_out_.erase(peer_id);
-    mrai_next_advertisement_.erase(peer_id);
+    mrai_next_update_.erase(peer_id);
     update_generations_.erase(peer_id);
   }
 
@@ -529,27 +529,32 @@ BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
     schedule.generations[prefix] = generation;
   }
 
-  if (neighbor.mrai_ms == 0 || nlri.empty() || !withdrawn.empty()) {
+  std::set<std::string> affected_prefixes;
+  affected_prefixes.insert(nlri.begin(), nlri.end());
+  affected_prefixes.insert(withdrawn.begin(), withdrawn.end());
+  if (neighbor.mrai_ms == 0 || affected_prefixes.empty()) {
     return schedule;
   }
 
   const auto interval = std::chrono::milliseconds(neighbor.mrai_ms);
   const auto now = std::chrono::steady_clock::now();
-  for (const auto &prefix : nlri) {
-    auto &next_available = mrai_next_advertisement_[neighbor.id][prefix];
-    if (next_available.time_since_epoch().count() == 0 ||
-        next_available <= now) {
-      next_available = now + interval;
+  auto send_at = now;
+  for (const auto &prefix : affected_prefixes) {
+    const auto peer_it = mrai_next_update_.find(neighbor.id);
+    if (peer_it == mrai_next_update_.end()) {
       continue;
     }
-
-    const auto prefix_delay =
-        std::chrono::duration_cast<std::chrono::milliseconds>(next_available -
-                                                              now);
-    if (prefix_delay > schedule.delay) {
-      schedule.delay = prefix_delay;
+    const auto prefix_it = peer_it->second.find(prefix);
+    if (prefix_it != peer_it->second.end() && prefix_it->second > send_at) {
+      send_at = prefix_it->second;
     }
-    next_available += interval;
+  }
+  schedule.delay =
+      std::chrono::duration_cast<std::chrono::milliseconds>(send_at - now);
+
+  const auto next_available = send_at + interval;
+  for (const auto &prefix : affected_prefixes) {
+    mrai_next_update_[neighbor.id][prefix] = next_available;
   }
 
   return schedule;
