@@ -147,6 +147,7 @@ struct PeerSnapshot {
 
 struct RibSnapshot {
   std::string router;
+  std::map<std::string, RouteEntry> local_routes;
   std::vector<RouteEntry> loc_rib;
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_in;
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out;

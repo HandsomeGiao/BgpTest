@@ -6,11 +6,14 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <conio.h>
@@ -188,10 +191,12 @@ completionCandidates(const std::string &line,
   const auto &command = parts[0];
   if (command == "show") {
     if (index == 1) {
-      return filteredCandidates({"peers", "rib", "routers"}, prefix);
+      return filteredCandidates({"all-routes", "peers", "rib", "routers"},
+                                prefix);
     }
     if (index == 2 && parts.size() >= 2 &&
-        (parts[1] == "peers" || parts[1] == "rib")) {
+        (parts[1] == "all-routes" || parts[1] == "peers" ||
+         parts[1] == "rib")) {
       return filteredCandidates(routers, prefix);
     }
   } else if (command == "link") {
@@ -320,6 +325,7 @@ void printHelp() {
   command("show", "routers");
   command("show", "peers <router>");
   command("show", "rib <router>");
+  command("show", "all-routes <router>");
   command("link", "up <a> <b>");
   command("link", "down <a> <b>");
   command("node", "up <router>");
@@ -331,6 +337,83 @@ void printHelp() {
   command("quit");
   writeColored("[TAB] ", kWarning);
   std::cout << "complete commands and router names.\n";
+}
+
+std::string joinAsPath(const std::vector<std::uint32_t> &as_path) {
+  if (as_path.empty()) {
+    return "-";
+  }
+  std::ostringstream oss;
+  for (std::size_t i = 0; i < as_path.size(); ++i) {
+    if (i != 0) {
+      oss << ' ';
+    }
+    oss << as_path[i];
+  }
+  return oss.str();
+}
+
+std::string routeNextHop(const toposim::RouteEntry &route) {
+  return route.attributes.next_hop.empty() ? "-" : route.attributes.next_hop;
+}
+
+void printAllRoutes(const toposim::TopoManager &manager,
+                    const std::string &router_id) {
+  const auto rib = manager.ribSnapshot(router_id);
+  std::map<std::string, std::vector<std::pair<std::string, toposim::RouteEntry>>>
+      paths_by_prefix;
+  std::map<std::string, toposim::RouteEntry> best_by_prefix;
+
+  for (const auto &[prefix, route] : rib.local_routes) {
+    paths_by_prefix[prefix].push_back({"local", route});
+  }
+  for (const auto &[peer_id, routes] : rib.adj_rib_in) {
+    for (const auto &[prefix, route] : routes) {
+      paths_by_prefix[prefix].push_back({"from " + peer_id, route});
+    }
+  }
+  for (const auto &route : rib.loc_rib) {
+    best_by_prefix[route.prefix] = route;
+    paths_by_prefix.try_emplace(route.prefix);
+  }
+
+  if (paths_by_prefix.empty()) {
+    printInfoLine("Router " + router_id + " has no known routes.");
+    return;
+  }
+
+  writeColored("All routes for ", kInfo);
+  writeColored(router_id, kCandidate);
+  std::cout << ":\n";
+
+  for (auto &[prefix, paths] : paths_by_prefix) {
+    std::sort(paths.begin(), paths.end(), [](const auto &lhs, const auto &rhs) {
+      return std::tuple{lhs.second.attributes.as_path.size(),
+                        lhs.second.attributes.next_hop, lhs.first} <
+             std::tuple{rhs.second.attributes.as_path.size(),
+                        rhs.second.attributes.next_hop, rhs.first};
+    });
+
+    writeColored(prefix, kArgument);
+    const auto best_it = best_by_prefix.find(prefix);
+    if (best_it == best_by_prefix.end()) {
+      std::cout << "  best: -\n";
+    } else {
+      std::cout << "  best next-hop=" << routeNextHop(best_it->second)
+                << " as-path="
+                << joinAsPath(best_it->second.attributes.as_path) << '\n';
+    }
+
+    for (const auto &[source, route] : paths) {
+      const bool is_best =
+          best_it != best_by_prefix.end() && route == best_it->second;
+      std::cout << "  " << (is_best ? "* " : "  ");
+      std::cout << std::left << std::setw(12) << source << std::right
+                << " next-hop=" << routeNextHop(route)
+                << " as-path=" << joinAsPath(route.attributes.as_path)
+                << '\n';
+    }
+  }
 }
 
 std::string formatDuration(std::chrono::steady_clock::duration duration) {
@@ -675,6 +758,9 @@ int main(int argc, char **argv) {
                    parts[1] == "rib") {
           std::cout << toposim::toJson(manager.ribSnapshot(parts[2])).dump(2)
                     << '\n';
+        } else if (parts.size() == 3 && parts[0] == "show" &&
+                   parts[1] == "all-routes") {
+          printAllRoutes(manager, parts[2]);
         } else if (parts.size() == 3 && parts[0] == "show" &&
                    parts[1] == "peers") {
           std::cout << toposim::toJson(manager.peersSnapshot(parts[2])).dump(2)

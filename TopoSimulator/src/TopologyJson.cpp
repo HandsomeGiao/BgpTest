@@ -260,6 +260,7 @@ void to_json(nlohmann::json &j, const PeerSnapshot &snapshot) {
 void to_json(nlohmann::json &j, const RibSnapshot &snapshot) {
   j = nlohmann::json{
       {"router", snapshot.router},
+      {"local_routes", snapshot.local_routes},
       {"loc_rib", snapshot.loc_rib},
       {"adj_rib_in", snapshot.adj_rib_in},
       {"adj_rib_out", snapshot.adj_rib_out},

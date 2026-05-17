@@ -223,6 +223,7 @@ RibSnapshot BgpRouter::ribSnapshot() const {
   std::lock_guard lock(mutex_);
   RibSnapshot result;
   result.router = config_.id;
+  result.local_routes = local_routes_;
   for (const auto &[_, route] : loc_rib_) {
     result.loc_rib.push_back(route);
   }
