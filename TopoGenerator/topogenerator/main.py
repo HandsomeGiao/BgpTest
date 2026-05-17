@@ -252,6 +252,7 @@ class RouterItem(QGraphicsEllipseItem):
             self.router.y = point.y()
             self.scene_ref.update_links()
             self.scene_ref.update_as_groups()
+            self.scene_ref.mark_dirty()
         return super().itemChange(change, value)
 
 
@@ -430,6 +431,32 @@ class LinkLegendWidget(QFrame):
         layout.addLayout(row)
 
 
+class DirtyIndicatorWidget(QFrame):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("dirtyIndicator")
+        self.setStyleSheet(
+            """
+            QFrame#dirtyIndicator {
+                background: rgba(255, 248, 220, 235);
+                border: 1px solid #d9a441;
+                border-radius: 6px;
+            }
+            QLabel {
+                color: #6f4f00;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            """
+        )
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.addWidget(QLabel("Unsaved changes"))
+        self.setLayout(layout)
+        self.hide()
+
+
 class AsGroupItem(QGraphicsRectItem):
     def __init__(self, asn: int) -> None:
         super().__init__()
@@ -527,6 +554,10 @@ class TopologyScene(QGraphicsScene):
             return False
         return self.main_window.handle_router_click_for_link_mode(item)
 
+    def mark_dirty(self) -> None:
+        if self.main_window is not None:
+            self.main_window.mark_dirty()
+
     def set_link_start_router(self, router_id: Optional[str]) -> None:
         for item in self.router_items.values():
             item.update_style(item.router.id == router_id)
@@ -542,30 +573,38 @@ class TopologyView(QGraphicsView):
         self._max_zoom = 4.0
         self._current_zoom = 1.0
         self.legend_widget: Optional[QWidget] = None
+        self.dirty_indicator: Optional[QWidget] = None
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
     def set_legend_widget(self, widget: QWidget) -> None:
         self.legend_widget = widget
-        self._position_legend()
+        self._position_overlays()
+
+    def set_dirty_indicator(self, widget: QWidget) -> None:
+        self.dirty_indicator = widget
+        self._position_overlays()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._position_legend()
+        self._position_overlays()
 
     def scrollContentsBy(self, dx: int, dy: int) -> None:
         super().scrollContentsBy(dx, dy)
-        self._position_legend()
+        self._position_overlays()
 
-    def _position_legend(self) -> None:
-        if self.legend_widget is None:
-            return
+    def _position_overlays(self) -> None:
         margin = 12
-        self.legend_widget.adjustSize()
-        x = max(margin, self.width() - self.legend_widget.width() - margin)
-        self.legend_widget.move(x, margin)
-        self.legend_widget.raise_()
+        if self.dirty_indicator is not None:
+            self.dirty_indicator.adjustSize()
+            self.dirty_indicator.move(margin, margin)
+            self.dirty_indicator.raise_()
+        if self.legend_widget is not None:
+            self.legend_widget.adjustSize()
+            x = max(margin, self.width() - self.legend_widget.width() - margin)
+            self.legend_widget.move(x, margin)
+            self.legend_widget.raise_()
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.RightButton:
@@ -617,6 +656,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 760)
         self.settings = QSettings("BgpTest", "TopoGenerator")
         self.current_topology_path: Optional[Path] = None
+        self.dirty = False
         self.model = TopologyModel()
         self.link_mode_enabled = False
         self.pending_link_router_id: Optional[str] = None
@@ -629,6 +669,8 @@ class MainWindow(QMainWindow):
         self.link_legend = LinkLegendWidget(self.view)
         self.link_legend.show()
         self.view.set_legend_widget(self.link_legend)
+        self.dirty_indicator = DirtyIndicatorWidget(self.view)
+        self.view.set_dirty_indicator(self.dirty_indicator)
         self._build_toolbar()
         self._restore_last_topology()
 
@@ -650,6 +692,7 @@ class MainWindow(QMainWindow):
             ("Edit (E)", "E", self.edit_selected),
             ("Delete", "", self.delete_selected),
             ("Load", "", self.load_json),
+            ("Save (Ctrl+S)", "Ctrl+S", self.save_json),
             ("Export", "", self.export_json),
         ]:
             action = QAction(text, self)
@@ -681,6 +724,7 @@ class MainWindow(QMainWindow):
         if router.id in self.scene.router_items:
             self.scene.clearSelection()
             self.scene.router_items[router.id].setSelected(True)
+        self.mark_dirty()
 
     def edit_selected(self) -> None:
         selected = self.scene.selectedItems()
@@ -715,6 +759,7 @@ class MainWindow(QMainWindow):
                 item.link.mrai_ms_from_b = updated.mrai_ms_from_b
                 self.scene.rebuild()
                 self.clear_pending_link()
+                self.mark_dirty()
 
     def edit_router_items_asn(self, items: list[RouterItem]) -> None:
         routers = [item.router for item in items]
@@ -731,6 +776,7 @@ class MainWindow(QMainWindow):
         for router_id in selected_ids:
             if router_id in self.scene.router_items:
                 self.scene.router_items[router_id].setSelected(True)
+        self.mark_dirty()
 
     def edit_router_item(self, item: RouterItem) -> None:
         dialog = RouterDialog(item.router, self)
@@ -757,6 +803,7 @@ class MainWindow(QMainWindow):
         self.clear_pending_link()
         if updated.id in self.scene.router_items:
             self.scene.router_items[updated.id].setSelected(True)
+        self.mark_dirty()
 
     def delete_selected(self) -> None:
         selected = self.scene.selectedItems()
@@ -769,6 +816,7 @@ class MainWindow(QMainWindow):
             self.model.remove_link(item.link.a, item.link.b)
         self.scene.rebuild()
         self.clear_pending_link()
+        self.mark_dirty()
 
     def load_json(self) -> None:
         start_dir = str(self.current_topology_path.parent) if self.current_topology_path else ""
@@ -787,12 +835,27 @@ class MainWindow(QMainWindow):
             return
         topology_path = Path(path)
         try:
-            with topology_path.open("w", encoding="utf-8") as handle:
-                json.dump(self.model.to_json(), handle, indent=2)
-                handle.write("\n")
+            self._write_topology(topology_path)
             self._remember_topology(topology_path)
+            self.set_dirty(False)
         except OSError as exc:
             self._error(f"Failed to export topology: {exc}")
+
+    def save_json(self) -> None:
+        if self.current_topology_path is None:
+            self.export_json()
+            return
+        try:
+            self._write_topology(self.current_topology_path)
+            self.set_dirty(False)
+            self.statusBar().showMessage(f"Saved topology: {self.current_topology_path}", 3000)
+        except OSError as exc:
+            self._error(f"Failed to save topology: {exc}")
+
+    def _write_topology(self, path: Path) -> None:
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(self.model.to_json(), handle, indent=2)
+            handle.write("\n")
 
     def _replace_model(self, model: TopologyModel) -> None:
         self.model = model
@@ -805,6 +868,15 @@ class MainWindow(QMainWindow):
         with path.open("r", encoding="utf-8") as handle:
             self._replace_model(TopologyModel.from_json(json.load(handle)))
         self._remember_topology(path)
+        self.set_dirty(False)
+
+    def mark_dirty(self) -> None:
+        self.set_dirty(True)
+
+    def set_dirty(self, dirty: bool) -> None:
+        self.dirty = dirty
+        self.dirty_indicator.setVisible(dirty)
+        self.view._position_overlays()
 
     def _remember_topology(self, path: Path) -> None:
         self.current_topology_path = path
@@ -869,6 +941,7 @@ class MainWindow(QMainWindow):
         self.pending_link_router_id = None
         self.scene.rebuild()
         self.statusBar().showMessage(f"Created link {link.a} - {link.b}.", 3000)
+        self.mark_dirty()
         return True
 
     def _next_router_index(self) -> int:
