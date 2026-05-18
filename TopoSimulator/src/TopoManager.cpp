@@ -248,6 +248,24 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
   }
 }
 
+void TopoManager::scheduleTask(std::chrono::milliseconds delay,
+                               std::function<void()> task) {
+  {
+    std::lock_guard lock(mutex_);
+    if (!running_ || !pool_) {
+      return;
+    }
+    last_convergence_activity_at_ = std::chrono::steady_clock::now();
+    pool_->enqueue([this, delay, task = std::move(task)]() mutable {
+      if (delay.count() > 0) {
+        std::this_thread::sleep_for(delay);
+      }
+      task();
+      markConvergenceActivity();
+    });
+  }
+}
+
 bool TopoManager::setLinkState(const std::string &a, const std::string &b,
                                bool enabled) {
   std::shared_ptr<BgpRouter> router_a;

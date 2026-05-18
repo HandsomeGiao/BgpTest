@@ -423,23 +423,55 @@ void mraiIsSharedByAllPrefixesForPeer() {
 
   toposim::TopoManager manager(std::move(config));
   manager.start();
+  std::this_thread::sleep_for(200ms);
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 0,
+          "MRAI coalesced prefixes bypassed the initial jitter");
 
   const auto deadline = std::chrono::steady_clock::now() + 1500ms;
   while (locRibPrefixCount(manager.ribSnapshot("R2")) == 0 &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(10ms);
   }
-  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 1,
-          "peer-level MRAI did not serialize the first two prefixes");
-
-  std::this_thread::sleep_for(400ms);
-  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 1,
-          "second prefix bypassed the peer-level MRAI timer");
+  const auto flush_deadline = std::chrono::steady_clock::now() + 250ms;
+  while (locRibPrefixCount(manager.ribSnapshot("R2")) < 2 &&
+         std::chrono::steady_clock::now() < flush_deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 2,
+          "peer-level MRAI did not flush pending prefixes together");
 
   require(manager.waitForConvergence(4s),
           "peer-level MRAI convergence timed out");
   require(locRibPrefixCount(manager.ribSnapshot("R2")) == 2,
           "peer-level MRAI second prefix never reached R2");
+  manager.stop();
+}
+
+void staleMraiFlushDoesNotDelayNextValidUpdate() {
+  auto config = twoRouterTopology(1200);
+  config.simulation.name = "stale-mrai-flush-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  const std::string stale_prefix = "198.51.100.0/24";
+  const std::string valid_prefix = "203.0.113.0/24";
+  manager.originatePrefix("R1", stale_prefix);
+  std::this_thread::sleep_for(50ms);
+  manager.withdrawPrefix("R1", stale_prefix);
+  std::this_thread::sleep_for(1300ms);
+  require(!ribHasPrefix(manager.ribSnapshot("R2"), stale_prefix),
+          "stale MRAI update was delivered");
+
+  manager.originatePrefix("R1", valid_prefix);
+  const auto deadline = std::chrono::steady_clock::now() + 250ms;
+  while (!ribHasPrefix(manager.ribSnapshot("R2"), valid_prefix) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(ribHasPrefix(manager.ribSnapshot("R2"), valid_prefix),
+          "stale MRAI flush consumed the next valid update slot");
   manager.stop();
 }
 
@@ -643,6 +675,7 @@ int main() {
     firstMraiUpdateIsNotImmediateAfterStartup();
     mraiAppliesToWithdrawalsForSamePeerAndPrefix();
     mraiIsSharedByAllPrefixesForPeer();
+    staleMraiFlushDoesNotDelayNextValidUpdate();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();

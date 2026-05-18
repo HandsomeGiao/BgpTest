@@ -140,6 +140,7 @@ void BgpRouter::stop() {
   loc_rib_.clear();
   adj_rib_out_.clear();
   mrai_next_update_.clear();
+  mrai_queues_.clear();
   update_generations_.clear();
   for (auto &[_, state] : peer_states_) {
     state = PeerState::Idle;
@@ -185,6 +186,7 @@ void BgpRouter::neighborDown(const std::string &peer_id) {
     }
     adj_rib_out_.erase(peer_id);
     mrai_next_update_.erase(peer_id);
+    mrai_queues_.erase(peer_id);
     update_generations_.erase(peer_id);
   }
 
@@ -509,64 +511,147 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
                                      const std::vector<std::string> &nlri,
                                      const std::vector<std::string> &withdrawn,
                                      const std::optional<RouteEntry> &route) {
+  PendingUpdate pending{
+      .nlri = nlri,
+      .withdrawn = withdrawn,
+      .route = route,
+  };
+  bool send_immediately = false;
+  std::optional<std::chrono::milliseconds> flush_delay;
+
+  {
+    std::lock_guard lock(mutex_);
+
+    for (const auto &prefix : withdrawn) {
+      const auto generation = ++update_generation_counter_;
+      update_generations_[neighbor.id][prefix] = generation;
+      pending.generations[prefix] = generation;
+    }
+
+    for (const auto &prefix : nlri) {
+      const auto generation = ++update_generation_counter_;
+      update_generations_[neighbor.id][prefix] = generation;
+      pending.generations[prefix] = generation;
+    }
+
+    std::set<std::string> affected_prefixes;
+    affected_prefixes.insert(nlri.begin(), nlri.end());
+    affected_prefixes.insert(withdrawn.begin(), withdrawn.end());
+    if (neighbor.mrai_ms == 0 || affected_prefixes.empty()) {
+      send_immediately = true;
+    } else {
+      auto &queue = mrai_queues_[neighbor.id];
+      queue.updates.push_back(pending);
+      if (!queue.flush_scheduled) {
+        const auto now = std::chrono::steady_clock::now();
+        auto [next_it, inserted] = mrai_next_update_.try_emplace(
+            neighbor.id, now + randomInitialMraiDelay(neighbor.mrai_ms));
+        (void)inserted;
+        const auto send_at = std::max(now, next_it->second);
+        flush_delay =
+            std::chrono::duration_cast<std::chrono::milliseconds>(send_at -
+                                                                  now);
+        queue.flush_scheduled = true;
+      }
+    }
+  }
+
+  if (send_immediately) {
+    sendUpdateNowToNeighbor(neighbor, pending);
+  }
+  if (flush_delay) {
+    scheduleMraiFlush(neighbor, *flush_delay);
+  }
+}
+
+void BgpRouter::sendUpdateNowToNeighbor(const NeighborConfig &neighbor,
+                                        const PendingUpdate &update) {
   BgpMessage message;
   message.type = BgpMessageType::Update;
-  BgpUpdatePayload update;
-  update.nlri = nlri;
-  update.withdrawn_routes = withdrawn;
-  if (route) {
-    update.path_attributes = route->attributes;
+  BgpUpdatePayload payload;
+  payload.nlri = update.nlri;
+  payload.withdrawn_routes = update.withdrawn;
+  if (update.route) {
+    payload.path_attributes = update.route->attributes;
   }
-  message.update = std::move(update);
-  auto schedule = scheduleUpdate(neighbor, nlri, withdrawn);
-  auto generations = std::move(schedule.generations);
-  auto delivery_guard = [this, peer_id = neighbor.id, nlri, withdrawn, route,
+  message.update = std::move(payload);
+  auto generations = update.generations;
+  auto delivery_guard = [this, peer_id = neighbor.id, nlri = update.nlri,
+                         withdrawn = update.withdrawn, route = update.route,
                          generations = std::move(generations)]() {
     return commitUpdateDelivery(peer_id, nlri, withdrawn, route, generations);
   };
-  sendMessage(neighbor.id, std::move(message), schedule.delay,
+  sendMessage(neighbor.id, std::move(message), std::chrono::milliseconds{0},
               std::move(delivery_guard));
 }
 
-BgpRouter::UpdateSchedule
-BgpRouter::scheduleUpdate(const NeighborConfig &neighbor,
-                          const std::vector<std::string> &nlri,
-                          const std::vector<std::string> &withdrawn) {
-  UpdateSchedule schedule;
-  std::lock_guard lock(mutex_);
+void BgpRouter::scheduleMraiFlush(const NeighborConfig &neighbor,
+                                  std::chrono::milliseconds delay) {
+  if (!manager_) {
+    return;
+  }
+  manager_->scheduleTask(delay,
+                         [this, peer_id = neighbor.id] {
+                           flushMraiUpdates(peer_id);
+                         });
+}
 
-  for (const auto &prefix : withdrawn) {
-    const auto generation = ++update_generation_counter_;
-    update_generations_[neighbor.id][prefix] = generation;
-    schedule.generations[prefix] = generation;
+void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
+  NeighborConfig neighbor;
+  std::vector<PendingUpdate> updates;
+  {
+    std::lock_guard lock(mutex_);
+    auto queue_it = mrai_queues_.find(peer_id);
+    if (queue_it == mrai_queues_.end()) {
+      return;
+    }
+    updates = std::move(queue_it->second.updates);
+    queue_it->second.updates.clear();
+    queue_it->second.flush_scheduled = false;
+
+    const auto neighbor_it = neighbors_.find(peer_id);
+    const auto state_it = peer_states_.find(peer_id);
+    const auto now = std::chrono::steady_clock::now();
+    if (!active_ || neighbor_it == neighbors_.end() ||
+        !neighbor_it->second.enabled || state_it == peer_states_.end() ||
+        state_it->second != PeerState::Established) {
+      mrai_next_update_[peer_id] = now;
+      return;
+    }
+    neighbor = neighbor_it->second;
+
+    std::erase_if(updates, [&](const auto &update) {
+      return !updateStillCurrentLocked(peer_id, update.generations);
+    });
+
+    if (updates.empty()) {
+      mrai_next_update_[peer_id] = now;
+      return;
+    }
+    mrai_next_update_[peer_id] =
+        now + std::chrono::milliseconds(neighbor.mrai_ms);
   }
 
-  for (const auto &prefix : nlri) {
-    const auto generation = ++update_generation_counter_;
-    update_generations_[neighbor.id][prefix] = generation;
-    schedule.generations[prefix] = generation;
+  for (const auto &update : updates) {
+    sendUpdateNowToNeighbor(neighbor, update);
   }
+}
 
-  std::set<std::string> affected_prefixes;
-  affected_prefixes.insert(nlri.begin(), nlri.end());
-  affected_prefixes.insert(withdrawn.begin(), withdrawn.end());
-  if (neighbor.mrai_ms == 0 || affected_prefixes.empty()) {
-    return schedule;
+bool BgpRouter::updateStillCurrentLocked(
+    const std::string &peer_id,
+    const std::map<std::string, std::uint64_t> &generations) const {
+  const auto peer_it = update_generations_.find(peer_id);
+  if (!generations.empty() && peer_it == update_generations_.end()) {
+    return false;
   }
-
-  const auto interval = std::chrono::milliseconds(neighbor.mrai_ms);
-  const auto now = std::chrono::steady_clock::now();
-  const auto peer_it = mrai_next_update_.find(neighbor.id);
-  auto send_at = now + randomInitialMraiDelay(neighbor.mrai_ms);
-  if (peer_it != mrai_next_update_.end()) {
-    send_at = std::max(now, peer_it->second);
+  for (const auto &[prefix, generation] : generations) {
+    const auto prefix_it = peer_it->second.find(prefix);
+    if (prefix_it == peer_it->second.end() ||
+        prefix_it->second != generation) {
+      return false;
+    }
   }
-  schedule.delay =
-      std::chrono::duration_cast<std::chrono::milliseconds>(send_at - now);
-
-  mrai_next_update_[neighbor.id] = send_at + interval;
-
-  return schedule;
+  return true;
 }
 
 bool BgpRouter::commitUpdateDelivery(
@@ -585,16 +670,8 @@ bool BgpRouter::commitUpdateDelivery(
       state_it->second != PeerState::Established) {
     return false;
   }
-  const auto peer_it = update_generations_.find(peer_id);
-  if (!generations.empty() && peer_it == update_generations_.end()) {
+  if (!updateStillCurrentLocked(peer_id, generations)) {
     return false;
-  }
-  for (const auto &[prefix, generation] : generations) {
-    const auto prefix_it = peer_it->second.find(prefix);
-    if (prefix_it == peer_it->second.end() ||
-        prefix_it->second != generation) {
-      return false;
-    }
   }
 
   for (const auto &prefix : withdrawn) {

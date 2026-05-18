@@ -70,9 +70,16 @@ protected:
                    std::function<bool()> delivery_guard = {}) const;
 
 private:
-  struct UpdateSchedule {
-    std::chrono::milliseconds delay{0};
+  struct PendingUpdate {
+    std::vector<std::string> nlri;
+    std::vector<std::string> withdrawn;
+    std::optional<RouteEntry> route;
     std::map<std::string, std::uint64_t> generations;
+  };
+
+  struct MraiQueue {
+    std::vector<PendingUpdate> updates;
+    bool flush_scheduled = false;
   };
 
   void sendOpenToNeighbor(const NeighborConfig &neighbor);
@@ -80,9 +87,14 @@ private:
                             const std::vector<std::string> &nlri,
                             const std::vector<std::string> &withdrawn,
                             const std::optional<RouteEntry> &route);
-  UpdateSchedule scheduleUpdate(const NeighborConfig &neighbor,
-                                const std::vector<std::string> &nlri,
-                                const std::vector<std::string> &withdrawn);
+  void sendUpdateNowToNeighbor(const NeighborConfig &neighbor,
+                               const PendingUpdate &update);
+  void scheduleMraiFlush(const NeighborConfig &neighbor,
+                         std::chrono::milliseconds delay);
+  void flushMraiUpdates(const std::string &peer_id);
+  [[nodiscard]] bool updateStillCurrentLocked(
+      const std::string &peer_id,
+      const std::map<std::string, std::uint64_t> &generations) const;
   [[nodiscard]] bool commitUpdateDelivery(
       const std::string &peer_id, const std::vector<std::string> &nlri,
       const std::vector<std::string> &withdrawn,
@@ -114,6 +126,7 @@ private:
   std::map<std::string, std::map<std::string, RouteEntry>> adj_rib_out_;
   std::map<std::string, std::chrono::steady_clock::time_point>
       mrai_next_update_;
+  std::map<std::string, MraiQueue> mrai_queues_;
   std::map<std::string, std::map<std::string, std::uint64_t>>
       update_generations_;
   std::uint64_t update_generation_counter_ = 0;
