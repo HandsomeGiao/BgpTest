@@ -81,6 +81,7 @@ private:
   struct MraiQueue {
     std::vector<PendingUpdate> updates;
     bool flush_scheduled = false;
+    bool packet_generation_scheduled = false;
   };
 
   [[nodiscard]] PendingUpdate makePendingUpdateLocked(
@@ -99,6 +100,7 @@ private:
   void scheduleMraiFlush(const NeighborConfig &neighbor,
                          std::chrono::milliseconds delay);
   void flushMraiUpdates(const std::string &peer_id);
+  void generateMraiUpdatePackets(const std::string &peer_id);
   [[nodiscard]] bool updateStillCurrentLocked(
       const std::string &peer_id,
       const std::map<std::string, std::uint64_t> &generations) const;

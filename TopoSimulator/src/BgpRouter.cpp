@@ -44,6 +44,16 @@ std::chrono::milliseconds randomInitialMraiDelay(std::uint32_t mrai_ms) {
   return std::chrono::milliseconds{distribution(rng)};
 }
 
+std::chrono::milliseconds packetGenerationCoalesceDelay(
+    std::uint32_t mrai_ms) {
+  if (mrai_ms == 0) {
+    return std::chrono::milliseconds{0};
+  }
+  const auto one_percent = std::chrono::milliseconds{
+      std::max<std::uint32_t>(1, mrai_ms / 100)};
+  return std::min(std::chrono::milliseconds{10}, one_percent);
+}
+
 } // namespace
 
 BgpRouter::BgpRouter(RouterConfig config) : config_(std::move(config)) {
@@ -584,7 +594,7 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
     } else {
       auto &queue = mrai_queues_[neighbor.id];
       queue.updates.push_back(pending);
-      if (!queue.flush_scheduled) {
+      if (!queue.flush_scheduled && !queue.packet_generation_scheduled) {
         const auto now = std::chrono::steady_clock::now();
         auto [next_it, inserted] = mrai_next_update_.try_emplace(
             neighbor.id, now + randomInitialMraiDelay(neighbor.mrai_ms));
@@ -661,6 +671,46 @@ void BgpRouter::scheduleMraiFlush(const NeighborConfig &neighbor,
 }
 
 void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
+  if (!manager_) {
+    return;
+  }
+  NeighborConfig neighbor;
+  std::chrono::milliseconds coalesce_delay{0};
+  {
+    std::lock_guard lock(mutex_);
+    auto queue_it = mrai_queues_.find(peer_id);
+    if (queue_it == mrai_queues_.end()) {
+      return;
+    }
+    queue_it->second.flush_scheduled = false;
+    if (queue_it->second.packet_generation_scheduled) {
+      return;
+    }
+
+    const auto neighbor_it = neighbors_.find(peer_id);
+    const auto state_it = peer_states_.find(peer_id);
+    const auto now = std::chrono::steady_clock::now();
+    if (!active_ || neighbor_it == neighbors_.end() ||
+        !neighbor_it->second.enabled || state_it == peer_states_.end() ||
+        state_it->second != PeerState::Established) {
+      queue_it->second.updates.clear();
+      mrai_next_update_[peer_id] = now;
+      return;
+    }
+
+    // Let updates produced by deliveries racing with this MRAI boundary join
+    // the same outbound packet generation pass instead of waiting one cycle.
+    neighbor = neighbor_it->second;
+    coalesce_delay = packetGenerationCoalesceDelay(neighbor.mrai_ms);
+    queue_it->second.packet_generation_scheduled = true;
+  }
+
+  manager_->scheduleTask(coalesce_delay, [this, peer_id] {
+    generateMraiUpdatePackets(peer_id);
+  });
+}
+
+void BgpRouter::generateMraiUpdatePackets(const std::string &peer_id) {
   NeighborConfig neighbor;
   std::vector<PendingUpdate> updates;
   {
@@ -669,9 +719,9 @@ void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
     if (queue_it == mrai_queues_.end()) {
       return;
     }
+    queue_it->second.packet_generation_scheduled = false;
     updates = std::move(queue_it->second.updates);
     queue_it->second.updates.clear();
-    queue_it->second.flush_scheduled = false;
 
     const auto neighbor_it = neighbors_.find(peer_id);
     const auto state_it = peer_states_.find(peer_id);
