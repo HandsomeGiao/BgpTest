@@ -566,23 +566,45 @@ void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
 
 void BgpRouter::sendUpdateNowToNeighbor(const NeighborConfig &neighbor,
                                         const PendingUpdate &update) {
-  BgpMessage message;
-  message.type = BgpMessageType::Update;
-  BgpUpdatePayload payload;
-  payload.nlri = update.nlri;
-  payload.withdrawn_routes = update.withdrawn;
-  if (update.route) {
-    payload.path_attributes = update.route->attributes;
+  sendUpdatesNowToNeighbor(neighbor, {update});
+}
+
+void BgpRouter::sendUpdatesNowToNeighbor(
+    const NeighborConfig &neighbor,
+    const std::vector<PendingUpdate> &updates) {
+  if (updates.empty() || !manager_) {
+    return;
   }
-  message.update = std::move(payload);
-  auto generations = update.generations;
-  auto delivery_guard = [this, peer_id = neighbor.id, nlri = update.nlri,
-                         withdrawn = update.withdrawn, route = update.route,
-                         generations = std::move(generations)]() {
-    return commitUpdateDelivery(peer_id, nlri, withdrawn, route, generations);
-  };
-  sendMessage(neighbor.id, std::move(message), std::chrono::milliseconds{0},
-              std::move(delivery_guard));
+
+  std::vector<BgpMessage> messages;
+  std::vector<std::function<bool()>> delivery_guards;
+  messages.reserve(updates.size());
+  delivery_guards.reserve(updates.size());
+
+  for (const auto &update : updates) {
+    BgpMessage message;
+    message.type = BgpMessageType::Update;
+    BgpUpdatePayload payload;
+    payload.nlri = update.nlri;
+    payload.withdrawn_routes = update.withdrawn;
+    if (update.route) {
+      payload.path_attributes = update.route->attributes;
+    }
+    message.update = std::move(payload);
+    auto generations = update.generations;
+    delivery_guards.push_back(
+        [this, peer_id = neighbor.id, nlri = update.nlri,
+         withdrawn = update.withdrawn, route = update.route,
+         generations = std::move(generations)]() {
+          return commitUpdateDelivery(peer_id, nlri, withdrawn, route,
+                                      generations);
+        });
+    messages.push_back(std::move(message));
+  }
+
+  manager_->sendMessages(config_.id, neighbor.id, std::move(messages),
+                         std::chrono::milliseconds{0},
+                         std::move(delivery_guards));
 }
 
 void BgpRouter::scheduleMraiFlush(const NeighborConfig &neighbor,
@@ -632,9 +654,7 @@ void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
         now + std::chrono::milliseconds(neighbor.mrai_ms);
   }
 
-  for (const auto &update : updates) {
-    sendUpdateNowToNeighbor(neighbor, update);
-  }
+  sendUpdatesNowToNeighbor(neighbor, updates);
 }
 
 bool BgpRouter::updateStillCurrentLocked(

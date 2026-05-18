@@ -15,7 +15,7 @@
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
 - 支持邻居级 MRAI，用于控制同一路由器向同一邻居发送 UPDATE/WITHDRAW 报文的最小间隔。
-- 同一邻居的 MRAI pending UPDATE 会在下一个 MRAI 时刻批量 flush；如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
+- 同一邻居的 MRAI pending UPDATE 会在下一个 MRAI 时刻作为一次传输批量 flush；接收端仍会逐条记录 BMP 并逐条处理这些 UPDATE/WITHDRAW。如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
 - 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。

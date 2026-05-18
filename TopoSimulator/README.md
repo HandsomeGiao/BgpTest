@@ -49,7 +49,7 @@ Routers do not create real TCP sockets or bind real interface addresses. BGP ses
 
 Route reflector behavior is derived from per-neighbor `rr_client`. A router with at least one RR client is treated as a reflector. Client-learned IBGP routes may be reflected to other peers; non-client-learned IBGP routes are reflected only to clients.
 
-MRAI is tracked per neighbor inside each router. All UPDATE messages sent from one router to the same neighbor share the same timer, even when they carry different prefixes or are withdrawal-only UPDATEs. Pending UPDATEs for the same neighbor are flushed together when the next MRAI slot opens. Delayed messages carry per-prefix generation guards, so older UPDATEs are dropped if the prefix is withdrawn or superseded before the flush. If every pending message is stale at flush time, nothing is sent and the stale batch does not consume the next MRAI opportunity.
+MRAI is tracked per neighbor inside each router. All UPDATE messages sent from one router to the same neighbor share the same timer, even when they carry different prefixes or are withdrawal-only UPDATEs. Pending UPDATEs for the same neighbor are flushed as one transport batch when the next MRAI slot opens. The receiver still records and processes each logical UPDATE separately, so BMP history keeps one row per logical UPDATE/WITHDRAW. Delayed messages carry per-prefix generation guards, so older UPDATEs are dropped if the prefix is withdrawn or superseded before the flush. If every pending message is stale at flush time, nothing is sent and the stale batch does not consume the next MRAI opportunity.
 
 ### Concurrency Model
 
@@ -142,7 +142,7 @@ Neighbor entries may be explicit. If a link exists but one side omits the neighb
 
 Topology validation rejects empty router ids, duplicate router ids, duplicate or invalid BGP router-ids, ASN 0, invalid originated IPv4 CIDR prefixes, self-neighbors, duplicate neighbors, explicit neighbors without a backing link, neighbor `remote_asn` or `session_type` mismatches, links with empty endpoints, self-links, duplicate links and links or neighbors that reference unknown routers. BGP router-ids must be dotted decimal `x.x.x.x` values with each octet in `0..255`, excluding `0.0.0.0`. These checks run before any routers, worker threads or logs are created.
 
-Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE messages. `mrai_ms=0` disables MRAI. Withdrawal-only UPDATEs use the same per-neighbor MRAI timer as advertisements, and multiple pending UPDATEs to the same neighbor are emitted together at the next MRAI slot.
+Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for UPDATE messages. `mrai_ms=0` disables MRAI. Withdrawal-only UPDATEs use the same per-neighbor MRAI timer as advertisements, and pending UPDATEs to the same neighbor share one transport flush at the next MRAI slot.
 
 If an MRAI-delayed message becomes stale because a newer UPDATE or withdraw supersedes it before delivery, the delayed message is dropped instead of being logged or delivered. A flush containing only stale messages sends nothing and leaves the neighbor ready to send the next valid update immediately.
 

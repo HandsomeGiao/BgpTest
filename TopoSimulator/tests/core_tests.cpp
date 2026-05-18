@@ -475,6 +475,55 @@ void staleMraiFlushDoesNotDelayNextValidUpdate() {
   manager.stop();
 }
 
+void mraiFlushBatchesWithdrawalsForPeer() {
+  auto config = twoRouterTopology(500);
+  config.simulation.name = "withdrawal-batching-tests";
+  const std::string first_prefix = "198.51.100.0/24";
+  const std::string second_prefix = "203.0.113.0/24";
+  config.routers[0].originated_prefixes.push_back(first_prefix);
+  config.routers[0].originated_prefixes.push_back(second_prefix);
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  const auto initial_deadline = std::chrono::steady_clock::now() + 1500ms;
+  while (locRibPrefixCount(manager.ribSnapshot("R2")) < 2 &&
+         std::chrono::steady_clock::now() < initial_deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 2,
+          "initial batched advertisements did not reach R2");
+
+  manager.withdrawPrefix("R1", first_prefix);
+  manager.withdrawPrefix("R1", second_prefix);
+
+  require(manager.waitForConvergence(3s),
+          "batched withdrawal convergence timed out");
+  require(locRibPrefixCount(manager.ribSnapshot("R2")) == 0,
+          "batched withdrawals did not remove both routes");
+
+  toposim::BmpLogManager::instance().flush();
+  toposim::BmpLogQuery query;
+  query.from_routers = {"R1"};
+  query.to_routers = {"R2"};
+  query.actions = {"WITHDRAW"};
+  query.limit = 10;
+  const auto withdrawals =
+      toposim::BmpLogManager::instance().queryHistory(query);
+  require(withdrawals.size() == 2,
+          "batched transport should still expose separate BMP withdrawals");
+  const auto has_first = std::any_of(
+      withdrawals.begin(), withdrawals.end(), [&](const auto &record) {
+        return record.withdrawn.find(first_prefix) != std::string::npos;
+      });
+  const auto has_second = std::any_of(
+      withdrawals.begin(), withdrawals.end(), [&](const auto &record) {
+        return record.withdrawn.find(second_prefix) != std::string::npos;
+      });
+  require(has_first && has_second,
+          "batched withdrawal BMP records did not include both prefixes");
+  manager.stop();
+}
+
 void linkDirectionalMraiIsUsedForGeneratedNeighbors() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "link-mrai-normalization-tests";
@@ -676,6 +725,7 @@ int main() {
     mraiAppliesToWithdrawalsForSamePeerAndPrefix();
     mraiIsSharedByAllPrefixesForPeer();
     staleMraiFlushDoesNotDelayNextValidUpdate();
+    mraiFlushBatchesWithdrawalsForPeer();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();

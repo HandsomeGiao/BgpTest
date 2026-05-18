@@ -89,6 +89,8 @@ private:
                             const std::optional<RouteEntry> &route);
   void sendUpdateNowToNeighbor(const NeighborConfig &neighbor,
                                const PendingUpdate &update);
+  void sendUpdatesNowToNeighbor(const NeighborConfig &neighbor,
+                                const std::vector<PendingUpdate> &updates);
   void scheduleMraiFlush(const NeighborConfig &neighbor,
                          std::chrono::milliseconds delay);
   void flushMraiUpdates(const std::string &peer_id);

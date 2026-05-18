@@ -33,6 +33,11 @@ public:
                    std::chrono::milliseconds extra_delay =
                        std::chrono::milliseconds{0},
                    std::function<bool()> delivery_guard = {});
+  void sendMessages(const std::string &from, const std::string &to,
+                    std::vector<BgpMessage> messages,
+                    std::chrono::milliseconds extra_delay =
+                        std::chrono::milliseconds{0},
+                    std::vector<std::function<bool()>> delivery_guards = {});
   void scheduleTask(std::chrono::milliseconds delay,
                     std::function<void()> task);
   bool setLinkState(const std::string &a, const std::string &b, bool enabled);

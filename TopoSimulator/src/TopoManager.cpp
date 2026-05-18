@@ -188,6 +188,25 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
                               BgpMessage message,
                               std::chrono::milliseconds extra_delay,
                               std::function<bool()> delivery_guard) {
+  std::vector<BgpMessage> messages;
+  messages.push_back(std::move(message));
+  std::vector<std::function<bool()>> delivery_guards;
+  delivery_guards.push_back(std::move(delivery_guard));
+  sendMessages(from, to, std::move(messages), extra_delay,
+               std::move(delivery_guards));
+}
+
+void TopoManager::sendMessages(
+    const std::string &from, const std::string &to,
+    std::vector<BgpMessage> messages, std::chrono::milliseconds extra_delay,
+    std::vector<std::function<bool()>> delivery_guards) {
+  if (messages.empty()) {
+    return;
+  }
+  if (delivery_guards.size() < messages.size()) {
+    delivery_guards.resize(messages.size());
+  }
+
   std::shared_ptr<std::mutex> delivery_lock;
   {
     std::lock_guard lock(mutex_);
@@ -207,7 +226,11 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
     const auto from_as = src_it->second->asn();
     const auto to_as = dst_it->second->asn();
     const auto delay_ms = link->config.delay_ms;
-    message.sequence = ++sequence_;
+    for (auto &message : messages) {
+      message.from = from;
+      message.to = to;
+      message.sequence = ++sequence_;
+    }
     auto &lock_slot = delivery_locks_[directedKey(from, to)];
     if (!lock_slot) {
       lock_slot = std::make_shared<std::mutex>();
@@ -217,9 +240,10 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
 
     pool_->enqueue([this, destination = std::move(destination), delay_ms,
                     extra_delay,
-                    delivery_guard = std::move(delivery_guard),
+                    delivery_guards = std::move(delivery_guards),
                     from_as, to_as, delivery_lock = std::move(delivery_lock),
-                    message = std::move(message)]() mutable {
+                    from, to,
+                    messages = std::move(messages)]() mutable {
       if (extra_delay.count() > 0) {
         std::this_thread::sleep_for(extra_delay);
       }
@@ -227,21 +251,28 @@ void TopoManager::sendMessage(const std::string &from, const std::string &to,
       if (delay_ms > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
-      if (!messageStillDeliverable(message.from, message.to)) {
+      if (!messageStillDeliverable(from, to)) {
         markConvergenceActivity();
         return;
       }
-      if (delivery_guard && !delivery_guard()) {
-        markConvergenceActivity();
-        return;
+      bool delivered_any = false;
+      for (std::size_t i = 0; i < messages.size(); ++i) {
+        auto &message = messages[i];
+        auto &delivery_guard = delivery_guards[i];
+        if (delivery_guard && !delivery_guard()) {
+          continue;
+        }
+        BmpLogManager::instance().recordReceive(message.to, message, from_as,
+                                                to_as);
+        destination->receiveMessage(message);
+        delivered_any = true;
       }
-      BmpLogManager::instance().recordReceive(message.to, message, from_as,
-                                              to_as);
-      destination->receiveMessage(message);
       {
         std::lock_guard lock(mutex_);
         const auto now = std::chrono::steady_clock::now();
-        last_message_processed_at_ = now;
+        if (delivered_any) {
+          last_message_processed_at_ = now;
+        }
         last_convergence_activity_at_ = now;
       }
     });
