@@ -13,7 +13,7 @@
 - 邻居连接是模拟器内存里的消息投递，不使用真实 socket 或接口 IP；`router_id` 是 BGP router-id，用于协议标识和 NEXT_HOP 字段。
 - 模拟 BGP OPEN、UPDATE、NOTIFICATION 等基础报文；为减少仿真报文量，当前不生成 KEEPALIVE，邻居在线状态由拓扑 link/node 状态控制。
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
-- 支持 IBGP、EBGP 和基础路由反射器行为。
+- 支持 IBGP、EBGP 和基础路由反射器行为；默认选路按 local-pref、AS_PATH 长度、MED、EBGP/IBGP、旧路径优先进行比较，只有当前没有同优旧路径时才使用 next-hop 和来源邻居作为确定性 tie-breaker。
 - 支持邻居级 MRAI，用于控制同一路由器向同一邻居发送广告 UPDATE 的最小间隔；withdrawal-only UPDATE 会绕过 MRAI 立即发送。
 - 同一邻居的 MRAI pending 广告 UPDATE 会在下一个 MRAI 时刻作为一次传输批量 flush；同一轮产生的多个 withdrawal-only UPDATE 也会立即作为一次传输批量发送。BMP 仍会逐条记录批次内的逻辑 UPDATE/WITHDRAW；接收端会先导入整批报文，再对所有受影响前缀统一运行一次选路并向外扩散。如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
 - 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。

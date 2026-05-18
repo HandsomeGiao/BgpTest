@@ -13,6 +13,15 @@ int sessionPreference(SessionType type) {
   return type == SessionType::Ebgp ? 0 : 1;
 }
 
+bool samePrimaryRoutePreference(const RouteEntry &lhs,
+                                const RouteEntry &rhs) {
+  return lhs.attributes.local_pref == rhs.attributes.local_pref &&
+         lhs.attributes.as_path.size() == rhs.attributes.as_path.size() &&
+         lhs.attributes.med == rhs.attributes.med &&
+         sessionPreference(lhs.source_session) ==
+             sessionPreference(rhs.source_session);
+}
+
 std::string clusterAppend(const std::string &existing,
                           const std::string &cluster_id) {
   if (cluster_id.empty()) {
@@ -800,6 +809,15 @@ void BgpRouter::runDecisionProcessFor(
       }
 
       auto selected = selectBestRoute(prefix, candidates);
+      if (old_route && selected &&
+          samePrimaryRoutePreference(*old_route, *selected)) {
+        const auto old_route_still_valid =
+            std::find(candidates.begin(), candidates.end(), *old_route) !=
+            candidates.end();
+        if (old_route_still_valid) {
+          selected = old_route;
+        }
+      }
 
       {
         std::lock_guard lock(mutex_);

@@ -628,6 +628,55 @@ void batchedReceiveRunsOneDecisionAfterAllMessages() {
   manager.stop();
 }
 
+void oldBestRouteBeatsNewTieBreakerRoute() {
+  auto config = threeRouterRelayTopology();
+  config.simulation.name = "old-route-tie-break-tests";
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  const std::string prefix = "203.0.113.0/24";
+  auto makeUpdate = [&](std::vector<std::uint32_t> as_path,
+                        std::string next_hop) {
+    toposim::BgpMessage message;
+    message.type = toposim::BgpMessageType::Update;
+    message.update = toposim::BgpUpdatePayload{
+        .nlri = {prefix},
+        .path_attributes =
+            {
+                .as_path = std::move(as_path),
+                .next_hop = std::move(next_hop),
+            },
+    };
+    return message;
+  };
+
+  manager.sendMessage("R3", "R2", makeUpdate({65003}, "3.3.3.3"));
+  require(manager.waitForConvergence(2s),
+          "initial R3 route convergence timed out");
+  auto r2_rib = manager.ribSnapshot("R2");
+  auto route = std::find_if(r2_rib.loc_rib.begin(), r2_rib.loc_rib.end(),
+                            [&](const auto &entry) {
+                              return entry.prefix == prefix;
+                            });
+  require(route != r2_rib.loc_rib.end() && route->learned_from == "R3",
+          "R2 did not initially select the R3 route");
+
+  manager.sendMessage("R1", "R2", makeUpdate({65001}, "1.1.1.1"));
+  require(manager.waitForConvergence(2s),
+          "new tie-breaker route convergence timed out");
+  r2_rib = manager.ribSnapshot("R2");
+  route = std::find_if(r2_rib.loc_rib.begin(), r2_rib.loc_rib.end(),
+                       [&](const auto &entry) {
+                         return entry.prefix == prefix;
+                       });
+  require(route != r2_rib.loc_rib.end() && route->learned_from == "R3",
+          "R2 replaced an equally preferred old route using tie-breakers");
+
+  manager.stop();
+}
+
 void linkDirectionalMraiIsUsedForGeneratedNeighbors() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "link-mrai-normalization-tests";
@@ -831,6 +880,7 @@ int main() {
     staleMraiFlushDoesNotDelayNextValidUpdate();
     mraiFlushBatchesWithdrawalsForPeer();
     batchedReceiveRunsOneDecisionAfterAllMessages();
+    oldBestRouteBeatsNewTieBreakerRoute();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();
