@@ -386,9 +386,9 @@ void firstMraiUpdateIsNotImmediateAfterStartup() {
   manager.stop();
 }
 
-void mraiAppliesToWithdrawalsForSamePeerAndPrefix() {
+void withdrawalsBypassMraiForSamePeerAndPrefix() {
   auto config = twoRouterTopology(1000);
-  config.simulation.name = "mrai-withdrawal-spacing-tests";
+  config.simulation.name = "mrai-withdrawal-bypass-tests";
   const std::string prefix = "203.0.113.0/24";
   config.routers[0].originated_prefixes.push_back(prefix);
 
@@ -404,14 +404,18 @@ void mraiAppliesToWithdrawalsForSamePeerAndPrefix() {
           "initial advertisement did not reach R2");
 
   manager.withdrawPrefix("R1", prefix);
-  std::this_thread::sleep_for(150ms);
-  require(ribHasPrefix(manager.ribSnapshot("R2"), prefix),
-          "withdrawal UPDATE bypassed the per-peer MRAI timer");
+  const auto withdraw_deadline = std::chrono::steady_clock::now() + 250ms;
+  while (ribHasPrefix(manager.ribSnapshot("R2"), prefix) &&
+         std::chrono::steady_clock::now() < withdraw_deadline) {
+    std::this_thread::sleep_for(10ms);
+  }
+  require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
+          "withdrawal UPDATE waited for the per-peer MRAI timer");
 
   require(manager.waitForConvergence(4s),
-          "MRAI-delayed withdrawal convergence timed out");
+          "immediate withdrawal convergence timed out");
   require(!ribHasPrefix(manager.ribSnapshot("R2"), prefix),
-          "MRAI-delayed withdrawal never reached R2");
+          "withdrawal did not remove the route from R2");
   manager.stop();
 }
 
@@ -722,7 +726,7 @@ int main() {
     startupActivatesRoutersBeforeSendingOpens();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     firstMraiUpdateIsNotImmediateAfterStartup();
-    mraiAppliesToWithdrawalsForSamePeerAndPrefix();
+    withdrawalsBypassMraiForSamePeerAndPrefix();
     mraiIsSharedByAllPrefixesForPeer();
     staleMraiFlushDoesNotDelayNextValidUpdate();
     mraiFlushBatchesWithdrawalsForPeer();

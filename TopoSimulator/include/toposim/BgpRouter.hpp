@@ -82,6 +82,10 @@ private:
     bool flush_scheduled = false;
   };
 
+  [[nodiscard]] PendingUpdate makePendingUpdateLocked(
+      const NeighborConfig &neighbor, const std::vector<std::string> &nlri,
+      const std::vector<std::string> &withdrawn,
+      const std::optional<RouteEntry> &route);
   void sendOpenToNeighbor(const NeighborConfig &neighbor);
   void sendUpdateToNeighbor(const NeighborConfig &neighbor,
                             const std::vector<std::string> &nlri,

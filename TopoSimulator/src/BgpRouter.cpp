@@ -507,37 +507,49 @@ void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
   sendMessage(neighbor.id, std::move(message));
 }
 
-void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
-                                     const std::vector<std::string> &nlri,
-                                     const std::vector<std::string> &withdrawn,
-                                     const std::optional<RouteEntry> &route) {
+BgpRouter::PendingUpdate BgpRouter::makePendingUpdateLocked(
+    const NeighborConfig &neighbor, const std::vector<std::string> &nlri,
+    const std::vector<std::string> &withdrawn,
+    const std::optional<RouteEntry> &route) {
   PendingUpdate pending{
       .nlri = nlri,
       .withdrawn = withdrawn,
       .route = route,
   };
+
+  for (const auto &prefix : withdrawn) {
+    const auto generation = ++update_generation_counter_;
+    update_generations_[neighbor.id][prefix] = generation;
+    pending.generations[prefix] = generation;
+  }
+
+  for (const auto &prefix : nlri) {
+    const auto generation = ++update_generation_counter_;
+    update_generations_[neighbor.id][prefix] = generation;
+    pending.generations[prefix] = generation;
+  }
+
+  return pending;
+}
+
+void BgpRouter::sendUpdateToNeighbor(const NeighborConfig &neighbor,
+                                     const std::vector<std::string> &nlri,
+                                     const std::vector<std::string> &withdrawn,
+                                     const std::optional<RouteEntry> &route) {
+  PendingUpdate pending;
   bool send_immediately = false;
   std::optional<std::chrono::milliseconds> flush_delay;
 
   {
     std::lock_guard lock(mutex_);
-
-    for (const auto &prefix : withdrawn) {
-      const auto generation = ++update_generation_counter_;
-      update_generations_[neighbor.id][prefix] = generation;
-      pending.generations[prefix] = generation;
-    }
-
-    for (const auto &prefix : nlri) {
-      const auto generation = ++update_generation_counter_;
-      update_generations_[neighbor.id][prefix] = generation;
-      pending.generations[prefix] = generation;
-    }
-
+    pending = makePendingUpdateLocked(neighbor, nlri, withdrawn, route);
     std::set<std::string> affected_prefixes;
     affected_prefixes.insert(nlri.begin(), nlri.end());
     affected_prefixes.insert(withdrawn.begin(), withdrawn.end());
-    if (neighbor.mrai_ms == 0 || affected_prefixes.empty()) {
+    const bool withdrawal_only =
+        !withdrawn.empty() && nlri.empty() && !route;
+    if (neighbor.mrai_ms == 0 || affected_prefixes.empty() ||
+        withdrawal_only) {
       send_immediately = true;
     } else {
       auto &queue = mrai_queues_[neighbor.id];
@@ -839,6 +851,7 @@ void BgpRouter::disseminateChangedRoutes(
   }
 
   for (const auto &neighbor : peers) {
+    std::vector<PendingUpdate> immediate_withdrawals;
     for (const auto &[prefix, maybe_route] : changes) {
       if (!maybe_route || !exportRouteAllowed(*maybe_route, neighbor)) {
         bool was_advertised = false;
@@ -850,7 +863,9 @@ void BgpRouter::disseminateChangedRoutes(
           }
         }
         if (was_advertised) {
-          sendUpdateToNeighbor(neighbor, {}, {prefix}, std::nullopt);
+          std::lock_guard lock(mutex_);
+          immediate_withdrawals.push_back(
+              makePendingUpdateLocked(neighbor, {}, {prefix}, std::nullopt));
         } else {
           cancelPendingUpdate(neighbor.id, prefix);
         }
@@ -859,6 +874,9 @@ void BgpRouter::disseminateChangedRoutes(
       auto transformed = transformRouteForPeer(*maybe_route, neighbor);
       transformed.prefix = prefix;
       sendUpdateToNeighbor(neighbor, {prefix}, {}, transformed);
+    }
+    if (!immediate_withdrawals.empty()) {
+      sendUpdatesNowToNeighbor(neighbor, immediate_withdrawals);
     }
   }
 }
