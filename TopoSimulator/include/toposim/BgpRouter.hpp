@@ -40,6 +40,7 @@ public:
   void start(bool send_open_messages = true);
   void stop();
   void receiveMessage(const BgpMessage &message);
+  void receiveMessages(const std::vector<BgpMessage> &messages);
   void neighborDown(const std::string &peer_id);
   void neighborUp(const std::string &peer_id);
   void originatePrefix(const std::string &prefix);
@@ -109,6 +110,7 @@ private:
   void cancelPendingUpdate(const std::string &peer_id,
                            const std::string &prefix);
   void runDecisionProcessFor(const std::set<std::string> &changed_prefixes);
+  void finishReceiveBatch();
   void advertiseCurrentRoutesToNeighbor(const NeighborConfig &neighbor);
   void disseminateChangedRoutes(
       const std::map<std::string, std::optional<RouteEntry>> &changes);
@@ -136,6 +138,8 @@ private:
   std::map<std::string, std::map<std::string, std::uint64_t>>
       update_generations_;
   std::uint64_t update_generation_counter_ = 0;
+  std::size_t receive_batch_depth_ = 0;
+  std::set<std::string> deferred_decision_prefixes_;
 };
 
 } // namespace toposim

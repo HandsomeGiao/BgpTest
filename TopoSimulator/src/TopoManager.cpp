@@ -256,6 +256,8 @@ void TopoManager::sendMessages(
         return;
       }
       bool delivered_any = false;
+      std::vector<BgpMessage> delivered_messages;
+      delivered_messages.reserve(messages.size());
       for (std::size_t i = 0; i < messages.size(); ++i) {
         auto &message = messages[i];
         auto &delivery_guard = delivery_guards[i];
@@ -264,8 +266,11 @@ void TopoManager::sendMessages(
         }
         BmpLogManager::instance().recordReceive(message.to, message, from_as,
                                                 to_as);
-        destination->receiveMessage(message);
+        delivered_messages.push_back(std::move(message));
         delivered_any = true;
+      }
+      if (!delivered_messages.empty()) {
+        destination->receiveMessages(delivered_messages);
       }
       {
         std::lock_guard lock(mutex_);

@@ -15,7 +15,7 @@
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为。
 - 支持邻居级 MRAI，用于控制同一路由器向同一邻居发送广告 UPDATE 的最小间隔；withdrawal-only UPDATE 会绕过 MRAI 立即发送。
-- 同一邻居的 MRAI pending 广告 UPDATE 会在下一个 MRAI 时刻作为一次传输批量 flush；同一轮产生的多个 withdrawal-only UPDATE 也会立即作为一次传输批量发送。接收端仍会逐条记录 BMP 并逐条处理这些 UPDATE/WITHDRAW。如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
+- 同一邻居的 MRAI pending 广告 UPDATE 会在下一个 MRAI 时刻作为一次传输批量 flush；同一轮产生的多个 withdrawal-only UPDATE 也会立即作为一次传输批量发送。BMP 仍会逐条记录批次内的逻辑 UPDATE/WITHDRAW；接收端会先导入整批报文，再对所有受影响前缀统一运行一次选路并向外扩散。如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
 - 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
@@ -23,7 +23,7 @@
 - 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、自定义表格显示列，并通过 `MessageFilter` 按相关路由器、来源/目的路由器、动作类型、来源 AS 和目的 AS 查询历史或实时过滤报文；withdraw-only UPDATE 会直接标识为 `WITHDRAW`。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
 - 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置，并在下次启动时自动恢复最近加载或导出的拓扑。
-- 提供 CTest 测试目标，覆盖核心拓扑校验、MRAI 广告、立即撤销、同邻居多前缀批量 flush 和 stale flush 不占用后续发送机会等场景。
+- 提供 CTest 测试目标，覆盖核心拓扑校验、MRAI 广告、立即撤销、同邻居多前缀批量 flush、批量接收后统一选路和 stale flush 不占用后续发送机会等场景。
 
 ## 架构
 

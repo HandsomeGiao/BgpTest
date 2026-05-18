@@ -46,6 +46,46 @@ toposim::TopologyConfig twoRouterTopology(std::uint32_t r1_to_r2_mrai_ms) {
   };
 }
 
+toposim::TopologyConfig threeRouterRelayTopology() {
+  auto r1 = makeRouter("R1", "1.1.1.1", 65001);
+  auto r2 = makeRouter("R2", "2.2.2.2", 65002);
+  auto r3 = makeRouter("R3", "3.3.3.3", 65003);
+
+  auto addNeighbor = [](toposim::RouterConfig &router, std::string id,
+                        std::uint32_t remote_asn) {
+    router.neighbors.push_back({
+        .id = std::move(id),
+        .remote_asn = remote_asn,
+        .session_type = toposim::SessionType::Ebgp,
+        .rr_client = false,
+        .enabled = true,
+        .hold_time_seconds = 90,
+        .mrai_ms = 0,
+    });
+  };
+
+  addNeighbor(r1, "R2", 65002);
+  addNeighbor(r2, "R1", 65001);
+  addNeighbor(r2, "R3", 65003);
+  addNeighbor(r3, "R2", 65002);
+
+  return toposim::TopologyConfig{
+      .simulation =
+          {
+              .name = "batch-receive-tests",
+              .log_dir = "tmp/tests",
+              .worker_threads = 4,
+              .convergence_quiet_ms = 30,
+          },
+      .routers = {std::move(r1), std::move(r2), std::move(r3)},
+      .links =
+          {
+              {.a = "R1", .b = "R2", .enabled = true, .delay_ms = 0},
+              {.a = "R2", .b = "R3", .enabled = true, .delay_ms = 0},
+          },
+  };
+}
+
 toposim::TopologyConfig fiveRouterTransientTopology(std::uint32_t mrai_ms) {
   auto r1 = makeRouter("R1", "1.1.1.1", 111);
   r1.originated_prefixes.push_back("1.1.1.0/24");
@@ -528,6 +568,66 @@ void mraiFlushBatchesWithdrawalsForPeer() {
   manager.stop();
 }
 
+void batchedReceiveRunsOneDecisionAfterAllMessages() {
+  auto config = threeRouterRelayTopology();
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(2s), "initial convergence timed out");
+
+  const std::string prefix = "203.0.113.0/24";
+  auto makeUpdate = [&](std::vector<std::uint32_t> as_path) {
+    toposim::BgpMessage message;
+    message.type = toposim::BgpMessageType::Update;
+    message.update = toposim::BgpUpdatePayload{
+        .nlri = {prefix},
+        .path_attributes =
+            {
+                .as_path = std::move(as_path),
+                .next_hop = "1.1.1.1",
+            },
+    };
+    return message;
+  };
+
+  std::vector<toposim::BgpMessage> updates;
+  updates.push_back(makeUpdate({65001, 64512}));
+  updates.push_back(makeUpdate({65001}));
+  manager.sendMessages("R1", "R2", std::move(updates));
+
+  require(manager.waitForConvergence(2s),
+          "batched receive convergence timed out");
+  toposim::BmpLogManager::instance().flush();
+
+  toposim::BmpLogQuery query;
+  query.from_routers = {"R2"};
+  query.to_routers = {"R3"};
+  query.actions = {"UPDATE"};
+  query.limit = 20;
+  const auto records =
+      toposim::BmpLogManager::instance().queryHistory(query);
+
+  bool saw_final_route = false;
+  bool saw_intermediate_route = false;
+  std::size_t update_count = 0;
+  for (const auto &record : records) {
+    if (record.prefixes != prefix) {
+      continue;
+    }
+    ++update_count;
+    saw_final_route = saw_final_route || record.as_path == "65002 65001";
+    saw_intermediate_route =
+        saw_intermediate_route || record.as_path == "65002 65001 64512";
+  }
+
+  require(saw_final_route,
+          "receiver did not advertise the final route after the batch");
+  require(!saw_intermediate_route,
+          "receiver advertised an intermediate route before finishing batch");
+  require(update_count == 1,
+          "receiver emitted more than one UPDATE for one delivered batch");
+  manager.stop();
+}
+
 void linkDirectionalMraiIsUsedForGeneratedNeighbors() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "link-mrai-normalization-tests";
@@ -730,6 +830,7 @@ int main() {
     mraiIsSharedByAllPrefixesForPeer();
     staleMraiFlushDoesNotDelayNextValidUpdate();
     mraiFlushBatchesWithdrawalsForPeer();
+    batchedReceiveRunsOneDecisionAfterAllMessages();
     linkDirectionalMraiIsUsedForGeneratedNeighbors();
     bmpHistorySupportsMessageFilterFields();
     ebgpRouteIsNotWithdrawnBackToOriginPeer();

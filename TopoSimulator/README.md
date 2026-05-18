@@ -34,7 +34,7 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
 3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
 4. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
-5. `TopoManager::sendMessage` is the only message transport path. It checks router/link state, assigns a sequence number, applies MRAI/link delay through the worker pool, rechecks delivery state immediately before receipt, records the receive event, then delivers the message to the destination router.
+5. `TopoManager::sendMessage` and `TopoManager::sendMessages` are the only message transport paths. They check router/link state, assign sequence numbers, apply MRAI/link delay through the worker pool, recheck delivery state immediately before receipt, record each BMP receive event, then deliver the whole surviving batch to the destination router.
 6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so MRAI-delayed UPDATEs are included in the stability test.
 7. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
 8. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
@@ -49,7 +49,7 @@ Routers do not create real TCP sockets or bind real interface addresses. BGP ses
 
 Route reflector behavior is derived from per-neighbor `rr_client`. A router with at least one RR client is treated as a reflector. Client-learned IBGP routes may be reflected to other peers; non-client-learned IBGP routes are reflected only to clients.
 
-MRAI is tracked per neighbor inside each router and applies to advertised UPDATEs. Withdrawal-only UPDATEs bypass MRAI and are sent immediately so peers do not keep invalid paths. Pending advertised UPDATEs for the same neighbor are flushed as one transport batch when the next MRAI slot opens. Multiple withdrawal-only UPDATEs produced in the same dissemination pass are also sent as one immediate transport batch. The receiver still records and processes each logical UPDATE separately, so BMP history keeps one row per logical UPDATE/WITHDRAW. Delayed messages carry per-prefix generation guards, so older UPDATEs are dropped if the prefix is withdrawn or superseded before the flush. If every pending message is stale at flush time, nothing is sent and the stale batch does not consume the next MRAI opportunity.
+MRAI is tracked per neighbor inside each router and applies to advertised UPDATEs. Withdrawal-only UPDATEs bypass MRAI and are sent immediately so peers do not keep invalid paths. Pending advertised UPDATEs for the same neighbor are flushed as one transport batch when the next MRAI slot opens. Multiple withdrawal-only UPDATEs produced in the same dissemination pass are also sent as one immediate transport batch. BMP history still keeps one row per logical UPDATE/WITHDRAW inside the transport batch. The receiver imports every logical message in the delivered batch first, then runs best-path selection once for the union of changed prefixes before advertising or withdrawing routes to other peers. Delayed messages carry per-prefix generation guards, so older UPDATEs are dropped if the prefix is withdrawn or superseded before the flush. If every pending message is stale at flush time, nothing is sent and the stale batch does not consume the next MRAI opportunity.
 
 ### Concurrency Model
 
@@ -102,7 +102,7 @@ The simulator has a small CTest target for core correctness checks:
 ctest --test-dir TopoSimulator\build -C Release --output-on-failure
 ```
 
-The current tests cover topology validation, MRAI regressions where delayed advertisements must not revive withdrawn prefixes, immediate withdrawal propagation, peer-level MRAI batching across multiple prefixes, and stale MRAI flushes that must not delay the next valid update.
+The current tests cover topology validation, MRAI regressions where delayed advertisements must not revive withdrawn prefixes, immediate withdrawal propagation, peer-level MRAI batching across multiple prefixes, batch receive processing that suppresses intermediate advertisements, and stale MRAI flushes that must not delay the next valid update.
 
 ## Run
 

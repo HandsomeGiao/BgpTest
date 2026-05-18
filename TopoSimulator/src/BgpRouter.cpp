@@ -170,6 +170,27 @@ void BgpRouter::receiveMessage(const BgpMessage &message) {
   }
 }
 
+void BgpRouter::receiveMessages(const std::vector<BgpMessage> &messages) {
+  if (messages.empty()) {
+    return;
+  }
+
+  {
+    std::lock_guard lock(mutex_);
+    ++receive_batch_depth_;
+  }
+
+  try {
+    for (const auto &message : messages) {
+      receiveMessage(message);
+    }
+  } catch (...) {
+    finishReceiveBatch();
+    throw;
+  }
+  finishReceiveBatch();
+}
+
 void BgpRouter::neighborDown(const std::string &peer_id) {
   std::set<std::string> changed_prefixes;
   {
@@ -739,6 +760,18 @@ void BgpRouter::runDecisionProcessFor(
     if (!active_) {
       return;
     }
+    if (receive_batch_depth_ > 0) {
+      if (prefixes.empty()) {
+        for (const auto &[prefix, _] : loc_rib_) {
+          prefixes.insert(prefix);
+        }
+        for (const auto &[prefix, _] : local_routes_) {
+          prefixes.insert(prefix);
+        }
+      }
+      deferred_decision_prefixes_.insert(prefixes.begin(), prefixes.end());
+      return;
+    }
     if (prefixes.empty()) {
       for (const auto &[prefix, _] : loc_rib_) {
         prefixes.insert(prefix);
@@ -805,6 +838,26 @@ void BgpRouter::runDecisionProcessFor(
 
   if (!changes.empty()) {
     disseminateChangedRoutes(changes);
+  }
+}
+
+void BgpRouter::finishReceiveBatch() {
+  std::set<std::string> changed_prefixes;
+  {
+    std::lock_guard lock(mutex_);
+    if (receive_batch_depth_ == 0) {
+      return;
+    }
+    --receive_batch_depth_;
+    if (receive_batch_depth_ > 0) {
+      return;
+    }
+    changed_prefixes = std::move(deferred_decision_prefixes_);
+    deferred_decision_prefixes_.clear();
+  }
+
+  if (!changed_prefixes.empty()) {
+    runDecisionProcessFor(changed_prefixes);
   }
 }
 
