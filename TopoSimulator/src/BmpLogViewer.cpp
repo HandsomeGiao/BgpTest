@@ -208,7 +208,6 @@ enum class BmpViewerColumn : std::size_t {
   ToAs,
   Action,
   Prefixes,
-  Withdrawn,
   AsPath,
   NextHop,
   LocalPref,
@@ -244,7 +243,6 @@ constexpr std::array<BmpViewerColumnDefinition, kBmpViewerColumnCount>
         {BmpViewerColumn::ToAs, "To AS", 85.0f, false},
         {BmpViewerColumn::Action, "Action", 125.0f, true},
         {BmpViewerColumn::Prefixes, "Prefixes", 0.0f, true},
-        {BmpViewerColumn::Withdrawn, "Withdrawn", 0.0f, false},
         {BmpViewerColumn::AsPath, "AS_PATH", 0.0f, true},
         {BmpViewerColumn::NextHop, "Next Hop", 110.0f, true},
         {BmpViewerColumn::LocalPref, "Local Pref", 95.0f, false},
@@ -273,6 +271,16 @@ int visibleColumnCount(const BmpViewerColumnVisibility &visibility) {
       std::count(visibility.begin(), visibility.end(), true));
 }
 
+std::string prefixColumnValue(const BmpLogRecord &record) {
+  if (record.prefixes.empty()) {
+    return record.withdrawn;
+  }
+  if (record.withdrawn.empty()) {
+    return record.prefixes;
+  }
+  return record.prefixes + " | withdrawn: " + record.withdrawn;
+}
+
 std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
   switch (column) {
   case BmpViewerColumn::Id:
@@ -294,9 +302,7 @@ std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
   case BmpViewerColumn::Action:
     return recordActionLabel(record);
   case BmpViewerColumn::Prefixes:
-    return record.prefixes;
-  case BmpViewerColumn::Withdrawn:
-    return record.withdrawn;
+    return prefixColumnValue(record);
   case BmpViewerColumn::AsPath:
     return record.as_path;
   case BmpViewerColumn::NextHop:

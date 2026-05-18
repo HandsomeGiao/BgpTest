@@ -395,15 +395,9 @@ void printAllRoutes(const toposim::TopoManager &manager,
     });
 
     writeColored(prefix, kArgument);
-    const auto best_it = best_by_prefix.find(prefix);
-    if (best_it == best_by_prefix.end()) {
-      std::cout << "  best: -\n";
-    } else {
-      std::cout << "  best next-hop=" << routeNextHop(best_it->second)
-                << " as-path="
-                << joinAsPath(best_it->second.attributes.as_path) << '\n';
-    }
+    std::cout << '\n';
 
+    const auto best_it = best_by_prefix.find(prefix);
     for (const auto &[source, route] : paths) {
       const bool is_best =
           best_it != best_by_prefix.end() && route == best_it->second;
