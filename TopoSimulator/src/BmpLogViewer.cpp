@@ -595,7 +595,7 @@ void drawMessageFilter(MessageFilterState &filter) {
 }
 
 void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
-                     float height,
+                     bool scroll_to_selection, float height,
                      const BmpViewerColumnVisibility &visible_columns) {
   constexpr ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
@@ -673,6 +673,12 @@ void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
         }
       }
     }
+  }
+  if (scroll_to_selection && selected_index >= 0 &&
+      selected_index < static_cast<int>(records.size())) {
+    const float row_height =
+        ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().CellPadding.y;
+    ImGui::SetScrollY(row_height * static_cast<float>(selected_index));
   }
   ImGui::EndTable();
 }
@@ -821,7 +827,9 @@ void viewerLoop(bool live_supported) {
     const float table_height =
         (std::max)(220.0f * dpi_scale,
                    ImGui::GetContentRegionAvail().y - detail_region_height);
-    drawRecordTable(visible_records, selected_index, table_height,
+    const bool follow_scroll =
+        live_supported && live_mode && follow_live && !visible_records.empty();
+    drawRecordTable(visible_records, selected_index, follow_scroll, table_height,
                     visible_columns);
 
     ImGui::Separator();
