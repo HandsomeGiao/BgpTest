@@ -728,10 +728,13 @@ void viewerLoop(bool live_supported) {
   std::vector<BmpLogRecord> visible_records;
   std::vector<BmpLogRecord> history_records;
   auto visible_columns = defaultColumnVisibility();
-  if (!live_supported) {
-    history_records =
-        BmpLogManager::instance().queryHistory(queryFromFilter(message_filter));
+  auto refresh_history = [&] {
+    const auto query = queryFromFilter(message_filter);
+    history_records = BmpLogManager::instance().queryHistory(query);
     selected_index = history_records.empty() ? -1 : 0;
+  };
+  if (!live_supported) {
+    refresh_history();
   }
 
   while (!g_stop_requested) {
@@ -779,7 +782,10 @@ void viewerLoop(bool live_supported) {
 
     ImGui::Separator();
     if (live_supported) {
-      ImGui::Checkbox("Live", &live_mode);
+      const bool was_live = live_mode;
+      if (ImGui::Checkbox("Live", &live_mode) && was_live && !live_mode) {
+        refresh_history();
+      }
       ImGui::SameLine();
       ImGui::Checkbox("Follow", &follow_live);
       ImGui::SameLine();
@@ -789,9 +795,7 @@ void viewerLoop(bool live_supported) {
     }
     if (ImGui::Button("Query History")) {
       live_mode = false;
-      const auto query = queryFromFilter(message_filter);
-      history_records = BmpLogManager::instance().queryHistory(query);
-      selected_index = history_records.empty() ? -1 : 0;
+      refresh_history();
     }
     ImGui::SameLine();
     drawMessageFilter(message_filter);
