@@ -594,7 +594,8 @@ void drawMessageFilter(MessageFilterState &filter) {
   ImGui::EndPopup();
 }
 
-void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
+void drawRecordTable(std::vector<BmpLogRecord> &records,
+                     std::uint64_t &selected_record_id, int &selected_index,
                      bool scroll_to_selection, float height,
                      const BmpViewerColumnVisibility &visible_columns) {
   constexpr ImGuiTableFlags flags =
@@ -626,10 +627,6 @@ void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
         static_cast<ImGuiID>(columnIndex(definition.column)));
   }
   ImGui::TableHeadersRow();
-  const std::uint64_t selected_record_id =
-      selected_index >= 0 && selected_index < static_cast<int>(records.size())
-          ? records[static_cast<std::size_t>(selected_index)].id
-          : 0;
   if (const ImGuiTableSortSpecs *sort_specs = ImGui::TableGetSortSpecs()) {
     sortRecords(records, *sort_specs);
   }
@@ -642,6 +639,12 @@ void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
         selected_it == records.end()
             ? (records.empty() ? -1 : 0)
             : static_cast<int>(std::distance(records.begin(), selected_it));
+    if (selected_it == records.end()) {
+      selected_record_id = records.empty() ? 0 : records.front().id;
+    }
+  } else {
+    selected_index = records.empty() ? -1 : 0;
+    selected_record_id = records.empty() ? 0 : records.front().id;
   }
 
   ImGuiListClipper clipper;
@@ -664,8 +667,9 @@ void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
           }
           const auto label = value + "##row-" + std::to_string(row);
           if (ImGui::Selectable(label.c_str(), selected_index == row,
-                                ImGuiSelectableFlags_SpanAllColumns)) {
+                                 ImGuiSelectableFlags_SpanAllColumns)) {
             selected_index = row;
+            selected_record_id = record.id;
           }
           first_visible_column = false;
         } else {
@@ -724,6 +728,7 @@ void viewerLoop(bool live_supported) {
   bool live_mode = live_supported;
   bool follow_live = live_supported;
   int selected_index = -1;
+  std::uint64_t selected_record_id = 0;
   MessageFilterState message_filter;
   std::vector<BmpLogRecord> visible_records;
   std::vector<BmpLogRecord> history_records;
@@ -731,7 +736,13 @@ void viewerLoop(bool live_supported) {
   auto refresh_history = [&] {
     const auto query = queryFromFilter(message_filter);
     history_records = BmpLogManager::instance().queryHistory(query);
-    selected_index = history_records.empty() ? -1 : 0;
+    if (history_records.empty()) {
+      selected_index = -1;
+      selected_record_id = 0;
+    } else {
+      selected_index = 0;
+      selected_record_id = history_records.front().id;
+    }
   };
   if (!live_supported) {
     refresh_history();
@@ -787,7 +798,13 @@ void viewerLoop(bool live_supported) {
         refresh_history();
       }
       ImGui::SameLine();
+      if (!live_mode) {
+        ImGui::BeginDisabled();
+      }
       ImGui::Checkbox("Follow", &follow_live);
+      if (!live_mode) {
+        ImGui::EndDisabled();
+      }
       ImGui::SameLine();
     } else {
       ImGui::TextDisabled("History mode");
@@ -819,9 +836,18 @@ void viewerLoop(bool live_supported) {
     ImGui::Text("%s records: %d", live_mode ? "Live" : "History",
                 static_cast<int>(visible_records.size()));
     if (follow_live && live_mode && !visible_records.empty()) {
-      selected_index = static_cast<int>(visible_records.size()) - 1;
-    } else if (selected_index >= static_cast<int>(visible_records.size())) {
-      selected_index = visible_records.empty() ? -1 : 0;
+      selected_record_id = visible_records.back().id;
+    }
+    if (visible_records.empty()) {
+      selected_index = -1;
+      selected_record_id = 0;
+    } else if (selected_record_id == 0 ||
+               std::none_of(visible_records.begin(), visible_records.end(),
+                            [&](const auto &record) {
+                              return record.id == selected_record_id;
+                            })) {
+      selected_index = 0;
+      selected_record_id = visible_records.front().id;
     }
 
     const float raw_json_input_height = 180.0f * dpi_scale;
@@ -833,8 +859,8 @@ void viewerLoop(bool live_supported) {
                    ImGui::GetContentRegionAvail().y - detail_region_height);
     const bool follow_scroll =
         live_supported && live_mode && follow_live && !visible_records.empty();
-    drawRecordTable(visible_records, selected_index, follow_scroll, table_height,
-                    visible_columns);
+    drawRecordTable(visible_records, selected_record_id, selected_index,
+                    follow_scroll, table_height, visible_columns);
 
     ImGui::Separator();
     ImGui::TextUnformatted("Selected Raw JSON");
