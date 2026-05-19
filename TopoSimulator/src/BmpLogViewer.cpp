@@ -4,7 +4,6 @@
 #include <array>
 #include <atomic>
 #include <cctype>
-#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <mutex>
@@ -868,30 +867,11 @@ void viewerLoop(bool live_supported) {
       selected_record_id = visible_records.front().id;
     }
 
-    const float raw_json_input_height = 180.0f * dpi_scale;
-    const float detail_region_height =
-        raw_json_input_height + ImGui::GetTextLineHeightWithSpacing() +
-        ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 3.0f;
-    const float table_height =
-        (std::max)(220.0f * dpi_scale,
-                   ImGui::GetContentRegionAvail().y - detail_region_height);
+    const float table_height = (std::max)(1.0f, ImGui::GetContentRegionAvail().y);
     const bool follow_scroll =
         live_supported && live_mode && follow_live && !visible_records.empty();
     drawRecordTable(visible_records, selected_record_id, selected_index,
                     follow_scroll, table_height, visible_columns);
-
-    ImGui::Separator();
-    ImGui::TextUnformatted("Selected Raw JSON");
-    const char *raw = "";
-    if (selected_index >= 0 &&
-        selected_index < static_cast<int>(visible_records.size())) {
-      raw = visible_records[static_cast<std::size_t>(selected_index)]
-                .raw_json.c_str();
-    }
-    ImGui::InputTextMultiline("##raw-json", const_cast<char *>(raw),
-                              std::strlen(raw) + 1,
-                              ImVec2(-1.0f, raw_json_input_height),
-                              ImGuiInputTextFlags_ReadOnly);
     ImGui::End();
 
     ImGui::Render();
