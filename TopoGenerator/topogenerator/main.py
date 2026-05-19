@@ -778,6 +778,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.link_mode_action)
 
         for text, shortcut, callback in [
+            ("New Topo", "", self.new_topo),
             ("Edit (E)", "E", self.edit_selected),
             ("Delete (Del)", "Del", self.delete_selected),
             ("Load", "", self.load_json),
@@ -929,6 +930,29 @@ class MainWindow(QMainWindow):
             3000,
         )
 
+    def new_topo(self) -> None:
+        start_dir = self.current_topology_path.parent if self.current_topology_path else Path.cwd()
+        default_path = start_dir / "new_topology.json"
+        path, _ = QFileDialog.getSaveFileName(self, "New topology", str(default_path), "JSON (*.json)")
+        if not path:
+            return
+
+        topology_path = Path(path)
+        if topology_path.suffix.lower() != ".json":
+            topology_path = topology_path.with_suffix(".json")
+
+        model = TopologyModel()
+        try:
+            self._write_topology_model(topology_path, model)
+        except OSError as exc:
+            self._error(f"Failed to create topology: {exc}")
+            return
+
+        self._replace_model(model)
+        self._remember_topology(topology_path)
+        self.set_dirty(False)
+        self.statusBar().showMessage(f"New topology: {topology_path}", 3000)
+
     def load_json(self) -> None:
         start_dir = str(self.current_topology_path.parent) if self.current_topology_path else ""
         path, _ = QFileDialog.getOpenFileName(self, "Load topology", start_dir, "JSON (*.json)")
@@ -964,8 +988,11 @@ class MainWindow(QMainWindow):
             self._error(f"Failed to save topology: {exc}")
 
     def _write_topology(self, path: Path) -> None:
+        self._write_topology_model(path, self.model)
+
+    def _write_topology_model(self, path: Path, model: TopologyModel) -> None:
         with path.open("w", encoding="utf-8") as handle:
-            json.dump(self.model.to_json(), handle, indent=2)
+            json.dump(model.to_json(), handle, indent=2)
             handle.write("\n")
 
     def _replace_model(self, model: TopologyModel) -> None:
