@@ -20,7 +20,7 @@
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
 - 生成 `bmp_collector.log` 和 `bmp_collector.sqlite`，分别用于 JSON Lines 原始记录和 SQLite 历史查询；BMP 时间戳使用 `YYYY-MM-DD HH:MM:SS.mmm` 格式的中国时间。
-- 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、自定义表格显示列，并通过 `MessageFilter` 按相关路由器、来源/目的路由器、动作类型、来源 AS 和目的 AS 查询历史或实时过滤报文；withdraw-only UPDATE 会直接标识为 `WITHDRAW`。
+- 交互式启动时会自动打开 ImGui BMP 日志窗口，用于观察收敛过程、自定义表格显示列，并通过 `MessageFilter` 按相关路由器、来源/目的路由器、动作类型、来源 AS 和目的 AS 查询历史或实时过滤报文；也会构建独立的 `BmpLogViewer.exe`，用于打开已有 `bmp_collector.sqlite` 做离线分析；withdraw-only UPDATE 会直接标识为 `WITHDRAW`。
 - 支持交互式运行时操作，例如断开链路、恢复链路、关闭节点、恢复节点、发布或撤销前缀。
 - 提供 PyQt 可视化拓扑编辑器，用于生成模拟器输入 JSON；导入已有拓扑后会保留链路方向上的 MRAI 和 RR client 设置，并在下次启动时自动恢复最近加载或导出的拓扑。
 - 提供 CTest 测试目标，覆盖核心拓扑校验、MRAI 广告、立即撤销、同邻居多前缀批量 flush、批量接收后统一选路和 stale flush 不占用后续发送机会等场景。
@@ -40,7 +40,7 @@ BGP Test Framework
    ├─ BgpRouter
    ├─ ThreadPool
    ├─ BmpLogManager
-   ├─ BmpLogViewer
+   ├─ BmpLogViewer / BmpLogViewer.exe
    └─ BGP message / route data model
 ```
 
@@ -152,6 +152,14 @@ bmp open
 bmp close
 bmp status
 ```
+
+离线分析已有 SQLite 日志：
+
+```powershell
+.\TopoSimulator\build\Release\BmpLogViewer.exe path\to\bmp_collector.sqlite
+```
+
+不传路径时，`BmpLogViewer.exe` 会弹出文件选择窗口。
 
 运行拓扑生成器：
 

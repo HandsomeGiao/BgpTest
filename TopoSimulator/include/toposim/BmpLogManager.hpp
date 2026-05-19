@@ -62,6 +62,7 @@ public:
   void initialize(std::filesystem::path log_file,
                   std::filesystem::path database_file,
                   std::size_t live_capacity = 20000);
+  void openReadOnly(std::filesystem::path database_file);
   void shutdown();
   void flush();
 
@@ -93,6 +94,8 @@ private:
   void writeRecord(const BmpLogRecord &record);
   void insertRecord(const BmpLogRecord &record);
   void closeDatabase();
+  void openDatabaseReadOnly();
+  [[nodiscard]] std::uint64_t countStoredEvents() const;
 
   mutable std::mutex mutex_;
   mutable std::mutex io_mutex_;

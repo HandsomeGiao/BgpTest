@@ -329,6 +329,37 @@ void bmpFlushDrainsInflightBatch() {
   logger.shutdown();
 }
 
+void bmpReadOnlyHistoryOpensExistingSqlite() {
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "bmp-readonly-history-tests";
+  const std::string prefix = "203.0.113.0/24";
+  config.routers[0].originated_prefixes.push_back(prefix);
+
+  toposim::TopoManager manager(std::move(config));
+  const auto database_file = manager.databaseFile();
+  manager.start();
+  require(manager.waitForConvergence(2s),
+          "readonly history convergence timed out");
+  manager.stop();
+
+  auto &logger = toposim::BmpLogManager::instance();
+  logger.openReadOnly(database_file);
+  require(logger.totalEvents() > 0,
+          "readonly BMP history did not count existing events");
+
+  toposim::BmpLogQuery query;
+  query.from_routers = {"R1"};
+  query.to_routers = {"R2"};
+  query.actions = {"UPDATE"};
+  query.limit = 20;
+  const auto records = logger.queryHistory(query);
+  const auto found = std::any_of(
+      records.begin(), records.end(),
+      [&](const auto &record) { return record.prefixes == prefix; });
+  require(found, "readonly BMP history did not query existing sqlite records");
+  logger.shutdown();
+}
+
 void startupDoesNotEmitKeepalives() {
   auto config = twoRouterTopology(0);
   config.simulation.name = "no-keepalive-tests";
@@ -902,6 +933,7 @@ int main() {
     updateBeforeOpenIsRejected();
     stoppedTopoManagerCannotRestart();
     bmpFlushDrainsInflightBatch();
+    bmpReadOnlyHistoryOpensExistingSqlite();
     startupDoesNotEmitKeepalives();
     startupActivatesRoutersBeforeSendingOpens();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();

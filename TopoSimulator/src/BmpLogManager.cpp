@@ -362,6 +362,39 @@ void BmpLogManager::initialize(std::filesystem::path log_file,
   }
 }
 
+void BmpLogManager::openReadOnly(std::filesystem::path database_file) {
+  shutdown();
+
+  {
+    std::lock_guard lock(mutex_);
+    log_file_.clear();
+    database_file_ = std::move(database_file);
+    live_capacity_ = 1;
+    stopping_ = false;
+    initialized_ = false;
+    next_id_ = 1;
+    total_events_ = 0;
+    inflight_ = 0;
+    writer_error_.clear();
+    queue_.clear();
+    live_records_.clear();
+  }
+
+  try {
+    std::lock_guard io_lock(io_mutex_);
+    openDatabaseReadOnly();
+    total_events_ = countStoredEvents();
+  } catch (...) {
+    std::lock_guard io_lock(io_mutex_);
+    closeDatabase();
+    throw;
+  }
+  {
+    std::lock_guard lock(mutex_);
+    initialized_ = true;
+  }
+}
+
 void BmpLogManager::shutdown() {
   {
     std::lock_guard lock(mutex_);
@@ -702,6 +735,24 @@ void BmpLogManager::openDatabase() {
   execSql(asDb(db_), "PRAGMA foreign_keys=ON;");
 }
 
+void BmpLogManager::openDatabaseReadOnly() {
+  sqlite3 *db = nullptr;
+  const int rc =
+      sqlite3_open_v2(database_file_.string().c_str(), &db,
+                      SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nullptr);
+  if (rc != SQLITE_OK) {
+    const char *message = db ? sqlite3_errmsg(db) : "unknown sqlite error";
+    std::string error = std::string("open BMP sqlite database read-only: ") +
+                        message;
+    if (db) {
+      sqlite3_close(db);
+    }
+    throw std::runtime_error(error);
+  }
+  db_ = db;
+  execSql(asDb(db_), "PRAGMA query_only=ON;");
+}
+
 void BmpLogManager::createSchema() {
   execSql(asDb(db_),
           "CREATE TABLE bmp_events ("
@@ -802,6 +853,20 @@ void BmpLogManager::closeDatabase() {
     sqlite3_close(asDb(db_));
     db_ = nullptr;
   }
+}
+
+std::uint64_t BmpLogManager::countStoredEvents() const {
+  if (!db_) {
+    return 0;
+  }
+  SqliteStatement stmt(asDb(db_), "SELECT COUNT(*) FROM bmp_events;",
+                       "prepare BMP event count");
+  const int rc = sqlite3_step(stmt.get());
+  sqliteCheck(rc, asDb(db_), "read BMP event count");
+  if (rc != SQLITE_ROW) {
+    return 0;
+  }
+  return static_cast<std::uint64_t>(sqlite3_column_int64(stmt.get(), 0));
 }
 
 } // namespace toposim

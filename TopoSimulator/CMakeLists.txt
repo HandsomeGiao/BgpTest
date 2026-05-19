@@ -69,6 +69,20 @@ add_custom_command(TARGET TopoSimulator POST_BUILD
         $<TARGET_FILE_DIR:TopoSimulator>/topo
 )
 
+add_executable(BmpLogViewer
+    src/BmpLogViewerMain.cpp
+    src/BmpLogViewer.cpp
+)
+target_link_libraries(BmpLogViewer
+    PRIVATE
+        toposim
+        imgui::imgui
+        d3d11
+        dxgi
+        comdlg32
+)
+target_compile_options(BmpLogViewer PRIVATE /W4 /permissive-)
+
 add_executable(TopoSimulatorTests tests/core_tests.cpp)
 target_link_libraries(TopoSimulatorTests PRIVATE toposim)
 target_compile_options(TopoSimulatorTests PRIVATE /W4 /permissive-)

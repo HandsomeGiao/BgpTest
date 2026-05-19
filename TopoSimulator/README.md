@@ -15,7 +15,7 @@ Protocol and route-decision code must stay pure C++20: `BgpRouter`, `ThreadPool`
 ```text
 TopoSimulator.exe
 ├─ CLI / Windows console / command completion
-├─ BmpLogViewer: ImGui + Win32/DX11 live and historical BMP log browser
+├─ BmpLogViewer: ImGui + Win32/DX11 live and historical BMP log browser, also built as BmpLogViewer.exe for offline SQLite analysis
 ├─ toposim_io
 │  └─ TopologyJson: JSON topology loading and JSON snapshot formatting
 └─ toposim
@@ -123,6 +123,16 @@ The BMP viewer mode is controlled with `--bmp-viewer auto|on|off`:
 If the viewer is closed during an interactive run, it can be opened again from
 the CLI with `bmp viewer` or `bmp open`. `bmp close` closes it, and `bmp status`
 prints whether the viewer thread is currently running.
+
+The build also produces a standalone `BmpLogViewer.exe` in the same output
+directory. Use it to inspect an existing BMP SQLite database without starting a
+simulation:
+
+```powershell
+.\TopoSimulator\build\Release\BmpLogViewer.exe path\to\bmp_collector.sqlite
+```
+
+Run it without arguments to choose the SQLite file from a Windows file picker.
 
 The build copies `TopoSimulator/topo/` next to the executable, so double-clicking the built exe has a ready-to-run sample topology:
 

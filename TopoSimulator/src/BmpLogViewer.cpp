@@ -569,7 +569,7 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
   ImGui::EndTable();
 }
 
-void viewerLoop() {
+void viewerLoop(bool live_supported) {
   g_stop_requested = false;
   configureDpiAwareness();
 
@@ -607,13 +607,18 @@ void viewerLoop() {
   ImGui_ImplWin32_Init(hwnd);
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-  bool live_mode = true;
-  bool follow_live = true;
+  bool live_mode = live_supported;
+  bool follow_live = live_supported;
   int selected_index = -1;
   MessageFilterState message_filter;
   std::vector<BmpLogRecord> visible_records;
   std::vector<BmpLogRecord> history_records;
   auto visible_columns = defaultColumnVisibility();
+  if (!live_supported) {
+    history_records =
+        BmpLogManager::instance().queryHistory(queryFromFilter(message_filter));
+    selected_index = history_records.empty() ? -1 : 0;
+  }
 
   while (!g_stop_requested) {
     MSG msg;
@@ -650,7 +655,8 @@ void viewerLoop() {
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
     ImGui::Begin("BMP Logs", nullptr, window_flags);
 
-    ImGui::Text("JSONL: %s", BmpLogManager::instance().logFile().string().c_str());
+    const auto log_file = BmpLogManager::instance().logFile().string();
+    ImGui::Text("JSONL: %s", log_file.empty() ? "(none)" : log_file.c_str());
     ImGui::Text("SQLite: %s",
                 BmpLogManager::instance().databaseFile().string().c_str());
     ImGui::Text("Events: %llu",
@@ -658,10 +664,15 @@ void viewerLoop() {
                     BmpLogManager::instance().totalEvents()));
 
     ImGui::Separator();
-    ImGui::Checkbox("Live", &live_mode);
-    ImGui::SameLine();
-    ImGui::Checkbox("Follow", &follow_live);
-    ImGui::SameLine();
+    if (live_supported) {
+      ImGui::Checkbox("Live", &live_mode);
+      ImGui::SameLine();
+      ImGui::Checkbox("Follow", &follow_live);
+      ImGui::SameLine();
+    } else {
+      ImGui::TextDisabled("History mode");
+      ImGui::SameLine();
+    }
     if (ImGui::Button("Query History")) {
       live_mode = false;
       const auto query = queryFromFilter(message_filter);
@@ -675,7 +686,7 @@ void viewerLoop() {
 
     const auto live_query = queryFromFilter(message_filter);
 
-    if (live_mode) {
+    if (live_supported && live_mode) {
       visible_records.clear();
       auto live_records = BmpLogManager::instance().liveSnapshot();
       for (const auto &record : live_records) {
@@ -753,8 +764,16 @@ bool BmpLogViewer::startDetached() {
   }
   g_stop_requested = false;
   g_running = true;
-  g_viewer_thread = std::thread(viewerLoop);
+  g_viewer_thread = std::thread([] { viewerLoop(true); });
   return true;
+}
+
+int BmpLogViewer::runStandalone(const std::filesystem::path &database_file) {
+  BmpLogManager::instance().openReadOnly(database_file);
+  g_running = true;
+  viewerLoop(false);
+  BmpLogManager::instance().shutdown();
+  return 0;
 }
 
 void BmpLogViewer::stopAndJoin() {
