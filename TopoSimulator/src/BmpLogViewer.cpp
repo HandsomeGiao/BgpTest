@@ -390,12 +390,24 @@ int compareRecordsByColumn(const BmpLogRecord &lhs, const BmpLogRecord &rhs,
   return 0;
 }
 
+void sortRecordsByIdAscending(std::vector<BmpLogRecord> &records) {
+  std::stable_sort(records.begin(), records.end(),
+                   [](const auto &lhs, const auto &rhs) {
+                     return lhs.id < rhs.id;
+                   });
+}
+
 void sortRecords(std::vector<BmpLogRecord> &records,
                  const ImGuiTableSortSpecs &sort_specs) {
   if (sort_specs.SpecsCount == 0) {
+    sortRecordsByIdAscending(records);
     return;
   }
   const auto &spec = sort_specs.Specs[0];
+  if (spec.SortDirection == ImGuiSortDirection_None) {
+    sortRecordsByIdAscending(records);
+    return;
+  }
   const auto column =
       static_cast<BmpViewerColumn>(static_cast<std::size_t>(spec.ColumnUserID));
   const bool ascending = spec.SortDirection == ImGuiSortDirection_Ascending;
@@ -619,9 +631,13 @@ void drawRecordTable(std::vector<BmpLogRecord> &records,
     if (!visible_columns[columnIndex(definition.column)]) {
       continue;
     }
-    const ImGuiTableColumnFlags column_flags =
+    ImGuiTableColumnFlags column_flags =
         definition.width > 0.0f ? ImGuiTableColumnFlags_WidthFixed
                                 : ImGuiTableColumnFlags_None;
+    if (definition.column == BmpViewerColumn::Id) {
+      column_flags |= ImGuiTableColumnFlags_DefaultSort |
+                      ImGuiTableColumnFlags_PreferSortAscending;
+    }
     ImGui::TableSetupColumn(
         definition.label, column_flags, definition.width,
         static_cast<ImGuiID>(columnIndex(definition.column)));
@@ -629,6 +645,8 @@ void drawRecordTable(std::vector<BmpLogRecord> &records,
   ImGui::TableHeadersRow();
   if (const ImGuiTableSortSpecs *sort_specs = ImGui::TableGetSortSpecs()) {
     sortRecords(records, *sort_specs);
+  } else {
+    sortRecordsByIdAscending(records);
   }
   if (selected_record_id != 0) {
     const auto selected_it =
