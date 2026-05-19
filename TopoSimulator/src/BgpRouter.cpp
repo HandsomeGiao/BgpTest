@@ -328,7 +328,14 @@ void BgpRouter::onOpenMessage(const BgpMessage &message) {
         message.open->router_id.empty()) {
       return;
     }
-    peer_states_[message.from] = PeerState::Established;
+    auto &state = peer_states_[message.from];
+    const bool newly_established = state != PeerState::Established;
+    state = PeerState::Established;
+    if (newly_established && it->second.mrai_ms > 0) {
+      mrai_next_update_[message.from] =
+          std::chrono::steady_clock::now() +
+          randomInitialMraiDelay(it->second.mrai_ms);
+    }
     neighbor_config = it->second;
   }
   advertiseCurrentRoutesToNeighbor(*neighbor_config);

@@ -426,6 +426,37 @@ void firstMraiUpdateIsNotImmediateAfterStartup() {
   manager.stop();
 }
 
+void establishedPeerInitialMraiAgesBeforeFirstUpdate() {
+  auto config = threeRouterRelayTopology();
+  config.simulation.name = "established-mrai-age-tests";
+  for (auto &router : config.routers) {
+    if (router.id != "R2") {
+      continue;
+    }
+    for (auto &neighbor : router.neighbors) {
+      if (neighbor.id == "R3") {
+        neighbor.mrai_ms = 500;
+      }
+    }
+  }
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(3s), "startup convergence timed out");
+
+  const std::string prefix = "203.0.113.0/24";
+  manager.originatePrefix("R1", prefix);
+  const auto deadline = std::chrono::steady_clock::now() + 200ms;
+  while (!ribHasPrefix(manager.ribSnapshot("R3"), prefix) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(5ms);
+  }
+
+  require(ribHasPrefix(manager.ribSnapshot("R3"), prefix),
+          "first UPDATE restarted MRAI instead of using established peer age");
+  manager.stop();
+}
+
 void withdrawalsBypassMraiForSamePeerAndPrefix() {
   auto config = twoRouterTopology(1000);
   config.simulation.name = "mrai-withdrawal-bypass-tests";
@@ -875,6 +906,7 @@ int main() {
     startupActivatesRoutersBeforeSendingOpens();
     mraiAdvertisementDoesNotReviveWithdrawnRoute();
     firstMraiUpdateIsNotImmediateAfterStartup();
+    establishedPeerInitialMraiAgesBeforeFirstUpdate();
     withdrawalsBypassMraiForSamePeerAndPrefix();
     mraiIsSharedByAllPrefixesForPeer();
     staleMraiFlushDoesNotDelayNextValidUpdate();
