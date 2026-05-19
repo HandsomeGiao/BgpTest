@@ -321,6 +321,94 @@ std::string columnValue(const BmpLogRecord &record, BmpViewerColumn column) {
   return {};
 }
 
+int compareStrings(const std::string &lhs, const std::string &rhs) {
+  if (lhs < rhs) {
+    return -1;
+  }
+  if (rhs < lhs) {
+    return 1;
+  }
+  return 0;
+}
+
+template <typename T>
+int compareValues(const T &lhs, const T &rhs) {
+  if (lhs < rhs) {
+    return -1;
+  }
+  if (rhs < lhs) {
+    return 1;
+  }
+  return 0;
+}
+
+template <typename T>
+int compareOptionalValues(const std::optional<T> &lhs,
+                          const std::optional<T> &rhs) {
+  if (!lhs && !rhs) {
+    return 0;
+  }
+  if (!lhs) {
+    return -1;
+  }
+  if (!rhs) {
+    return 1;
+  }
+  return compareValues(*lhs, *rhs);
+}
+
+int compareRecordsByColumn(const BmpLogRecord &lhs, const BmpLogRecord &rhs,
+                           BmpViewerColumn column) {
+  switch (column) {
+  case BmpViewerColumn::Id:
+    return compareValues(lhs.id, rhs.id);
+  case BmpViewerColumn::FromAs:
+    return compareOptionalValues(lhs.from_as, rhs.from_as);
+  case BmpViewerColumn::ToAs:
+    return compareOptionalValues(lhs.to_as, rhs.to_as);
+  case BmpViewerColumn::LocalPref:
+    return compareOptionalValues(lhs.local_pref, rhs.local_pref);
+  case BmpViewerColumn::Med:
+    return compareOptionalValues(lhs.med, rhs.med);
+  case BmpViewerColumn::Sequence:
+    return compareValues(lhs.sequence, rhs.sequence);
+  case BmpViewerColumn::Prefixes:
+    return compareStrings(prefixColumnValue(lhs), prefixColumnValue(rhs));
+  case BmpViewerColumn::Time:
+  case BmpViewerColumn::Event:
+  case BmpViewerColumn::Router:
+  case BmpViewerColumn::From:
+  case BmpViewerColumn::To:
+  case BmpViewerColumn::Action:
+  case BmpViewerColumn::AsPath:
+  case BmpViewerColumn::NextHop:
+  case BmpViewerColumn::RawJson:
+    return compareStrings(columnValue(lhs, column), columnValue(rhs, column));
+  case BmpViewerColumn::Count:
+    break;
+  }
+  return 0;
+}
+
+void sortRecords(std::vector<BmpLogRecord> &records,
+                 const ImGuiTableSortSpecs &sort_specs) {
+  if (sort_specs.SpecsCount == 0) {
+    return;
+  }
+  const auto &spec = sort_specs.Specs[0];
+  const auto column =
+      static_cast<BmpViewerColumn>(static_cast<std::size_t>(spec.ColumnUserID));
+  const bool ascending = spec.SortDirection == ImGuiSortDirection_Ascending;
+  std::stable_sort(records.begin(), records.end(),
+                   [&](const auto &lhs, const auto &rhs) {
+                     const int result = compareRecordsByColumn(lhs, rhs, column);
+                     if (result == 0) {
+                       return false;
+                     }
+                     return ascending ? result < 0 : result > 0;
+                   });
+}
+
 struct MessageFilterState {
   std::array<char, 192> routers{};
   std::array<char, 192> from_routers{};
@@ -506,13 +594,14 @@ void drawMessageFilter(MessageFilterState &filter) {
   ImGui::EndPopup();
 }
 
-void drawRecordTable(const std::vector<BmpLogRecord> &records,
-                     int &selected_index, float height,
+void drawRecordTable(std::vector<BmpLogRecord> &records, int &selected_index,
+                     float height,
                      const BmpViewerColumnVisibility &visible_columns) {
   constexpr ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
       ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
-      ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp;
+      ImGuiTableFlags_ScrollY | ImGuiTableFlags_Sortable |
+      ImGuiTableFlags_SortTristate | ImGuiTableFlags_SizingStretchProp;
 
   const int column_count = visibleColumnCount(visible_columns);
   if (column_count == 0) {
@@ -532,9 +621,28 @@ void drawRecordTable(const std::vector<BmpLogRecord> &records,
     const ImGuiTableColumnFlags column_flags =
         definition.width > 0.0f ? ImGuiTableColumnFlags_WidthFixed
                                 : ImGuiTableColumnFlags_None;
-    ImGui::TableSetupColumn(definition.label, column_flags, definition.width);
+    ImGui::TableSetupColumn(
+        definition.label, column_flags, definition.width,
+        static_cast<ImGuiID>(columnIndex(definition.column)));
   }
   ImGui::TableHeadersRow();
+  const std::uint64_t selected_record_id =
+      selected_index >= 0 && selected_index < static_cast<int>(records.size())
+          ? records[static_cast<std::size_t>(selected_index)].id
+          : 0;
+  if (const ImGuiTableSortSpecs *sort_specs = ImGui::TableGetSortSpecs()) {
+    sortRecords(records, *sort_specs);
+  }
+  if (selected_record_id != 0) {
+    const auto selected_it =
+        std::find_if(records.begin(), records.end(), [&](const auto &record) {
+          return record.id == selected_record_id;
+        });
+    selected_index =
+        selected_it == records.end()
+            ? (records.empty() ? -1 : 0)
+            : static_cast<int>(std::distance(records.begin(), selected_it));
+  }
 
   ImGuiListClipper clipper;
   clipper.Begin(static_cast<int>(records.size()));
