@@ -16,6 +16,9 @@
 
 #include "toposim/BgpTypes.hpp"
 
+struct sqlite3;
+struct sqlite3_stmt;
+
 namespace toposim {
 
 using BmpEventValue = std::variant<std::string, std::uint64_t, bool>;
@@ -76,8 +79,8 @@ public:
   [[nodiscard]] std::vector<BmpLogRecord>
   queryHistory(const BmpLogQuery &query) const;
 
-  [[nodiscard]] const std::filesystem::path &logFile() const;
-  [[nodiscard]] const std::filesystem::path &databaseFile() const;
+  [[nodiscard]] std::filesystem::path logFile() const;
+  [[nodiscard]] std::filesystem::path databaseFile() const;
   [[nodiscard]] bool initialized() const;
   [[nodiscard]] std::uint64_t totalEvents() const;
 
@@ -93,6 +96,7 @@ private:
   void createSchema();
   void writeRecord(const BmpLogRecord &record);
   void insertRecord(const BmpLogRecord &record);
+  [[nodiscard]] sqlite3_stmt *insertStatement();
   void closeDatabase();
   void openDatabaseReadOnly();
   [[nodiscard]] std::uint64_t countStoredEvents() const;
@@ -110,7 +114,8 @@ private:
   std::filesystem::path log_file_;
   std::filesystem::path database_file_;
   std::ofstream out_;
-  void *db_ = nullptr;
+  sqlite3 *db_ = nullptr;
+  sqlite3_stmt *insert_stmt_ = nullptr;
   std::atomic<std::uint64_t> next_id_{1};
   std::atomic<std::uint64_t> total_events_{0};
   bool initialized_ = false;

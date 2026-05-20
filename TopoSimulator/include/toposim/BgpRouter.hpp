@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <memory>
@@ -124,7 +125,7 @@ private:
   [[nodiscard]] bool containsOwnAs(const PathAttributes &attrs) const;
 
   RouterConfig config_;
-  TopoManager *manager_ = nullptr;
+  std::atomic<TopoManager *> manager_{nullptr};
 
   mutable std::mutex mutex_;
   bool active_ = false;

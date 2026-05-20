@@ -164,8 +164,8 @@ void to_json(nlohmann::json &j, const RouterConfig &config) {
 
 void from_json(const nlohmann::json &j, RouterConfig &config) {
   j.at("id").get_to(config.id);
-  getIfPresent(j, "router_id", config.router_id);
-  getIfPresent(j, "asn", config.asn);
+  j.at("router_id").get_to(config.router_id);
+  j.at("asn").get_to(config.asn);
   getIfPresent(j, "cluster_id", config.cluster_id);
   getIfPresent(j, "originated_prefixes", config.originated_prefixes);
   getIfPresent(j, "neighbors", config.neighbors);
@@ -274,8 +274,13 @@ TopologyConfig loadTopologyConfig(const std::filesystem::path &topology_file) {
                              topology_file.string());
   }
   nlohmann::json j;
-  in >> j;
-  return j.get<TopologyConfig>();
+  try {
+    in >> j;
+    return j.get<TopologyConfig>();
+  } catch (const nlohmann::json::exception &ex) {
+    throw std::runtime_error("Failed to parse topology file " +
+                             topology_file.string() + ": " + ex.what());
+  }
 }
 
 nlohmann::json toJson(const std::vector<RouterSnapshot> &snapshot) {

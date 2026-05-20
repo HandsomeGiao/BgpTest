@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <stdexcept>
 
 namespace toposim {
@@ -105,8 +106,10 @@ void ThreadPool::workerLoop() {
 
     try {
       task();
+    } catch (const std::exception &ex) {
+      std::cerr << "ThreadPool task failed: " << ex.what() << '\n';
     } catch (...) {
-      // The simulation should keep running even if a custom hook throws.
+      std::cerr << "ThreadPool task failed: unknown exception\n";
     }
 
     {

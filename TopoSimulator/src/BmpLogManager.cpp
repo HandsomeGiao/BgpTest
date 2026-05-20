@@ -17,18 +17,15 @@
 namespace toposim {
 namespace {
 
-sqlite3 *asDb(void *db) { return static_cast<sqlite3 *>(db); }
-
 std::string timestampNow() {
   const auto now = std::chrono::system_clock::now();
-  const auto china_time = now + std::chrono::hours{8};
-  const auto time = std::chrono::system_clock::to_time_t(china_time);
+  const auto time = std::chrono::system_clock::to_time_t(now);
   const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
                           now.time_since_epoch()) %
                       1000;
 
   std::tm tm{};
-  gmtime_s(&tm, &time);
+  localtime_s(&tm, &time);
 
   std::ostringstream oss;
   oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << '.' << std::setw(3)
@@ -221,6 +218,12 @@ void sqliteCheck(int rc, sqlite3 *db, const char *context) {
     throw std::runtime_error(std::string(context) + ": " + message);
   }
 }
+
+constexpr const char *kInsertEventSql =
+    "INSERT INTO bmp_events "
+    "(id,timestamp,event,router,from_peer,to_peer,from_as,to_as,msg_type,action,"
+    "sequence,prefixes,withdrawn,next_hop,as_path,local_pref,med,raw_json) "
+    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
 
 void execSql(sqlite3 *db, const char *sql) {
   char *error = nullptr;
@@ -583,7 +586,7 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
   append_text_in("e.action", query.actions);
   sql += "ORDER BY e.id DESC LIMIT ?;";
 
-  SqliteStatement stmt(asDb(db_), sql.c_str(), "prepare BMP query");
+  SqliteStatement stmt(db_, sql.c_str(), "prepare BMP query");
   int index = 1;
   for (const auto &param : params) {
     if (param.type == QueryParam::Type::Text) {
@@ -634,13 +637,17 @@ BmpLogManager::queryHistory(const BmpLogQuery &query) const {
     record.raw_json = columnText(stmt.get(), 17);
     result.push_back(std::move(record));
   }
-  sqliteCheck(rc, asDb(db_), "read BMP query results");
+  sqliteCheck(rc, db_, "read BMP query results");
   return result;
 }
 
-const std::filesystem::path &BmpLogManager::logFile() const { return log_file_; }
+std::filesystem::path BmpLogManager::logFile() const {
+  std::lock_guard lock(mutex_);
+  return log_file_;
+}
 
-const std::filesystem::path &BmpLogManager::databaseFile() const {
+std::filesystem::path BmpLogManager::databaseFile() const {
+  std::lock_guard lock(mutex_);
   return database_file_;
 }
 
@@ -689,7 +696,7 @@ void BmpLogManager::writerLoop() {
       std::lock_guard io_lock(io_mutex_);
       std::optional<SqliteTransaction> transaction;
       if (db_) {
-        transaction.emplace(asDb(db_));
+        transaction.emplace(db_);
       }
       for (const auto &record : batch) {
         writeRecord(record);
@@ -727,12 +734,25 @@ void BmpLogManager::rememberWriterError(std::string message) {
 
 void BmpLogManager::openDatabase() {
   sqlite3 *db = nullptr;
-  sqliteCheck(sqlite3_open(database_file_.string().c_str(), &db), db,
-              "open BMP sqlite database");
+  const int rc = sqlite3_open(database_file_.string().c_str(), &db);
+  if (rc != SQLITE_OK) {
+    const char *message = db ? sqlite3_errmsg(db) : "unknown sqlite error";
+    std::string error =
+        std::string("open BMP sqlite database: ") + message;
+    if (db) {
+      sqlite3_close(db);
+    }
+    throw std::runtime_error(error);
+  }
+  try {
+    execSql(db, "PRAGMA journal_mode=WAL;");
+    execSql(db, "PRAGMA synchronous=NORMAL;");
+    execSql(db, "PRAGMA foreign_keys=ON;");
+  } catch (...) {
+    sqlite3_close(db);
+    throw;
+  }
   db_ = db;
-  execSql(asDb(db_), "PRAGMA journal_mode=WAL;");
-  execSql(asDb(db_), "PRAGMA synchronous=NORMAL;");
-  execSql(asDb(db_), "PRAGMA foreign_keys=ON;");
 }
 
 void BmpLogManager::openDatabaseReadOnly() {
@@ -749,12 +769,17 @@ void BmpLogManager::openDatabaseReadOnly() {
     }
     throw std::runtime_error(error);
   }
+  try {
+    execSql(db, "PRAGMA query_only=ON;");
+  } catch (...) {
+    sqlite3_close(db);
+    throw;
+  }
   db_ = db;
-  execSql(asDb(db_), "PRAGMA query_only=ON;");
 }
 
 void BmpLogManager::createSchema() {
-  execSql(asDb(db_),
+  execSql(db_,
           "CREATE TABLE bmp_events ("
           "id INTEGER PRIMARY KEY,"
           "timestamp TEXT NOT NULL,"
@@ -802,55 +827,64 @@ void BmpLogManager::writeRecord(const BmpLogRecord &record) {
 }
 
 void BmpLogManager::insertRecord(const BmpLogRecord &record) {
-  constexpr const char *insert_event =
-      "INSERT INTO bmp_events "
-      "(id,timestamp,event,router,from_peer,to_peer,from_as,to_as,msg_type,action,"
-      "sequence,prefixes,withdrawn,next_hop,as_path,local_pref,med,raw_json) "
-      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
-  SqliteStatement event_stmt(asDb(db_), insert_event,
-                             "prepare insert BMP event");
-  sqlite3_bind_int64(event_stmt.get(), 1,
+  sqlite3_stmt *stmt = insertStatement();
+  sqlite3_reset(stmt);
+  sqlite3_clear_bindings(stmt);
+  sqlite3_bind_int64(stmt, 1,
                      static_cast<sqlite3_int64>(record.id));
-  bindText(event_stmt.get(), 2, record.timestamp);
-  bindText(event_stmt.get(), 3, record.event);
-  bindText(event_stmt.get(), 4, record.router);
-  bindText(event_stmt.get(), 5, record.from);
-  bindText(event_stmt.get(), 6, record.to);
+  bindText(stmt, 2, record.timestamp);
+  bindText(stmt, 3, record.event);
+  bindText(stmt, 4, record.router);
+  bindText(stmt, 5, record.from);
+  bindText(stmt, 6, record.to);
   if (record.from_as) {
-    sqlite3_bind_int64(event_stmt.get(), 7, *record.from_as);
+    sqlite3_bind_int64(stmt, 7, *record.from_as);
   } else {
-    sqlite3_bind_null(event_stmt.get(), 7);
+    sqlite3_bind_null(stmt, 7);
   }
   if (record.to_as) {
-    sqlite3_bind_int64(event_stmt.get(), 8, *record.to_as);
+    sqlite3_bind_int64(stmt, 8, *record.to_as);
   } else {
-    sqlite3_bind_null(event_stmt.get(), 8);
+    sqlite3_bind_null(stmt, 8);
   }
-  bindText(event_stmt.get(), 9, record.msg_type);
-  bindText(event_stmt.get(), 10, record.action);
-  sqlite3_bind_int64(event_stmt.get(), 11,
+  bindText(stmt, 9, record.msg_type);
+  bindText(stmt, 10, record.action);
+  sqlite3_bind_int64(stmt, 11,
                      static_cast<sqlite3_int64>(record.sequence));
-  bindText(event_stmt.get(), 12, record.prefixes);
-  bindText(event_stmt.get(), 13, record.withdrawn);
-  bindText(event_stmt.get(), 14, record.next_hop);
-  bindText(event_stmt.get(), 15, record.as_path);
+  bindText(stmt, 12, record.prefixes);
+  bindText(stmt, 13, record.withdrawn);
+  bindText(stmt, 14, record.next_hop);
+  bindText(stmt, 15, record.as_path);
   if (record.local_pref) {
-    sqlite3_bind_int64(event_stmt.get(), 16, *record.local_pref);
+    sqlite3_bind_int64(stmt, 16, *record.local_pref);
   } else {
-    sqlite3_bind_null(event_stmt.get(), 16);
+    sqlite3_bind_null(stmt, 16);
   }
   if (record.med) {
-    sqlite3_bind_int64(event_stmt.get(), 17, *record.med);
+    sqlite3_bind_int64(stmt, 17, *record.med);
   } else {
-    sqlite3_bind_null(event_stmt.get(), 17);
+    sqlite3_bind_null(stmt, 17);
   }
-  bindText(event_stmt.get(), 18, record.raw_json);
-  sqliteCheck(sqlite3_step(event_stmt.get()), asDb(db_), "insert BMP event");
+  bindText(stmt, 18, record.raw_json);
+  sqliteCheck(sqlite3_step(stmt), db_, "insert BMP event");
+}
+
+sqlite3_stmt *BmpLogManager::insertStatement() {
+  if (!insert_stmt_) {
+    sqliteCheck(sqlite3_prepare_v2(db_, kInsertEventSql, -1, &insert_stmt_,
+                                   nullptr),
+                db_, "prepare insert BMP event");
+  }
+  return insert_stmt_;
 }
 
 void BmpLogManager::closeDatabase() {
+  if (insert_stmt_) {
+    sqlite3_finalize(insert_stmt_);
+    insert_stmt_ = nullptr;
+  }
   if (db_) {
-    sqlite3_close(asDb(db_));
+    sqlite3_close(db_);
     db_ = nullptr;
   }
 }
@@ -859,10 +893,10 @@ std::uint64_t BmpLogManager::countStoredEvents() const {
   if (!db_) {
     return 0;
   }
-  SqliteStatement stmt(asDb(db_), "SELECT COUNT(*) FROM bmp_events;",
+  SqliteStatement stmt(db_, "SELECT COUNT(*) FROM bmp_events;",
                        "prepare BMP event count");
   const int rc = sqlite3_step(stmt.get());
-  sqliteCheck(rc, asDb(db_), "read BMP event count");
+  sqliteCheck(rc, db_, "read BMP event count");
   if (rc != SQLITE_ROW) {
     return 0;
   }

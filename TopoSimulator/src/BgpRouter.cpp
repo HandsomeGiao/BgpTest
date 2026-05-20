@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <random>
+#include <stdexcept>
 #include <tuple>
 
 #include "toposim/TopoManager.hpp"
@@ -57,6 +58,17 @@ std::chrono::milliseconds packetGenerationCoalesceDelay(
 } // namespace
 
 BgpRouter::BgpRouter(RouterConfig config) : config_(std::move(config)) {
+  if (config_.id.empty()) {
+    throw std::invalid_argument("BGP router id cannot be empty");
+  }
+  if (config_.router_id.empty()) {
+    throw std::invalid_argument("BGP router " + config_.id +
+                                " has an empty BGP router-id");
+  }
+  if (config_.asn == 0) {
+    throw std::invalid_argument("BGP router " + config_.id +
+                                " has invalid ASN 0");
+  }
   if (config_.cluster_id.empty()) {
     config_.cluster_id = config_.router_id;
   }
@@ -82,7 +94,9 @@ bool BgpRouter::isActive() const {
   return active_;
 }
 
-void BgpRouter::attachManager(TopoManager *manager) { manager_ = manager; }
+void BgpRouter::attachManager(TopoManager *manager) {
+  manager_.store(manager, std::memory_order_release);
+}
 
 void BgpRouter::addOrUpdateNeighbor(const NeighborConfig &neighbor) {
   std::lock_guard lock(mutex_);
@@ -155,6 +169,7 @@ void BgpRouter::start(bool send_open_messages) {
 void BgpRouter::stop() {
   std::lock_guard lock(mutex_);
   active_ = false;
+  local_routes_.clear();
   adj_rib_in_.clear();
   loc_rib_.clear();
   adj_rib_out_.clear();
@@ -420,7 +435,7 @@ bool BgpRouter::importRouteAllowed(const RouteEntry &route,
   if (route.attributes.cluster_list) {
     const auto &clusters = *route.attributes.cluster_list;
     std::size_t start = 0;
-    while (start <= clusters.size()) {
+    while (start < clusters.size()) {
       const auto end = clusters.find(',', start);
       const auto token =
           clusters.substr(start, end == std::string::npos ? end : end - start);
@@ -522,13 +537,14 @@ void BgpRouter::sendMessage(const std::string &peer_id,
                             BgpMessage message,
                             std::chrono::milliseconds extra_delay,
                             std::function<bool()> delivery_guard) const {
-  if (!manager_) {
+  auto *manager = manager_.load(std::memory_order_acquire);
+  if (!manager) {
     return;
   }
   message.from = config_.id;
   message.to = peer_id;
-  manager_->sendMessage(config_.id, peer_id, std::move(message), extra_delay,
-                        std::move(delivery_guard));
+  manager->sendMessage(config_.id, peer_id, std::move(message), extra_delay,
+                       std::move(delivery_guard));
 }
 
 void BgpRouter::sendOpenToNeighbor(const NeighborConfig &neighbor) {
@@ -631,7 +647,8 @@ void BgpRouter::sendUpdateNowToNeighbor(const NeighborConfig &neighbor,
 void BgpRouter::sendUpdatesNowToNeighbor(
     const NeighborConfig &neighbor,
     const std::vector<PendingUpdate> &updates) {
-  if (updates.empty() || !manager_) {
+  auto *manager = manager_.load(std::memory_order_acquire);
+  if (updates.empty() || !manager) {
     return;
   }
 
@@ -661,24 +678,26 @@ void BgpRouter::sendUpdatesNowToNeighbor(
     messages.push_back(std::move(message));
   }
 
-  manager_->sendMessages(config_.id, neighbor.id, std::move(messages),
-                         std::chrono::milliseconds{0},
-                         std::move(delivery_guards));
+  manager->sendMessages(config_.id, neighbor.id, std::move(messages),
+                        std::chrono::milliseconds{0},
+                        std::move(delivery_guards));
 }
 
 void BgpRouter::scheduleMraiFlush(const NeighborConfig &neighbor,
                                   std::chrono::milliseconds delay) {
-  if (!manager_) {
+  auto *manager = manager_.load(std::memory_order_acquire);
+  if (!manager) {
     return;
   }
-  manager_->scheduleTask(delay,
-                         [this, peer_id = neighbor.id] {
-                           flushMraiUpdates(peer_id);
-                         });
+  manager->scheduleTask(delay,
+                        [this, peer_id = neighbor.id] {
+                          flushMraiUpdates(peer_id);
+                        });
 }
 
 void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
-  if (!manager_) {
+  auto *manager = manager_.load(std::memory_order_acquire);
+  if (!manager) {
     return;
   }
   NeighborConfig neighbor;
@@ -712,7 +731,7 @@ void BgpRouter::flushMraiUpdates(const std::string &peer_id) {
     queue_it->second.packet_generation_scheduled = true;
   }
 
-  manager_->scheduleTask(coalesce_delay, [this, peer_id] {
+  manager->scheduleTask(coalesce_delay, [this, peer_id] {
     generateMraiUpdatePackets(peer_id);
   });
 }

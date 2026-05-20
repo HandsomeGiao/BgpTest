@@ -161,6 +161,7 @@ void TopoManager::start() {
 
 void TopoManager::stop() {
   std::vector<std::shared_ptr<BgpRouter>> routers;
+  std::unique_ptr<ThreadPool> pool;
   {
     std::lock_guard lock(mutex_);
     if (!running_ && !pool_) {
@@ -170,14 +171,17 @@ void TopoManager::stop() {
     for (const auto &[_, router] : routers_) {
       routers.push_back(router);
     }
+    pool = std::move(pool_);
   }
   for (const auto &router : routers) {
     router->stop();
   }
-  if (pool_) {
-    pool_->waitForIdle(std::chrono::seconds(5), std::chrono::milliseconds(10));
-    pool_->stop();
-    pool_.reset();
+  if (pool) {
+    pool->waitForIdle(std::chrono::seconds(5), std::chrono::milliseconds(10));
+    pool->stop();
+  }
+  for (const auto &router : routers) {
+    router->attachManager(nullptr);
   }
   BmpLogManager::instance().recordTopologyEvent("simulation_stopped",
                                                 BmpEventDetail{});
@@ -386,7 +390,11 @@ void TopoManager::originatePrefix(const std::string &router_id,
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
-    router = routers_.at(router_id);
+    const auto it = routers_.find(router_id);
+    if (it == routers_.end()) {
+      throw std::runtime_error("Unknown router: " + router_id);
+    }
+    router = it->second;
     last_convergence_activity_at_ = std::chrono::steady_clock::now();
   }
   BmpLogManager::instance().recordTopologyEvent(
@@ -399,7 +407,11 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
-    router = routers_.at(router_id);
+    const auto it = routers_.find(router_id);
+    if (it == routers_.end()) {
+      throw std::runtime_error("Unknown router: " + router_id);
+    }
+    router = it->second;
     last_convergence_activity_at_ = std::chrono::steady_clock::now();
   }
   BmpLogManager::instance().recordTopologyEvent(
@@ -408,8 +420,11 @@ void TopoManager::withdrawPrefix(const std::string &router_id,
 }
 
 bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
-  if (!pool_) {
-    return !running_;
+  {
+    std::lock_guard lock(mutex_);
+    if (!pool_) {
+      return !running_;
+    }
   }
   const auto deadline = std::chrono::steady_clock::now() +
                         std::max(timeout, convergenceQuietPeriod());
@@ -425,14 +440,20 @@ bool TopoManager::waitForConvergence(std::chrono::milliseconds timeout) {
 bool TopoManager::isConverged() const {
   const auto quiet_period = convergenceQuietPeriod();
   std::chrono::steady_clock::time_point last_activity;
+  bool has_pool = false;
+  bool pool_idle = false;
   {
     std::lock_guard lock(mutex_);
     last_activity = last_convergence_activity_at_;
+    has_pool = static_cast<bool>(pool_);
+    if (pool_) {
+      pool_idle = pool_->isIdleFor(quiet_period);
+    }
   }
   const auto activity_is_quiet =
       last_activity.time_since_epoch().count() == 0 ||
       last_activity + quiet_period <= std::chrono::steady_clock::now();
-  return pool_ && pool_->isIdleFor(quiet_period) && activity_is_quiet;
+  return has_pool && pool_idle && activity_is_quiet;
 }
 
 std::chrono::steady_clock::time_point
@@ -475,7 +496,11 @@ RibSnapshot TopoManager::ribSnapshot(const std::string &router_id) const {
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
-    router = routers_.at(router_id);
+    const auto it = routers_.find(router_id);
+    if (it == routers_.end()) {
+      throw std::runtime_error("Unknown router: " + router_id);
+    }
+    router = it->second;
   }
   return router->ribSnapshot();
 }
@@ -485,16 +510,22 @@ TopoManager::peersSnapshot(const std::string &router_id) const {
   std::shared_ptr<BgpRouter> router;
   {
     std::lock_guard lock(mutex_);
-    router = routers_.at(router_id);
+    const auto it = routers_.find(router_id);
+    if (it == routers_.end()) {
+      throw std::runtime_error("Unknown router: " + router_id);
+    }
+    router = it->second;
   }
   return router->peerSnapshot();
 }
 
-const std::filesystem::path &TopoManager::logFile() const {
+std::filesystem::path TopoManager::logFile() const {
+  std::lock_guard lock(mutex_);
   return bmp_log_file_;
 }
 
-const std::filesystem::path &TopoManager::databaseFile() const {
+std::filesystem::path TopoManager::databaseFile() const {
+  std::lock_guard lock(mutex_);
   return bmp_database_file_;
 }
 
@@ -514,6 +545,11 @@ void TopoManager::validateConfig() const {
   for (const auto &router : config_.routers) {
     if (router.id.empty()) {
       throw std::runtime_error("Router id cannot be empty");
+    }
+    if (router.id.find('|') != std::string::npos ||
+        router.id.find('>') != std::string::npos) {
+      throw std::runtime_error("Router id cannot contain '|' or '>': " +
+                               router.id);
     }
     if (!router_ids.insert(router.id).second) {
       throw std::runtime_error("Duplicate router id: " + router.id);

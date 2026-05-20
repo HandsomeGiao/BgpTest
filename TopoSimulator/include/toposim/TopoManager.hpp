@@ -55,8 +55,8 @@ public:
   [[nodiscard]] RibSnapshot ribSnapshot(const std::string &router_id) const;
   [[nodiscard]] std::vector<PeerSnapshot>
   peersSnapshot(const std::string &router_id) const;
-  [[nodiscard]] const std::filesystem::path &logFile() const;
-  [[nodiscard]] const std::filesystem::path &databaseFile() const;
+  [[nodiscard]] std::filesystem::path logFile() const;
+  [[nodiscard]] std::filesystem::path databaseFile() const;
 
 private:
   struct LinkRuntime {
