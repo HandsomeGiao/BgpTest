@@ -922,20 +922,24 @@ class MainWindow(QMainWindow):
     def __init__(self, observe_mode: bool = False, pipe_name: str = DEFAULT_OBSERVER_PIPE) -> None:
         super().__init__()
         self.observe_mode = observe_mode
+        self.pipe_name = pipe_name
         self.setWindowTitle("TopoObserver" if observe_mode else "TopoGenerator")
         self.resize(1100, 760)
         self.settings = QSettings("BgpTest", "TopoGenerator")
         self.current_topology_path: Optional[Path] = None
         self.dirty = False
         self.model = TopologyModel()
+        self.edit_model_snapshot: Optional[TopologyModel] = None
+        self.edit_topology_path: Optional[Path] = None
+        self.edit_dirty = False
         self.best_paths: dict[tuple[str, str], dict] = {}
         self.link_mode_enabled = False
         self.pending_link_router_id: Optional[str] = None
+        self.toolbar: Optional[QToolBar] = None
         self.link_mode_action: Optional[QAction] = None
         self.router_combo: Optional[QComboBox] = None
         self.prefix_combo: Optional[QComboBox] = None
         self.observer_client: Optional[ObserverClient] = None
-        self.observer_windows: list[MainWindow] = []
         self.scene = TopologyScene(self.model, read_only=observe_mode)
         self.scene.main_window = self
         self.view = TopologyView(self.scene)
@@ -949,7 +953,7 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
         if observe_mode:
             self.dirty_indicator.hide()
-            self.observer_client = ObserverClient(self, pipe_name)
+            self.observer_client = ObserverClient(self, self.pipe_name)
             self.observer_client.start()
         else:
             self._restore_last_topology()
@@ -958,15 +962,19 @@ class MainWindow(QMainWindow):
         if self.observer_client is not None:
             self.observer_client.stop()
             self.observer_client = None
-        for window in list(self.observer_windows):
-            try:
-                window.close()
-            except RuntimeError:
-                pass
         super().closeEvent(event)
 
     def _build_toolbar(self) -> None:
-        toolbar = QToolBar("Topology")
+        if self.toolbar is not None:
+            self.removeToolBar(self.toolbar)
+            self.toolbar.deleteLater()
+
+        self.link_mode_action = None
+        self.router_combo = None
+        self.prefix_combo = None
+
+        toolbar = QToolBar("Topology", self)
+        self.toolbar = toolbar
         self.addToolBar(toolbar)
 
         if self.observe_mode:
@@ -980,13 +988,17 @@ class MainWindow(QMainWindow):
             self.prefix_combo.setEditable(True)
             self.prefix_combo.currentTextChanged.connect(self.update_observed_path)
             toolbar.addWidget(self.prefix_combo)
+
+            stop_action = QAction("Stop Observe", toolbar)
+            stop_action.triggered.connect(self.stop_observe_mode)
+            toolbar.addAction(stop_action)
             return
 
-        add_router_action = QAction("Add Router", self)
+        add_router_action = QAction("Add Router", toolbar)
         add_router_action.triggered.connect(self.add_router)
         toolbar.addAction(add_router_action)
 
-        self.link_mode_action = QAction("Link Mode (Q)", self)
+        self.link_mode_action = QAction("Link Mode (Q)", toolbar)
         self.link_mode_action.setCheckable(True)
         self.link_mode_action.setShortcut("Q")
         self.link_mode_action.toggled.connect(self.set_link_mode)
@@ -999,16 +1011,18 @@ class MainWindow(QMainWindow):
             ("Load", "", self.load_json),
             ("Save (Ctrl+S)", "Ctrl+S", self.save_json),
             ("Export", "", self.export_json),
-            ("Observe", "", self.open_observer_window),
+            ("Observe", "", self.start_observe_mode),
             ("BatchUpdateAll", "", self.batch_update_all),
         ]:
-            action = QAction(text, self)
+            action = QAction(text, toolbar)
             if shortcut:
                 action.setShortcut(shortcut)
             action.triggered.connect(callback)
             toolbar.addAction(action)
 
     def add_router(self) -> None:
+        if self.observe_mode:
+            return
         index = self._next_router_index()
         center = self.view.mapToScene(self.view.viewport().rect().center())
         offset = 24 * (len(self.model.routers) % 6)
@@ -1034,6 +1048,8 @@ class MainWindow(QMainWindow):
         self.mark_dirty()
 
     def edit_selected(self) -> None:
+        if self.observe_mode:
+            return
         selected = self.scene.selectedItems()
         if not selected:
             return
@@ -1113,6 +1129,8 @@ class MainWindow(QMainWindow):
         self.mark_dirty()
 
     def delete_selected(self) -> None:
+        if self.observe_mode:
+            return
         selected = self.scene.selectedItems()
         if not selected:
             return
@@ -1126,6 +1144,8 @@ class MainWindow(QMainWindow):
         self.mark_dirty()
 
     def batch_update_all(self) -> None:
+        if self.observe_mode:
+            return
         if not self.model.links:
             self.statusBar().showMessage("No links to update.", 3000)
             return
@@ -1146,21 +1166,53 @@ class MainWindow(QMainWindow):
             3000,
         )
 
-    def open_observer_window(self) -> None:
-        window = MainWindow(observe_mode=True)
-        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.observer_windows.append(window)
-        window.destroyed.connect(
-            lambda _=None, observer=window: self._forget_observer_window(observer)
-        )
-        window.show()
+    def start_observe_mode(self) -> None:
+        if self.observe_mode:
+            return
 
-    def _forget_observer_window(self, observer: "MainWindow") -> None:
-        self.observer_windows = [
-            window for window in self.observer_windows if window is not observer
-        ]
+        self.edit_model_snapshot = TopologyModel.from_json(self.model.to_json())
+        self.edit_topology_path = self.current_topology_path
+        self.edit_dirty = self.dirty
+        self.set_link_mode(False)
+        self.best_paths.clear()
+        self.observe_mode = True
+        self.setWindowTitle("TopoObserver")
+        self.set_dirty(False)
+        self.dirty_indicator.hide()
+        self._build_toolbar()
+        self._replace_model(TopologyModel())
+        self.observer_client = ObserverClient(self, self.pipe_name)
+        self.observer_client.start()
+
+    def stop_observe_mode(self) -> None:
+        if not self.observe_mode:
+            return
+
+        if self.observer_client is not None:
+            self.observer_client.stop()
+            self.observer_client = None
+
+        observed_model = self.model
+        observed_path = self.current_topology_path
+        restored_model = self.edit_model_snapshot or observed_model
+        restored_path = self.edit_topology_path if self.edit_model_snapshot is not None else observed_path
+        restored_dirty = self.edit_dirty if self.edit_model_snapshot is not None else False
+
+        self.edit_model_snapshot = None
+        self.edit_topology_path = None
+        self.edit_dirty = False
+        self.best_paths.clear()
+        self.observe_mode = False
+        self.setWindowTitle("TopoGenerator")
+        self._build_toolbar()
+        self._replace_model(restored_model)
+        self.current_topology_path = restored_path
+        self.set_dirty(restored_dirty)
+        self.statusBar().showMessage("Observation stopped.", 3000)
 
     def new_topo(self) -> None:
+        if self.observe_mode:
+            return
         start_dir = self.current_topology_path.parent if self.current_topology_path else Path.cwd()
         default_path = start_dir / "new_topology.json"
         path, _ = QFileDialog.getSaveFileName(self, "New topology", str(default_path), "JSON (*.json)")
@@ -1184,6 +1236,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"New topology: {topology_path}", 3000)
 
     def load_json(self) -> None:
+        if self.observe_mode:
+            return
         start_dir = str(self.current_topology_path.parent) if self.current_topology_path else ""
         path, _ = QFileDialog.getOpenFileName(self, "Load topology", start_dir, "JSON (*.json)")
         if not path:
@@ -1194,6 +1248,8 @@ class MainWindow(QMainWindow):
             self._error(f"Failed to load topology: {exc}")
 
     def export_json(self) -> None:
+        if self.observe_mode:
+            return
         default_path = str(self.current_topology_path) if self.current_topology_path else "topology.json"
         path, _ = QFileDialog.getSaveFileName(self, "Export topology", default_path, "JSON (*.json)")
         if not path:
@@ -1207,6 +1263,8 @@ class MainWindow(QMainWindow):
             self._error(f"Failed to export topology: {exc}")
 
     def save_json(self) -> None:
+        if self.observe_mode:
+            return
         if self.current_topology_path is None:
             self.export_json()
             return
@@ -1275,6 +1333,8 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "TopoGenerator", message)
 
     def set_link_mode(self, enabled: bool) -> None:
+        if self.observe_mode and enabled:
+            return
         self.link_mode_enabled = enabled
         self.clear_pending_link()
         if self.link_mode_action and self.link_mode_action.isChecked() != enabled:
