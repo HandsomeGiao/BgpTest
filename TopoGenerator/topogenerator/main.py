@@ -855,6 +855,7 @@ class MainWindow(QMainWindow):
         self.router_combo: Optional[QComboBox] = None
         self.prefix_combo: Optional[QComboBox] = None
         self.observer_client: Optional[ObserverClient] = None
+        self.observer_windows: list[MainWindow] = []
         self.scene = TopologyScene(self.model, read_only=observe_mode)
         self.scene.main_window = self
         self.view = TopologyView(self.scene)
@@ -907,6 +908,7 @@ class MainWindow(QMainWindow):
             ("Load", "", self.load_json),
             ("Save (Ctrl+S)", "Ctrl+S", self.save_json),
             ("Export", "", self.export_json),
+            ("Observe", "", self.open_observer_window),
             ("BatchUpdateAll", "", self.batch_update_all),
         ]:
             action = QAction(text, self)
@@ -1052,6 +1054,20 @@ class MainWindow(QMainWindow):
             f"Updated delay and MRAI for {len(self.model.links)} links.",
             3000,
         )
+
+    def open_observer_window(self) -> None:
+        window = MainWindow(observe_mode=True)
+        window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.observer_windows.append(window)
+        window.destroyed.connect(
+            lambda _=None, observer=window: self._forget_observer_window(observer)
+        )
+        window.show()
+
+    def _forget_observer_window(self, observer: "MainWindow") -> None:
+        self.observer_windows = [
+            window for window in self.observer_windows if window is not observer
+        ]
 
     def new_topo(self) -> None:
         start_dir = self.current_topology_path.parent if self.current_topology_path else Path.cwd()
