@@ -368,6 +368,7 @@ class LinkItem(QGraphicsLineItem):
         super().__init__()
         self.link = link
         self.path_highlighted = False
+        self.path_direction: Optional[tuple[str, str]] = None
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, not read_only)
         if read_only:
             self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
@@ -379,7 +380,7 @@ class LinkItem(QGraphicsLineItem):
     def update_pen(self) -> None:
         if self.path_highlighted:
             self.setPen(QPen(self.PATH_COLOR, 5, Qt.PenStyle.SolidLine))
-            self.setZValue(1)
+            self.setZValue(-0.5)
             return
         self.setZValue(-1)
         if self.has_route_client():
@@ -391,12 +392,35 @@ class LinkItem(QGraphicsLineItem):
         pen = QPen(color, 2, Qt.PenStyle.SolidLine if self.link.enabled else Qt.PenStyle.DashLine)
         self.setPen(pen)
 
-    def set_path_highlighted(self, highlighted: bool) -> None:
-        self.path_highlighted = highlighted
+    def set_path_highlighted(self, direction: Optional[tuple[str, str]]) -> None:
+        self.path_direction = direction
+        self.path_highlighted = direction is not None
         self.update_pen()
+        self.update()
+
+    def boundingRect(self) -> QRectF:
+        return super().boundingRect().adjusted(-8, -8, 8, 8)
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         super().paint(painter, option, widget)
+        if self.path_direction is not None:
+            start_id, end_id = self.path_direction
+            if start_id == self.link.a and end_id == self.link.b:
+                start = self.line().p1()
+                end = self.line().p2()
+            elif start_id == self.link.b and end_id == self.link.a:
+                start = self.line().p2()
+                end = self.line().p1()
+            else:
+                return
+
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(self.PATH_COLOR))
+            self._paint_arrow(painter, start, end, 0.5)
+            painter.restore()
+            return
+
         if not self.has_route_client():
             return
 
@@ -514,7 +538,7 @@ class LinkLegendWidget(QFrame):
 
         self._add_row(layout, LinkItem.NORMAL_COLOR, False, False, "Normal link")
         self._add_row(layout, LinkItem.DISABLED_COLOR, True, False, "Disabled link")
-        self._add_row(layout, LinkItem.PATH_COLOR, False, False, "Selected best path")
+        self._add_row(layout, LinkItem.PATH_COLOR, False, True, "Selected best path")
         self._add_row(
             layout,
             LinkItem.ROUTE_CLIENT_COLOR,
@@ -689,12 +713,15 @@ class TopologyScene(QGraphicsScene):
     def set_highlighted_path(self, hops: list[str]) -> None:
         self.highlighted_path = list(hops)
         highlighted_edges = {
-            tuple(sorted((hops[index], hops[index + 1])))
+            tuple(sorted((hops[index], hops[index + 1]))): (
+                hops[index],
+                hops[index + 1],
+            )
             for index in range(len(hops) - 1)
         }
         for item in self.link_items:
             edge = tuple(sorted((item.link.a, item.link.b)))
-            item.set_path_highlighted(edge in highlighted_edges)
+            item.set_path_highlighted(highlighted_edges.get(edge))
 
 
 class TopologyView(QGraphicsView):
