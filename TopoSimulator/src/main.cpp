@@ -26,6 +26,7 @@
 #include "toposim/BmpLogManager.hpp"
 #include "toposim/BmpLogViewer.hpp"
 #include "toposim/TopoManager.hpp"
+#include "toposim/TopologyObserverServer.hpp"
 #include "toposim/TopologyJson.hpp"
 
 namespace {
@@ -687,10 +688,19 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto topology = toposim::loadTopologyConfig(*topology_path);
+    auto topology_json = toposim::toJson(topology);
     toposim::TopoManager manager(std::move(topology));
+    toposim::TopologyObserverServer observer_server;
+    observer_server.start(std::move(topology_json));
+    manager.setBestPathObserver([&](const std::string &router_id,
+                                    const std::string &prefix) {
+      observer_server.publishBestPath(manager.bestPathSnapshot(router_id, prefix));
+    });
+    printInfoLine("Topology observer pipe: " + observer_server.pipeName());
 
     const auto startup_started_at = std::chrono::steady_clock::now();
     manager.start();
+    manager.publishCurrentBestPaths();
     if (shouldStartBmpViewer(bmp_viewer_mode)) {
       if (!toposim::BmpLogViewer::startDetached()) {
         printWarningLine("BMP viewer is already running.");

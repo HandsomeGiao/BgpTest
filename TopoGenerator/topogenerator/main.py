@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import random
@@ -7,8 +8,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, QSettings, Qt
+from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QBrush, QColor, QPainter, QPen, QPolygonF
+from PyQt6.QtNetwork import QLocalSocket
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -53,6 +55,8 @@ AS_COLORS = [
     "#d9468a",
     "#6f7d00",
 ]
+
+DEFAULT_OBSERVER_PIPE = "TopoSimulatorObserver"
 
 
 def color_for_asn(asn: int) -> QColor:
@@ -309,9 +313,12 @@ class RouterItem(QGraphicsEllipseItem):
         self.setPos(QPointF(router.x, router.y))
         self.setBrush(QBrush(QColor("#d8f0ff") if scene_ref.is_route_reflector(router.id) else QColor("#f7f7f7")))
         self.setPen(QPen(QColor("#25607a"), 2))
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, not scene_ref.read_only)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+        self.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
+            not scene_ref.read_only,
+        )
 
         label = QGraphicsSimpleTextItem(router.id, self)
         label_rect = label.boundingRect()
@@ -335,7 +342,10 @@ class RouterItem(QGraphicsEllipseItem):
         event.accept()
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+        if (
+            change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged
+            and not self.scene_ref.read_only
+        ):
             point = self.pos()
             self.router.x = point.x()
             self.router.y = point.y()
@@ -350,10 +360,12 @@ class LinkItem(QGraphicsLineItem):
     DISABLED_ROUTE_CLIENT_COLOR = QColor("#78b98f")
     NORMAL_COLOR = QColor("#444444")
     DISABLED_COLOR = QColor("#b0b0b0")
+    PATH_COLOR = QColor("#d93025")
 
     def __init__(self, link: LinkEdge) -> None:
         super().__init__()
         self.link = link
+        self.path_highlighted = False
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.update_pen()
 
@@ -361,6 +373,11 @@ class LinkItem(QGraphicsLineItem):
         return self.link.rr_client_from_a or self.link.rr_client_from_b
 
     def update_pen(self) -> None:
+        if self.path_highlighted:
+            self.setPen(QPen(self.PATH_COLOR, 5, Qt.PenStyle.SolidLine))
+            self.setZValue(1)
+            return
+        self.setZValue(-1)
         if self.has_route_client():
             color = self.ROUTE_CLIENT_COLOR if self.link.enabled else self.DISABLED_ROUTE_CLIENT_COLOR
         elif not self.link.enabled:
@@ -369,6 +386,10 @@ class LinkItem(QGraphicsLineItem):
             color = self.NORMAL_COLOR
         pen = QPen(color, 2, Qt.PenStyle.SolidLine if self.link.enabled else Qt.PenStyle.DashLine)
         self.setPen(pen)
+
+    def set_path_highlighted(self, highlighted: bool) -> None:
+        self.path_highlighted = highlighted
+        self.update_pen()
 
     def paint(self, painter: QPainter, option, widget=None) -> None:
         super().paint(painter, option, widget)
@@ -489,6 +510,7 @@ class LinkLegendWidget(QFrame):
 
         self._add_row(layout, LinkItem.NORMAL_COLOR, False, False, "Normal link")
         self._add_row(layout, LinkItem.DISABLED_COLOR, True, False, "Disabled link")
+        self._add_row(layout, LinkItem.PATH_COLOR, False, False, "Selected best path")
         self._add_row(
             layout,
             LinkItem.ROUTE_CLIENT_COLOR,
@@ -566,12 +588,14 @@ class AsGroupItem(QGraphicsRectItem):
 
 
 class TopologyScene(QGraphicsScene):
-    def __init__(self, model: TopologyModel) -> None:
+    def __init__(self, model: TopologyModel, read_only: bool = False) -> None:
         super().__init__()
         self.model = model
+        self.read_only = read_only
         self.router_items: dict[str, RouterItem] = {}
         self.link_items: list[LinkItem] = []
         self.as_group_items: dict[int, AsGroupItem] = {}
+        self.highlighted_path: list[str] = []
         self.main_window: Optional["MainWindow"] = None
         self.setSceneRect(-2000, -2000, 4000, 4000)
         self.rebuild()
@@ -591,6 +615,7 @@ class TopologyScene(QGraphicsScene):
             self.router_items[router.id] = item
             self.addItem(item)
         self.update_links()
+        self.set_highlighted_path(self.highlighted_path)
         self.update_as_groups()
 
     def update_links(self) -> None:
@@ -635,21 +660,37 @@ class TopologyScene(QGraphicsScene):
                 group_item.update_rect(rect.adjusted(-34, -30, 34, 30))
 
     def router_double_clicked(self, item: RouterItem) -> None:
-        if self.main_window is not None and not self.main_window.link_mode_enabled:
+        if (
+            self.main_window is not None
+            and not self.read_only
+            and not self.main_window.link_mode_enabled
+        ):
             self.main_window.edit_router_item(item)
 
     def router_clicked(self, item: RouterItem) -> bool:
         if self.main_window is None:
             return False
+        if self.read_only:
+            return False
         return self.main_window.handle_router_click_for_link_mode(item)
 
     def mark_dirty(self) -> None:
-        if self.main_window is not None:
+        if not self.read_only and self.main_window is not None:
             self.main_window.mark_dirty()
 
     def set_link_start_router(self, router_id: Optional[str]) -> None:
         for item in self.router_items.values():
             item.update_style(item.router.id == router_id)
+
+    def set_highlighted_path(self, hops: list[str]) -> None:
+        self.highlighted_path = list(hops)
+        highlighted_edges = {
+            tuple(sorted((hops[index], hops[index + 1])))
+            for index in range(len(hops) - 1)
+        }
+        for item in self.link_items:
+            edge = tuple(sorted((item.link.a, item.link.b)))
+            item.set_path_highlighted(edge in highlighted_edges)
 
 
 class TopologyView(QGraphicsView):
@@ -738,19 +779,83 @@ class TopologyView(QGraphicsView):
         event.accept()
 
 
+class ObserverClient:
+    def __init__(self, window: "MainWindow", pipe_name: str) -> None:
+        self.window = window
+        self.pipe_name = pipe_name
+        self.socket = QLocalSocket(window)
+        self.buffer = bytearray()
+        self.reconnect_timer = QTimer(window)
+        self.reconnect_timer.setInterval(1000)
+        self.reconnect_timer.timeout.connect(self.connect)
+        self.socket.connected.connect(self._connected)
+        self.socket.disconnected.connect(self._disconnected)
+        self.socket.readyRead.connect(self._ready_read)
+        self.socket.errorOccurred.connect(self._error)
+
+    def start(self) -> None:
+        self.connect()
+
+    def connect(self) -> None:
+        if self.socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+            return
+        self.window.statusBar().showMessage(
+            f"Waiting for Simulator pipe: {self.pipe_name}"
+        )
+        self.socket.connectToServer(self.pipe_name)
+
+    def _connected(self) -> None:
+        self.reconnect_timer.stop()
+        self.window.statusBar().showMessage(
+            f"Connected to Simulator pipe: {self.pipe_name}",
+            3000,
+        )
+
+    def _disconnected(self) -> None:
+        self.window.statusBar().showMessage("Simulator disconnected; reconnecting...")
+        self.reconnect_timer.start()
+
+    def _error(self, *_) -> None:
+        if self.socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+            self.socket.abort()
+        self.reconnect_timer.start()
+
+    def _ready_read(self) -> None:
+        self.buffer.extend(bytes(self.socket.readAll()))
+        while b"\n" in self.buffer:
+            line, _, rest = self.buffer.partition(b"\n")
+            self.buffer = bytearray(rest)
+            if not line.strip():
+                continue
+            try:
+                message = json.loads(line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                self.window.statusBar().showMessage(
+                    f"Invalid observer message: {exc}",
+                    5000,
+                )
+                continue
+            self.window.handle_observer_message(message)
+
+
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, observe_mode: bool = False, pipe_name: str = DEFAULT_OBSERVER_PIPE) -> None:
         super().__init__()
-        self.setWindowTitle("TopoGenerator")
+        self.observe_mode = observe_mode
+        self.setWindowTitle("TopoObserver" if observe_mode else "TopoGenerator")
         self.resize(1100, 760)
         self.settings = QSettings("BgpTest", "TopoGenerator")
         self.current_topology_path: Optional[Path] = None
         self.dirty = False
         self.model = TopologyModel()
+        self.best_paths: dict[tuple[str, str], dict] = {}
         self.link_mode_enabled = False
         self.pending_link_router_id: Optional[str] = None
         self.link_mode_action: Optional[QAction] = None
-        self.scene = TopologyScene(self.model)
+        self.router_combo: Optional[QComboBox] = None
+        self.prefix_combo: Optional[QComboBox] = None
+        self.observer_client: Optional[ObserverClient] = None
+        self.scene = TopologyScene(self.model, read_only=observe_mode)
         self.scene.main_window = self
         self.view = TopologyView(self.scene)
         self.view.setRenderHints(self.view.renderHints())
@@ -761,11 +866,29 @@ class MainWindow(QMainWindow):
         self.dirty_indicator = DirtyIndicatorWidget(self.view)
         self.view.set_dirty_indicator(self.dirty_indicator)
         self._build_toolbar()
-        self._restore_last_topology()
+        if observe_mode:
+            self.dirty_indicator.hide()
+            self.observer_client = ObserverClient(self, pipe_name)
+            self.observer_client.start()
+        else:
+            self._restore_last_topology()
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Topology")
         self.addToolBar(toolbar)
+
+        if self.observe_mode:
+            toolbar.addWidget(QLabel("Router"))
+            self.router_combo = QComboBox()
+            self.router_combo.currentTextChanged.connect(self.update_observed_path)
+            toolbar.addWidget(self.router_combo)
+
+            toolbar.addWidget(QLabel("Prefix"))
+            self.prefix_combo = QComboBox()
+            self.prefix_combo.setEditable(True)
+            self.prefix_combo.currentTextChanged.connect(self.update_observed_path)
+            toolbar.addWidget(self.prefix_combo)
+            return
 
         add_router_action = QAction("Add Router", self)
         add_router_action.triggered.connect(self.add_router)
@@ -997,10 +1120,12 @@ class MainWindow(QMainWindow):
 
     def _replace_model(self, model: TopologyModel) -> None:
         self.model = model
-        self.scene = TopologyScene(self.model)
+        self.scene = TopologyScene(self.model, read_only=self.observe_mode)
         self.scene.main_window = self
         self.view.setScene(self.scene)
         self.clear_pending_link()
+        if self.observe_mode:
+            self.refresh_observer_choices()
 
     def _load_topology(self, path: Path) -> None:
         with path.open("r", encoding="utf-8") as handle:
@@ -1009,6 +1134,8 @@ class MainWindow(QMainWindow):
         self.set_dirty(False)
 
     def mark_dirty(self) -> None:
+        if self.observe_mode:
+            return
         self.set_dirty(True)
 
     def set_dirty(self, dirty: bool) -> None:
@@ -1022,6 +1149,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Topology: {path}", 3000)
 
     def _restore_last_topology(self) -> None:
+        if self.observe_mode:
+            return
         path_text = self.settings.value("last_topology", "", str)
         if not path_text:
             return
@@ -1088,10 +1217,106 @@ class MainWindow(QMainWindow):
             index += 1
         return index
 
+    def handle_observer_message(self, message: dict) -> None:
+        message_type = message.get("type")
+        if message_type == "topology":
+            topology = message.get("topology", {})
+            self.best_paths.clear()
+            self._replace_model(TopologyModel.from_json(topology))
+            self.statusBar().showMessage("Topology loaded from Simulator.", 3000)
+            return
+        if message_type == "best_path":
+            router = str(message.get("router", ""))
+            prefix = str(message.get("prefix", ""))
+            if not router or not prefix:
+                return
+            self.best_paths[(router, prefix)] = message
+            self.refresh_observer_choices()
+            self.update_observed_path()
+
+    def refresh_observer_choices(self) -> None:
+        if self.router_combo is None or self.prefix_combo is None:
+            return
+
+        selected_router = self.router_combo.currentText()
+        selected_prefix = self.prefix_combo.currentText()
+
+        self.router_combo.blockSignals(True)
+        self.router_combo.clear()
+        self.router_combo.addItems(sorted(self.model.routers))
+        if selected_router:
+            index = self.router_combo.findText(selected_router)
+            if index >= 0:
+                self.router_combo.setCurrentIndex(index)
+        self.router_combo.blockSignals(False)
+
+        prefixes = {
+            prefix
+            for router in self.model.routers.values()
+            for prefix in router.originated_prefixes
+        }
+        prefixes.update(prefix for _, prefix in self.best_paths)
+        self.prefix_combo.blockSignals(True)
+        self.prefix_combo.clear()
+        self.prefix_combo.addItems(sorted(prefixes))
+        if selected_prefix:
+            index = self.prefix_combo.findText(selected_prefix)
+            if index >= 0:
+                self.prefix_combo.setCurrentIndex(index)
+            elif self.prefix_combo.isEditable():
+                self.prefix_combo.setEditText(selected_prefix)
+        self.prefix_combo.blockSignals(False)
+
+    def update_observed_path(self) -> None:
+        if not self.observe_mode or self.router_combo is None or self.prefix_combo is None:
+            return
+        router = self.router_combo.currentText().strip()
+        prefix = self.prefix_combo.currentText().strip()
+        if not router or not prefix:
+            self.scene.set_highlighted_path([])
+            return
+
+        hops = self.best_path_hops(router, prefix)
+        if not hops:
+            self.scene.set_highlighted_path([])
+            self.statusBar().showMessage(f"No valid best path for {router} -> {prefix}")
+            return
+
+        self.scene.set_highlighted_path(hops)
+        self.statusBar().showMessage(
+            f"{router} -> {prefix}: {' -> '.join(hops)}"
+        )
+
+    def best_path_hops(self, router: str, prefix: str) -> list[str]:
+        hops: list[str] = []
+        visited: set[str] = set()
+        current = router
+
+        while current and current not in visited:
+            visited.add(current)
+            hops.append(current)
+            best_path = self.best_paths.get((current, prefix))
+            if not best_path or not best_path.get("valid", False):
+                return []
+            if best_path.get("local_origin", False):
+                return hops
+
+            learned_from = str(best_path.get("learned_from", "")).strip()
+            if not learned_from or learned_from == current:
+                return []
+            current = learned_from
+
+        return []
+
 
 def main() -> int:
-    app = QApplication(sys.argv)
-    window = MainWindow()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--observe", action="store_true")
+    parser.add_argument("--pipe", default=DEFAULT_OBSERVER_PIPE)
+    args, qt_args = parser.parse_known_args()
+
+    app = QApplication([sys.argv[0], *qt_args])
+    window = MainWindow(observe_mode=args.observe, pipe_name=args.pipe)
     window.show()
     return app.exec()
 

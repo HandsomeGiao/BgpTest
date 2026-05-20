@@ -287,6 +287,10 @@ nlohmann::json toJson(const std::vector<RouterSnapshot> &snapshot) {
   return nlohmann::json(snapshot);
 }
 
+nlohmann::json toJson(const TopologyConfig &config) {
+  return nlohmann::json(config);
+}
+
 nlohmann::json toJson(const RibSnapshot &snapshot) {
   return nlohmann::json(snapshot);
 }

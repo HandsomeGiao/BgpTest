@@ -38,6 +38,7 @@ target_compile_options(toposim PRIVATE /W4 /permissive-)
 target_link_libraries(toposim PRIVATE unofficial::sqlite3::sqlite3)
 
 add_library(toposim_io
+    src/TopologyObserverServer.cpp
     src/TopologyJson.cpp
 )
 

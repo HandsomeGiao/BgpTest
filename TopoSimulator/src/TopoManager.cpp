@@ -456,6 +456,82 @@ bool TopoManager::isConverged() const {
   return has_pool && pool_idle && activity_is_quiet;
 }
 
+void TopoManager::setBestPathObserver(BestPathObserver observer) {
+  std::lock_guard lock(observer_mutex_);
+  best_path_observer_ = std::move(observer);
+}
+
+void TopoManager::notifyBestPathChanges(
+    const std::string &router_id, const std::vector<std::string> &prefixes) {
+  BestPathObserver observer;
+  {
+    std::lock_guard lock(observer_mutex_);
+    observer = best_path_observer_;
+  }
+  if (!observer) {
+    return;
+  }
+  for (const auto &prefix : prefixes) {
+    observer(router_id, prefix);
+  }
+}
+
+void TopoManager::publishCurrentBestPaths() const {
+  BestPathObserver observer;
+  std::vector<std::pair<std::string, std::shared_ptr<BgpRouter>>> routers;
+  {
+    std::lock_guard observer_lock(observer_mutex_);
+    observer = best_path_observer_;
+  }
+  if (!observer) {
+    return;
+  }
+
+  {
+    std::lock_guard lock(mutex_);
+    routers.reserve(routers_.size());
+    for (const auto &[router_id, router] : routers_) {
+      routers.emplace_back(router_id, router);
+    }
+  }
+
+  for (const auto &[router_id, router] : routers) {
+    for (const auto &route : router->ribSnapshot().loc_rib) {
+      observer(router_id, route.prefix);
+    }
+  }
+}
+
+TopoManager::BestPathSnapshot
+TopoManager::bestPathSnapshot(const std::string &router_id,
+                               const std::string &prefix) const {
+  BestPathSnapshot result;
+  result.router = router_id;
+  result.prefix = prefix;
+
+  std::shared_ptr<BgpRouter> router;
+  {
+    std::lock_guard lock(mutex_);
+    const auto it = routers_.find(router_id);
+    if (it == routers_.end()) {
+      return result;
+    }
+    router = it->second;
+  }
+
+  const auto rib = router->ribSnapshot();
+  const auto route_it =
+      std::find_if(rib.loc_rib.begin(), rib.loc_rib.end(),
+                   [&](const auto &route) { return route.prefix == prefix; });
+  if (route_it == rib.loc_rib.end()) {
+    return result;
+  }
+
+  result.valid = true;
+  result.route = *route_it;
+  return result;
+}
+
 std::chrono::steady_clock::time_point
 TopoManager::lastMessageProcessedAt() const {
   std::lock_guard lock(mutex_);

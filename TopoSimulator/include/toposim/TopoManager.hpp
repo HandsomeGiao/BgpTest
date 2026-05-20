@@ -46,6 +46,23 @@ public:
   void withdrawPrefix(const std::string &router_id, const std::string &prefix);
   bool waitForConvergence(std::chrono::milliseconds timeout);
   [[nodiscard]] bool isConverged() const;
+
+  struct BestPathSnapshot {
+    std::string router;
+    std::string prefix;
+    bool valid = false;
+    std::optional<RouteEntry> route;
+  };
+  using BestPathObserver =
+      std::function<void(const std::string &, const std::string &)>;
+  void setBestPathObserver(BestPathObserver observer);
+  void notifyBestPathChanges(const std::string &router_id,
+                             const std::vector<std::string> &prefixes);
+  void publishCurrentBestPaths() const;
+  [[nodiscard]] BestPathSnapshot
+  bestPathSnapshot(const std::string &router_id,
+                    const std::string &prefix) const;
+
   [[nodiscard]] std::chrono::steady_clock::time_point
   lastMessageProcessedAt() const;
   [[nodiscard]] std::chrono::steady_clock::time_point
@@ -80,6 +97,7 @@ private:
 
   TopologyConfig config_;
   mutable std::mutex mutex_;
+  mutable std::mutex observer_mutex_;
   std::unordered_map<std::string, std::shared_ptr<BgpRouter>> routers_;
   std::unordered_map<std::string, LinkRuntime> links_;
   std::unordered_map<std::string, std::shared_ptr<std::mutex>> delivery_locks_;
@@ -90,6 +108,7 @@ private:
   std::chrono::steady_clock::time_point last_message_processed_at_{};
   std::chrono::steady_clock::time_point last_convergence_activity_at_{};
   std::atomic<std::uint64_t> sequence_{0};
+  BestPathObserver best_path_observer_;
   bool running_ = false;
 };
 

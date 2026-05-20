@@ -931,6 +931,14 @@ void BgpRouter::runDecisionProcessFor(
   }
 
   if (!changes.empty()) {
+    if (auto *manager = manager_.load(std::memory_order_acquire)) {
+      std::vector<std::string> changed_best_path_prefixes;
+      changed_best_path_prefixes.reserve(changes.size());
+      for (const auto &[prefix, _] : changes) {
+        changed_best_path_prefixes.push_back(prefix);
+      }
+      manager->notifyBestPathChanges(config_.id, changed_best_path_prefixes);
+    }
     disseminateChangedRoutes(changes);
   }
 }
