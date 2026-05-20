@@ -689,9 +689,11 @@ int main(int argc, char **argv) {
     }
     auto topology = toposim::loadTopologyConfig(*topology_path);
     auto topology_json = toposim::toJson(topology);
+    const auto observer_topology_path =
+        std::filesystem::absolute(*topology_path).string();
     toposim::TopoManager manager(std::move(topology));
     toposim::TopologyObserverServer observer_server;
-    observer_server.start(std::move(topology_json));
+    observer_server.start(std::move(topology_json), observer_topology_path);
     manager.setBestPathObserver([&](const std::string &router_id,
                                     const std::string &prefix) {
       observer_server.publishBestPath(manager.bestPathSnapshot(router_id, prefix));

@@ -314,11 +314,13 @@ class RouterItem(QGraphicsEllipseItem):
         self.setBrush(QBrush(QColor("#d8f0ff") if scene_ref.is_route_reflector(router.id) else QColor("#f7f7f7")))
         self.setPen(QPen(QColor("#25607a"), 2))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, not scene_ref.read_only)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, not scene_ref.read_only)
         self.setFlag(
             QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
             not scene_ref.read_only,
         )
+        if scene_ref.read_only:
+            self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
 
         label = QGraphicsSimpleTextItem(router.id, self)
         label_rect = label.boundingRect()
@@ -362,11 +364,13 @@ class LinkItem(QGraphicsLineItem):
     DISABLED_COLOR = QColor("#b0b0b0")
     PATH_COLOR = QColor("#d93025")
 
-    def __init__(self, link: LinkEdge) -> None:
+    def __init__(self, link: LinkEdge, read_only: bool = False) -> None:
         super().__init__()
         self.link = link
         self.path_highlighted = False
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, not read_only)
+        if read_only:
+            self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         self.update_pen()
 
     def has_route_client(self) -> bool:
@@ -606,7 +610,7 @@ class TopologyScene(QGraphicsScene):
         self.link_items.clear()
         self.as_group_items.clear()
         for link in self.model.links:
-            item = LinkItem(link)
+            item = LinkItem(link, read_only=self.read_only)
             item.setZValue(-1)
             self.link_items.append(item)
             self.addItem(item)
@@ -702,6 +706,7 @@ class TopologyView(QGraphicsView):
         self._min_zoom = 0.2
         self._max_zoom = 4.0
         self._current_zoom = 1.0
+        self._drag_mode_before_pan = QGraphicsView.DragMode.RubberBandDrag
         self.legend_widget: Optional[QWidget] = None
         self.dirty_indicator: Optional[QWidget] = None
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -740,6 +745,8 @@ class TopologyView(QGraphicsView):
         if event.button() == Qt.MouseButton.RightButton:
             self._panning = True
             self._last_pan_pos = event.pos()
+            self._drag_mode_before_pan = self.dragMode()
+            self.setDragMode(QGraphicsView.DragMode.NoDrag)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept()
             return
@@ -758,6 +765,7 @@ class TopologyView(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.RightButton and self._panning:
             self._panning = False
+            self.setDragMode(self._drag_mode_before_pan)
             self.unsetCursor()
             event.accept()
             return
@@ -1236,8 +1244,22 @@ class MainWindow(QMainWindow):
     def handle_observer_message(self, message: dict) -> None:
         message_type = message.get("type")
         if message_type == "topology":
-            topology = message.get("topology", {})
             self.best_paths.clear()
+            topology_path = str(message.get("topology_path", "")).strip()
+            if topology_path:
+                try:
+                    self._load_observer_topology_from_path(Path(topology_path))
+                    self.statusBar().showMessage(
+                        f"Topology loaded from Simulator path: {topology_path}",
+                        3000,
+                    )
+                    return
+                except (OSError, json.JSONDecodeError, ValueError) as exc:
+                    self.statusBar().showMessage(
+                        f"Failed to load topology path; using Simulator snapshot: {exc}",
+                        5000,
+                    )
+            topology = message.get("topology", {})
             self._replace_model(TopologyModel.from_json(topology))
             self.statusBar().showMessage("Topology loaded from Simulator.", 3000)
             return
@@ -1249,6 +1271,11 @@ class MainWindow(QMainWindow):
             self.best_paths[(router, prefix)] = message
             self.refresh_observer_choices()
             self.update_observed_path()
+
+    def _load_observer_topology_from_path(self, path: Path) -> None:
+        with path.open("r", encoding="utf-8") as handle:
+            self._replace_model(TopologyModel.from_json(json.load(handle)))
+        self.current_topology_path = path
 
     def refresh_observer_choices(self) -> None:
         if self.router_combo is None or self.prefix_combo is None:

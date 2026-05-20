@@ -50,13 +50,15 @@ TopologyObserverServer::TopologyObserverServer(std::string pipe_name)
 
 TopologyObserverServer::~TopologyObserverServer() { stop(); }
 
-void TopologyObserverServer::start(nlohmann::json topology) {
+void TopologyObserverServer::start(nlohmann::json topology,
+                                   std::string topology_path) {
   std::lock_guard lock(mutex_);
   if (running_) {
     return;
   }
 
   topology_ = std::move(topology);
+  topology_path_ = std::move(topology_path);
   pending_messages_.clear();
   latest_route_messages_.clear();
   stopping_ = false;
@@ -111,6 +113,7 @@ void TopologyObserverServer::stop() {
     }
     pending_messages_.clear();
     latest_route_messages_.clear();
+    topology_path_.clear();
     client_connected_ = false;
     running_ = false;
     stopping_ = false;
@@ -236,6 +239,9 @@ std::string TopologyObserverServer::topologyMessage() const {
   nlohmann::json message;
   message["type"] = "topology";
   message["topology"] = topology_;
+  if (!topology_path_.empty()) {
+    message["topology_path"] = topology_path_;
+  }
   return message.dump();
 }
 

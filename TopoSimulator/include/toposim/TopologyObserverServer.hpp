@@ -24,7 +24,7 @@ public:
   TopologyObserverServer(const TopologyObserverServer &) = delete;
   TopologyObserverServer &operator=(const TopologyObserverServer &) = delete;
 
-  void start(nlohmann::json topology);
+  void start(nlohmann::json topology, std::string topology_path);
   void stop();
   void publishBestPath(const TopoManager::BestPathSnapshot &snapshot);
 
@@ -41,6 +41,7 @@ private:
 
   std::string pipe_name_;
   nlohmann::json topology_;
+  std::string topology_path_;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   std::deque<std::string> pending_messages_;
