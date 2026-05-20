@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import QLineF, QPoint, QPointF, QRectF, QSettings, Qt, QTimer
+from PyQt6.QtCore import QObject, QLineF, QPoint, QPointF, QRectF, QSettings, Qt, QTimer
 from PyQt6.QtGui import QAction, QBrush, QColor, QPainter, QPen, QPolygonF
 from PyQt6.QtNetwork import QLocalSocket
 from PyQt6.QtWidgets import (
@@ -379,7 +379,7 @@ class LinkItem(QGraphicsLineItem):
 
     def update_pen(self) -> None:
         if self.path_highlighted:
-            self.setPen(QPen(self.PATH_COLOR, 5, Qt.PenStyle.SolidLine))
+            self.setPen(QPen(self.PATH_COLOR, 3, Qt.PenStyle.SolidLine))
             self.setZValue(-0.5)
             return
         self.setZValue(-1)
@@ -449,8 +449,8 @@ class LinkItem(QGraphicsLineItem):
         ux = dx / length
         uy = dy / length
         tip = QPointF(start.x() + dx * fraction, start.y() + dy * fraction)
-        arrow_len = 14.0
-        arrow_half_width = 6.0
+        arrow_len = 11.0 if self.path_highlighted else 14.0
+        arrow_half_width = 4.5 if self.path_highlighted else 6.0
         base = QPointF(tip.x() - ux * arrow_len, tip.y() - uy * arrow_len)
         normal_x = -uy
         normal_y = ux
@@ -814,13 +814,15 @@ class TopologyView(QGraphicsView):
         event.accept()
 
 
-class ObserverClient:
+class ObserverClient(QObject):
     def __init__(self, window: "MainWindow", pipe_name: str) -> None:
+        super().__init__(window)
         self.window = window
         self.pipe_name = pipe_name
-        self.socket = QLocalSocket(window)
+        self.socket = QLocalSocket(self)
         self.buffer = bytearray()
-        self.reconnect_timer = QTimer(window)
+        self.reconnect_timer = QTimer(self)
+        self.stopped = False
         self.reconnect_timer.setInterval(1000)
         self.reconnect_timer.timeout.connect(self.connect)
         self.socket.connected.connect(self._connected)
@@ -831,31 +833,52 @@ class ObserverClient:
     def start(self) -> None:
         self.connect()
 
+    def stop(self) -> None:
+        if self.stopped:
+            return
+        self.stopped = True
+        try:
+            self.reconnect_timer.stop()
+        except RuntimeError:
+            pass
+        self._disconnect_signals()
+        try:
+            if self.socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+                self.socket.abort()
+            self.socket.deleteLater()
+        except RuntimeError:
+            pass
+
     def connect(self) -> None:
+        if self.stopped:
+            return
         if self.socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
             return
-        self.window.statusBar().showMessage(
-            f"Waiting for Simulator pipe: {self.pipe_name}"
-        )
+        self._show_status(f"Waiting for Simulator pipe: {self.pipe_name}")
         self.socket.connectToServer(self.pipe_name)
 
     def _connected(self) -> None:
+        if self.stopped:
+            return
         self.reconnect_timer.stop()
-        self.window.statusBar().showMessage(
-            f"Connected to Simulator pipe: {self.pipe_name}",
-            3000,
-        )
+        self._show_status(f"Connected to Simulator pipe: {self.pipe_name}", 3000)
 
     def _disconnected(self) -> None:
-        self.window.statusBar().showMessage("Simulator disconnected; reconnecting...")
+        if self.stopped:
+            return
+        self._show_status("Simulator disconnected; reconnecting...")
         self.reconnect_timer.start()
 
     def _error(self, *_) -> None:
+        if self.stopped:
+            return
         if self.socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
             self.socket.abort()
         self.reconnect_timer.start()
 
     def _ready_read(self) -> None:
+        if self.stopped:
+            return
         self.buffer.extend(bytes(self.socket.readAll()))
         while b"\n" in self.buffer:
             line, _, rest = self.buffer.partition(b"\n")
@@ -865,12 +888,34 @@ class ObserverClient:
             try:
                 message = json.loads(line.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                self.window.statusBar().showMessage(
-                    f"Invalid observer message: {exc}",
-                    5000,
-                )
+                self._show_status(f"Invalid observer message: {exc}", 5000)
                 continue
-            self.window.handle_observer_message(message)
+            try:
+                self.window.handle_observer_message(message)
+            except RuntimeError:
+                self.stop()
+                return
+
+    def _show_status(self, message: str, timeout_ms: int = 0) -> None:
+        if self.stopped:
+            return
+        try:
+            self.window.statusBar().showMessage(message, timeout_ms)
+        except RuntimeError:
+            self.stop()
+
+    def _disconnect_signals(self) -> None:
+        for signal, slot in (
+            (self.reconnect_timer.timeout, self.connect),
+            (self.socket.connected, self._connected),
+            (self.socket.disconnected, self._disconnected),
+            (self.socket.readyRead, self._ready_read),
+            (self.socket.errorOccurred, self._error),
+        ):
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
 
 
 class MainWindow(QMainWindow):
@@ -908,6 +953,17 @@ class MainWindow(QMainWindow):
             self.observer_client.start()
         else:
             self._restore_last_topology()
+
+    def closeEvent(self, event) -> None:
+        if self.observer_client is not None:
+            self.observer_client.stop()
+            self.observer_client = None
+        for window in list(self.observer_windows):
+            try:
+                window.close()
+            except RuntimeError:
+                pass
+        super().closeEvent(event)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Topology")
