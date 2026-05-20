@@ -7,6 +7,17 @@
       "intelliSenseMode": "windows-msvc-x64",
       "cppStandard": "c++20",
       "cStandard": "c17",
+      "includePath": [
+        "${workspaceFolder}/TopoSimulator/include",
+        "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include"
+      ],
+      "browse": {
+        "path": [
+          "${workspaceFolder}/TopoSimulator/include",
+          "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      },
       "defines": [
         "WIN32",
         "_WINDOWS",

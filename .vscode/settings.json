@@ -8,5 +8,15 @@
     "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
   },
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/TopoSimulator/include",
+    "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include",
+    "${env:VCPKG_ROOT}/installed/x64-windows/include"
+  ],
+  "C_Cpp.default.browse.path": [
+    "${workspaceFolder}/TopoSimulator/include",
+    "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include",
+    "${env:VCPKG_ROOT}/installed/x64-windows/include"
+  ],
   "C_Cpp.errorSquiggles": "enabled"
 }
