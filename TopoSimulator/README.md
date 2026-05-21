@@ -35,7 +35,7 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
 4. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
 5. `TopoManager::sendMessage` and `TopoManager::sendMessages` are the only message transport paths. They check router/link state, assign sequence numbers, apply MRAI/link delay through the worker pool, recheck delivery state immediately before receipt, record each BMP receive event, then deliver the whole surviving batch to the destination router.
-6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so MRAI-delayed UPDATEs are included in the stability test.
+6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, 1000ms)`; MRAI-delayed UPDATEs are included because delayed MRAI work remains queued until it runs.
 7. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
 8. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
 
@@ -158,7 +158,7 @@ Neighbor entries can include `"mrai_ms"` to enforce a per-neighbor MRAI for adve
 
 If an MRAI-delayed message becomes stale because a newer UPDATE or withdraw supersedes it before delivery, the delayed message is dropped instead of being logged or delivered. A flush containing only stale messages sends nothing and leaves the neighbor ready to send the next valid update immediately.
 
-Convergence waits for the worker queue to stay idle for at least `max(convergence_quiet_ms, ceil(1.5 * max_mrai_ms))`, so configured MRAI timers are included in the stability window.
+Convergence waits for the worker queue to stay idle for at least `max(convergence_quiet_ms, 1000ms)`. Configured MRAI timers are not added to the quiet window; instead, pending MRAI flush work keeps the worker queue non-idle until it has actually run.
 
 Route reflector support is modeled through:
 

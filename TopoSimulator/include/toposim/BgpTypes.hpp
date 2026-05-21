@@ -104,7 +104,7 @@ struct SimulationConfig {
   std::string name = "bgp-simulation";
   std::string log_dir = "tmp";
   std::uint32_t worker_threads = 0;
-  std::uint32_t convergence_quiet_ms = 300;
+  std::uint32_t convergence_quiet_ms = 1000;
 
   bool operator==(const SimulationConfig &) const = default;
 };

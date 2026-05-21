@@ -801,19 +801,11 @@ TopoManager::linkFor(const std::string &a, const std::string &b) const {
 }
 
 std::chrono::milliseconds TopoManager::convergenceQuietPeriod() const {
-  std::uint64_t max_mrai_ms = 0;
-  for (const auto &router : config_.routers) {
-    for (const auto &neighbor : router.neighbors) {
-      max_mrai_ms = std::max(max_mrai_ms,
-                             static_cast<std::uint64_t>(neighbor.mrai_ms));
-    }
-  }
-
+  constexpr auto kMinimumQuietMs = std::uint64_t{1000};
   const auto configured_quiet_ms =
       static_cast<std::uint64_t>(config_.simulation.convergence_quiet_ms);
-  const auto mrai_quiet_ms = (max_mrai_ms * 3 + 1) / 2;
   return std::chrono::milliseconds(
-      std::max(configured_quiet_ms, mrai_quiet_ms));
+      std::max(configured_quiet_ms, kMinimumQuietMs));
 }
 
 std::filesystem::path TopoManager::makeRunDirectory() const {

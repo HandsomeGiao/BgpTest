@@ -3,7 +3,7 @@
     "name": "generated-topology",
     "log_dir": "tmp",
     "worker_threads": 0,
-    "convergence_quiet_ms": 300
+    "convergence_quiet_ms": 1000
   },
   "routers": [
     {

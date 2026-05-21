@@ -177,7 +177,7 @@ class TopologyModel:
                 "name": self.simulation_name,
                 "log_dir": self.log_dir,
                 "worker_threads": self.worker_threads,
-                "convergence_quiet_ms": 300,
+                "convergence_quiet_ms": 1000,
             },
             "routers": routers,
             "links": [

@@ -3,7 +3,7 @@
     "name": "rr-demo",
     "log_dir": "tmp",
     "worker_threads": 4,
-    "convergence_quiet_ms": 300
+    "convergence_quiet_ms": 1000
   },
   "routers": [
     {
