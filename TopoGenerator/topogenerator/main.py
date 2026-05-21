@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import random
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDialog,
     QFileDialog,
     QFormLayout,
@@ -61,6 +63,14 @@ DEFAULT_OBSERVER_PIPE = "TopoSimulatorObserver"
 
 def color_for_asn(asn: int) -> QColor:
     return QColor(AS_COLORS[abs(asn) % len(AS_COLORS)])
+
+
+def natural_sort_key(text: str) -> tuple[tuple[int, object], ...]:
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r"(\d+)", text)
+        if part
+    )
 
 
 class RouterDialog(QDialog):
@@ -979,13 +989,12 @@ class MainWindow(QMainWindow):
 
         if self.observe_mode:
             toolbar.addWidget(QLabel("Router"))
-            self.router_combo = QComboBox()
+            self.router_combo = self._observer_combo("Search router")
             self.router_combo.currentTextChanged.connect(self.update_observed_path)
             toolbar.addWidget(self.router_combo)
 
             toolbar.addWidget(QLabel("Prefix"))
-            self.prefix_combo = QComboBox()
-            self.prefix_combo.setEditable(True)
+            self.prefix_combo = self._observer_combo("Search prefix")
             self.prefix_combo.currentTextChanged.connect(self.update_observed_path)
             toolbar.addWidget(self.prefix_combo)
 
@@ -1019,6 +1028,19 @@ class MainWindow(QMainWindow):
                 action.setShortcut(shortcut)
             action.triggered.connect(callback)
             toolbar.addAction(action)
+
+    def _observer_combo(self, placeholder: str) -> QComboBox:
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.setMaxVisibleItems(20)
+        combo.lineEdit().setPlaceholderText(placeholder)
+        completer = QCompleter(combo.model(), combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        combo.setCompleter(completer)
+        combo.observer_completer = completer
+        return combo
 
     def add_router(self) -> None:
         if self.observe_mode:
@@ -1424,17 +1446,10 @@ class MainWindow(QMainWindow):
         if self.router_combo is None or self.prefix_combo is None:
             return
 
-        selected_router = self.router_combo.currentText()
-        selected_prefix = self.prefix_combo.currentText()
-
-        self.router_combo.blockSignals(True)
-        self.router_combo.clear()
-        self.router_combo.addItems(sorted(self.model.routers))
-        if selected_router:
-            index = self.router_combo.findText(selected_router)
-            if index >= 0:
-                self.router_combo.setCurrentIndex(index)
-        self.router_combo.blockSignals(False)
+        self._replace_combo_items_preserving_text(
+            self.router_combo,
+            sorted(self.model.routers, key=natural_sort_key),
+        )
 
         prefixes = {
             prefix
@@ -1442,16 +1457,35 @@ class MainWindow(QMainWindow):
             for prefix in router.originated_prefixes
         }
         prefixes.update(prefix for _, prefix in self.best_paths)
-        self.prefix_combo.blockSignals(True)
-        self.prefix_combo.clear()
-        self.prefix_combo.addItems(sorted(prefixes))
-        if selected_prefix:
-            index = self.prefix_combo.findText(selected_prefix)
-            if index >= 0:
-                self.prefix_combo.setCurrentIndex(index)
-            elif self.prefix_combo.isEditable():
-                self.prefix_combo.setEditText(selected_prefix)
-        self.prefix_combo.blockSignals(False)
+        self._replace_combo_items_preserving_text(
+            self.prefix_combo,
+            sorted(prefixes, key=natural_sort_key),
+        )
+
+    def _replace_combo_items_preserving_text(
+        self,
+        combo: QComboBox,
+        items: list[str],
+    ) -> None:
+        line_edit = combo.lineEdit() if combo.isEditable() else None
+        text = line_edit.text() if line_edit is not None else combo.currentText()
+        cursor_position = line_edit.cursorPosition() if line_edit is not None else 0
+        current_items = [combo.itemText(index) for index in range(combo.count())]
+
+        signals_were_blocked = combo.blockSignals(True)
+        if current_items != items:
+            combo.clear()
+            combo.addItems(items)
+
+        index = combo.findText(text, Qt.MatchFlag.MatchExactly)
+        if text and index >= 0:
+            combo.setCurrentIndex(index)
+        elif combo.isEditable():
+            combo.setEditText(text)
+
+        if line_edit is not None:
+            line_edit.setCursorPosition(min(cursor_position, len(text)))
+        combo.blockSignals(signals_were_blocked)
 
     def update_observed_path(self) -> None:
         if not self.observe_mode or self.router_combo is None or self.prefix_combo is None:
