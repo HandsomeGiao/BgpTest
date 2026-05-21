@@ -965,34 +965,34 @@ sequenceDiagram
 
 建议按以下顺序阅读：
 
-1. `include/toposim/BgpTypes.hpp`  
+1. `include/toposim/BgpTypes.hpp`
    先理解所有基础数据结构。
 
-2. `src/TopologyJson.cpp`  
+2. `src/TopologyJson.cpp`
    理解 JSON 如何映射成配置对象。
 
-3. `src/TopoManager.cpp`  
+3. `src/TopoManager.cpp`
    理解拓扑生命周期、消息投递和收敛检测。
 
-4. `src/ThreadPool.cpp`  
+4. `src/ThreadPool.cpp`
    理解延迟任务和 idle 判断。
 
-5. `src/BgpRouter.cpp`  
+5. `src/BgpRouter.cpp`
    重点看 OPEN/UPDATE、选路、MRAI、传播逻辑。
 
-6. `src/BmpLogManager.cpp`  
+6. `src/BmpLogManager.cpp`
    理解日志如何从仿真事件变成 JSONL 和 SQLite。
 
-7. `src/BmpLogViewer.cpp`  
+7. `src/BmpLogViewer.cpp`
    理解 ImGui 查询 UI。
 
-8. `src/TopologyObserverServer.cpp`  
+8. `src/TopologyObserverServer.cpp`
    理解 named pipe 观察协议。
 
-9. `src/main.cpp`  
+9. `src/main.cpp`
    串起启动、CLI 命令和收敛等待。
 
-10. `tests/core_tests.cpp`  
+10. `tests/core_tests.cpp`
     用测试反推关键行为和边界条件。
 
 ## 18. 一句话心智模型
