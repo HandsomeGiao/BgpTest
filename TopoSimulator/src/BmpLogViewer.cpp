@@ -33,6 +33,7 @@ std::thread g_viewer_thread;
 std::mutex g_thread_mutex;
 std::atomic_bool g_running{false};
 std::atomic_bool g_stop_requested{false};
+std::atomic_bool g_imgui_wndproc_ready{false};
 
 ID3D11Device *g_pd3dDevice = nullptr;
 ID3D11DeviceContext *g_pd3dDeviceContext = nullptr;
@@ -105,7 +106,7 @@ void loadReadableFont(ImGuiIO &io, float dpi_scale) {
     const auto font_path_text = font_path.string();
     if (!windows_dir.empty() && std::filesystem::exists(font_path) &&
         io.Fonts->AddFontFromFileTTF(font_path_text.c_str(), font_size, &config,
-                                     io.Fonts->GetGlyphRangesChineseFull())) {
+                                     io.Fonts->GetGlyphRangesChineseSimplifiedCommon())) {
       return;
     }
   }
@@ -158,7 +159,8 @@ void cleanupDeviceD3D() {
 }
 
 LRESULT WINAPI wndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) {
+  if (g_imgui_wndproc_ready.load() && ImGui::GetCurrentContext() != nullptr &&
+      ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) {
     return true;
   }
 
@@ -705,7 +707,6 @@ void drawRecordTable(std::vector<BmpLogRecord> &records,
 }
 
 void viewerLoop(bool live_supported) {
-  g_stop_requested = false;
   configureDpiAwareness();
 
   WNDCLASSEXW wc = {sizeof(wc), CS_CLASSDC, wndProc, 0L, 0L,
@@ -717,8 +718,21 @@ void viewerLoop(bool live_supported) {
       WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1500, 900, nullptr,
       nullptr,
       wc.hInstance, nullptr);
+  if (!hwnd) {
+    UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    g_running = false;
+    return;
+  }
 
   if (!createDeviceD3D(hwnd)) {
+    cleanupDeviceD3D();
+    DestroyWindow(hwnd);
+    UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    g_running = false;
+    return;
+  }
+  createRenderTarget();
+  if (!g_mainRenderTargetView) {
     cleanupDeviceD3D();
     DestroyWindow(hwnd);
     UnregisterClassW(wc.lpszClassName, wc.hInstance);
@@ -741,6 +755,7 @@ void viewerLoop(bool live_supported) {
 
   ImGui_ImplWin32_Init(hwnd);
   ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+  g_imgui_wndproc_ready = true;
 
   bool live_mode = live_supported;
   bool follow_live = live_supported;
@@ -884,6 +899,7 @@ void viewerLoop(bool live_supported) {
     g_pSwapChain->Present(1, 0);
   }
 
+  g_imgui_wndproc_ready = false;
   ImGui_ImplDX11_Shutdown();
   ImGui_ImplWin32_Shutdown();
   ImGui::DestroyContext();
