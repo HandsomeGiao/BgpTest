@@ -10,6 +10,8 @@
 #include <thread>
 #include <unordered_set>
 
+#include "toposim/RouterFactory.hpp"
+
 namespace toposim {
 namespace {
 
@@ -615,6 +617,22 @@ std::string TopoManager::directedKey(const std::string &from,
 }
 
 void TopoManager::validateConfig() const {
+  if (config_.simulation.router_class.empty()) {
+    throw std::runtime_error("simulation.router_class cannot be empty");
+  }
+  if (!routerClassExists(config_.simulation.router_class)) {
+    std::string available;
+    for (const auto &name : availableRouterClasses()) {
+      if (!available.empty()) {
+        available += ", ";
+      }
+      available += name;
+    }
+    throw std::runtime_error("Unknown simulation.router_class '" +
+                             config_.simulation.router_class +
+                             "'. Available classes: " + available);
+  }
+
   std::unordered_set<std::string> router_ids;
   std::unordered_set<std::string> bgp_router_ids;
   std::unordered_map<std::string, const RouterConfig *> routers_by_id;
@@ -717,7 +735,8 @@ void TopoManager::buildRouters() {
     if (router_config.id.empty()) {
       throw std::runtime_error("Router id cannot be empty");
     }
-    auto router = std::make_shared<BgpRouter>(router_config);
+    auto router =
+        createRouterByClass(config_.simulation.router_class, router_config);
     router->attachManager(this);
     routers_[router_config.id] = std::move(router);
   }

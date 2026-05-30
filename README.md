@@ -14,9 +14,10 @@
 - 模拟 BGP OPEN、UPDATE、NOTIFICATION 等基础报文；为减少仿真报文量，当前不生成 KEEPALIVE，邻居在线状态由拓扑 link/node 状态控制。
 - 维护 Adj-RIB-In、Loc-RIB、Adj-RIB-Out 等核心 BGP 路由信息结构。
 - 支持 IBGP、EBGP 和基础路由反射器行为；默认选路按 local-pref、AS_PATH 长度、MED、EBGP/IBGP、旧路径优先进行比较，只有当前没有同优旧路径时才使用 next-hop 和来源邻居作为确定性 tie-breaker。
+- 支持通过拓扑 JSON 的 `simulation.router_class` 或启动参数 `--router-class` 为每次实验选择不同的 C++ 路由器类，便于测试自定义 BGP 行为。
 - 支持邻居级 MRAI，用于控制同一路由器向同一邻居发送广告 UPDATE 的最小间隔；withdrawal-only UPDATE 会绕过 MRAI 立即发送。
 - 同一邻居的 MRAI pending 广告 UPDATE 会在下一个 MRAI 时刻作为一次传输批量 flush；同一轮产生的多个 withdrawal-only UPDATE 也会立即作为一次传输批量发送。BMP 仍会逐条记录批次内的逻辑 UPDATE/WITHDRAW；接收端会先导入整批报文，再对所有受影响前缀统一运行一次选路并向外扩散。如果到点时全部失效，则不发送报文，也不额外占用下一次 MRAI 发送机会。
-- 收敛判定会等待至少 `1.5 * 最大 MRAI` 的静默窗口，让 MRAI 场景下的判断更稳妥。
+- 收敛判定会等待工作队列持续空闲至少 `max(convergence_quiet_ms, 1000ms)`；MRAI 定时任务会保留在线程池中，因此不会被额外静默窗口吞掉。
 - 使用 C++ 多线程加速报文投递和拓扑模拟。
 - 启动时会校验拓扑配置，提前拒绝重复路由器、重复链路、自连接链路和未知端点。
 - 生成 `bmp_collector.log` 和 `bmp_collector.sqlite`，分别用于 JSON Lines 原始记录和 SQLite 历史查询；BMP 时间戳使用 `YYYY-MM-DD HH:MM:SS.mmm` 格式的中国时间。
@@ -38,6 +39,7 @@ BGP Test Framework
    ├─ CLI entry
    ├─ TopoManager
    ├─ BgpRouter
+   ├─ RouterFactory
    ├─ ThreadPool
    ├─ BmpLogManager
    ├─ BmpLogViewer / BmpLogViewer.exe
@@ -50,13 +52,14 @@ BGP Test Framework
 
 依赖边界规则：
 
-- 核心模拟层只能使用纯 C++20 标准库和项目自身头文件，包括 `BgpRouter`、`TopoManager`、`ThreadPool`、`BgpTypes` 等路由器节点、BGP 管理器、协议状态机和决策逻辑。
+- 核心模拟层只能使用纯 C++20 标准库和项目自身头文件，包括 `BgpRouter`、`RouterFactory`、`TopoManager`、`ThreadPool`、`BgpTypes` 等路由器节点、BGP 管理器、协议状态机和决策逻辑。
 - 协议状态机和路由决策保持纯 C++20；第三方库和 Windows API 仅用于外围设施，例如命令行交互、颜色输出、JSON 拓扑读取、BMP 日志持久化和可视化窗口。
 - 如果需要在核心层暴露运行状态，应返回标准库数据结构；由外围适配层负责转换成 JSON、日志文本或控制台输出。
 
 主要模块：
 
 - `BgpRouter`：表示一个 BGP 路由器节点，维护邻居状态、RIB 数据结构和基础 BGP 行为。该类保留了多个虚函数扩展点，便于子类重写接收报文、导入策略、导出策略、路径选择和属性转换逻辑。
+- `RouterFactory`：维护可用路由器类注册表，根据 `simulation.router_class` 或 `--router-class` 为本次实验创建对应的路由器对象。
 - `TopoManager`：管理整个拓扑的生命周期，负责启动、停止、链路状态变化、节点状态变化，以及路由器之间的报文转发。
 - `TopoManager` 会在延迟报文真正投递前重新检查链路和节点状态，避免链路或节点已关闭后仍投递旧报文。
 - `ThreadPool`：提供多线程任务执行能力，用于并发模拟报文投递和节点处理。
@@ -89,11 +92,12 @@ BGP Test Framework
 1. 使用 `TopoGenerator` 创建网络拓扑，或手写 JSON 拓扑文件。
 2. 将拓扑 JSON 放入 `TopoSimulator.exe` 所在目录的 `topo/` 文件夹，或使用 `--topology` 参数显式指定文件。
 3. 启动 `TopoSimulator`。
-4. 模拟器读取拓扑，创建路由器节点和 BGP 邻居关系。
-5. 网络开始交换 BGP 报文并收敛。
-6. 模拟器生成 `tmp/<run>/bmp_collector.log` 和 `tmp/<run>/bmp_collector.sqlite`，记录 BGP 报文和拓扑事件。
-7. 交互式运行时自动打开 BMP 日志窗口；批处理或测试场景可使用 `--bmp-viewer off` 禁用窗口。窗口被关闭后，可在 CLI 中执行 `bmp viewer` 或 `bmp open` 重新打开。
-8. 收敛后进入交互模式，可继续执行链路断开、节点关闭、路由发布或撤销等操作。
+4. 模拟器读取拓扑，并从 `--router-class`、`simulation.router_class` 或交互式启动选择中确定本次实验使用的路由器类。
+5. 模拟器创建路由器节点和 BGP 邻居关系。
+6. 网络开始交换 BGP 报文并收敛。
+7. 模拟器生成 `tmp/<run>/bmp_collector.log` 和 `tmp/<run>/bmp_collector.sqlite`，记录 BGP 报文和拓扑事件。
+8. 交互式运行时自动打开 BMP 日志窗口；批处理或测试场景可使用 `--bmp-viewer off` 禁用窗口。窗口被关闭后，可在 CLI 中执行 `bmp viewer` 或 `bmp open` 重新打开。
+9. 收敛后进入交互模式，可继续执行链路断开、节点关闭、路由发布或撤销等操作。
 
 ## 目录结构
 
@@ -178,7 +182,8 @@ python -m topogenerator.main
 1. 新增一个 `BgpRouter` 子类，例如 `LabRouter`。
 2. 按需要重写导入策略、导出策略、属性转换、选路规则或消息处理函数。
 3. 如果新增 `.cpp` 文件，把它加入 `TopoSimulator/CMakeLists.txt` 的 `toposim` target。
-4. 在 `TopoManager::buildRouters()` 中根据 router id、ASN、cluster id 或自定义配置字段实例化你的子类。
+4. 在自定义路由器的 `.cpp` 中调用 `registerRouterClass("LabRouter", ...)` 注册类名。
+5. 在拓扑 JSON 中设置 `simulation.router_class`，或启动时使用 `--router-class LabRouter` 覆盖本次实验的路由器类。
 
 常用虚函数：
 
@@ -196,12 +201,35 @@ python -m topogenerator.main
 示例接入方式：
 
 ```cpp
-std::shared_ptr<BgpRouter> router;
-if (router_config.id.starts_with("LAB")) {
-  router = std::make_shared<LabRouter>(router_config);
-} else {
-  router = std::make_shared<BgpRouter>(router_config);
+#include "toposim/LabRouter.hpp"
+#include "toposim/RouterFactory.hpp"
+
+namespace {
+
+const bool registered_lab_router = [] {
+  toposim::registerRouterClass(
+      "LabRouter", [](toposim::RouterConfig config) {
+        return std::make_shared<toposim::LabRouter>(std::move(config));
+      });
+  return true;
+}();
+
+} // namespace
+```
+
+```json
+{
+  "simulation": {
+    "name": "lab",
+    "router_class": "LabRouter"
+  }
 }
+```
+
+也可以只覆盖一次启动：
+
+```powershell
+.\TopoSimulator.exe --topology testtopology.json --router-class LabRouter
 ```
 
 更完整的示例和注意事项见 [TopoSimulator/README.md](TopoSimulator/README.md) 的 `Custom BGP Router Behavior` 章节。

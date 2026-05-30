@@ -105,6 +105,7 @@ struct SimulationConfig {
   std::string log_dir = "tmp";
   std::uint32_t worker_threads = 0;
   std::uint32_t convergence_quiet_ms = 1000;
+  std::string router_class = "BgpRouter";
 
   bool operator==(const SimulationConfig &) const = default;
 };

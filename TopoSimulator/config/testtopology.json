@@ -3,7 +3,8 @@
     "name": "generated-topology",
     "log_dir": "tmp",
     "worker_threads": 0,
-    "convergence_quiet_ms": 1000
+    "convergence_quiet_ms": 1000,
+    "router_class": "BgpRouter"
   },
   "routers": [
     {

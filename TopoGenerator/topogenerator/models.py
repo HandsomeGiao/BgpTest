@@ -75,6 +75,7 @@ class TopologyModel:
     simulation_name: str = "generated-topology"
     log_dir: str = "tmp"
     worker_threads: int = 0
+    router_class: str = "BgpRouter"
     routers: dict[str, RouterNode] = field(default_factory=dict)
     links: list[LinkEdge] = field(default_factory=list)
 
@@ -85,6 +86,7 @@ class TopologyModel:
             simulation_name=str(simulation.get("name", "generated-topology")),
             log_dir=str(simulation.get("log_dir", "tmp")),
             worker_threads=int(simulation.get("worker_threads", 0)),
+            router_class=str(simulation.get("router_class", "BgpRouter")),
         )
         for index, router_data in enumerate(data.get("routers", [])):
             router = RouterNode.from_json(router_data, index)
@@ -178,6 +180,7 @@ class TopologyModel:
                 "log_dir": self.log_dir,
                 "worker_threads": self.worker_threads,
                 "convergence_quiet_ms": 1000,
+                "router_class": self.router_class,
             },
             "routers": routers,
             "links": [

@@ -1,15 +1,40 @@
 #include "toposim/TopoManager.hpp"
+#include "toposim/RouterFactory.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace {
 
 using namespace std::chrono_literals;
+
+class RejectImportRouter final : public toposim::BgpRouter {
+public:
+  using BgpRouter::BgpRouter;
+
+protected:
+  bool importRouteAllowed(const toposim::RouteEntry &,
+                          const toposim::NeighborConfig &) const override {
+    return false;
+  }
+};
+
+void ensureRejectImportRouterRegistered() {
+  static const bool registered = [] {
+    toposim::registerRouterClass(
+        "RejectImportRouter", [](toposim::RouterConfig config) {
+          return std::make_shared<RejectImportRouter>(std::move(config));
+        });
+    return true;
+  }();
+  (void)registered;
+}
 
 toposim::RouterConfig makeRouter(std::string id, std::string router_id,
                                   std::uint32_t asn) {
@@ -256,6 +281,29 @@ void rejectsDuplicateBgpRouterIdsAndInvalidPrefixes() {
   invalid_prefix.routers[0].originated_prefixes.push_back("not-a-prefix");
   requireThrows([&] { toposim::TopoManager manager(invalid_prefix); },
                 "invalid originated prefix should be rejected");
+}
+
+void rejectsUnknownRouterClass() {
+  auto config = twoRouterTopology(0);
+  config.simulation.router_class = "MissingRouterClass";
+  requireThrows([&] { toposim::TopoManager manager(config); },
+                "unknown router class should be rejected");
+}
+
+void selectedRouterClassIsUsed() {
+  ensureRejectImportRouterRegistered();
+  auto config = twoRouterTopology(0);
+  config.simulation.name = "router-class-selection-tests";
+  config.simulation.router_class = "RejectImportRouter";
+  config.routers[0].originated_prefixes.push_back("10.10.10.0/24");
+
+  toposim::TopoManager manager(std::move(config));
+  manager.start();
+  require(manager.waitForConvergence(3s),
+          "router class selection topology did not converge");
+  require(!ribHasPrefix(manager.ribSnapshot("R2"), "10.10.10.0/24"),
+          "custom router class was not used to reject imported routes");
+  manager.stop();
 }
 
 void updateBeforeOpenIsRejected() {
@@ -930,6 +978,8 @@ int main() {
     rejectsInvalidLinks();
     rejectsInvalidNeighborConfig();
     rejectsDuplicateBgpRouterIdsAndInvalidPrefixes();
+    rejectsUnknownRouterClass();
+    selectedRouterClassIsUsed();
     updateBeforeOpenIsRejected();
     stoppedTopoManagerCannotRestart();
     bmpFlushDrainsInflightBatch();

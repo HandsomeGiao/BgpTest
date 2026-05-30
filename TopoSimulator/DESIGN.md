@@ -4,7 +4,7 @@
 
 ## 1. 项目定位
 
-`TopoSimulator` 是一个纯 C++ 的 BGP 拓扑仿真器。它把拓扑 JSON 加载成一组 `BgpRouter` 对象，通过 `TopoManager` 统一调度消息投递、链路延迟、MRAI 定时和节点/链路状态变化。仿真过程中产生的 BMP 风格日志会同时写入 JSONL 文件和 SQLite，内置 ImGui 查看器可用于实时查看和历史查询。
+`TopoSimulator` 是一个纯 C++ 的 BGP 拓扑仿真器。它把拓扑 JSON 加载成一组由 `RouterFactory` 创建的路由器对象，默认使用 `BgpRouter`，也可以在每次实验启动时选择自定义路由器子类。`TopoManager` 统一调度消息投递、链路延迟、MRAI 定时和节点/链路状态变化。仿真过程中产生的 BMP 风格日志会同时写入 JSONL 文件和 SQLite，内置 ImGui 查看器可用于实时查看和历史查询。
 
 项目主要目标：
 
@@ -28,6 +28,7 @@ TopoSimulator/
   include/toposim/
     BgpTypes.hpp
     BgpRouter.hpp
+    RouterFactory.hpp
     TopoManager.hpp
     ThreadPool.hpp
     BmpLogManager.hpp
@@ -37,6 +38,7 @@ TopoSimulator/
   src/
     BgpTypes.cpp
     BgpRouter.cpp
+    RouterFactory.cpp
     TopoManager.cpp
     ThreadPool.cpp
     BmpLogManager.cpp
@@ -56,7 +58,7 @@ TopoSimulator/
 
 CMake 产物分为几个层次：
 
-- `toposim` 静态库：核心仿真逻辑，包括 `BgpRouter`、`TopoManager`、`ThreadPool`、`BmpLogManager`。
+- `toposim` 静态库：核心仿真逻辑，包括 `BgpRouter`、`RouterFactory`、`TopoManager`、`ThreadPool`、`BmpLogManager`。
 - `toposim_io` 静态库：JSON 读写和拓扑观察 named pipe，依赖 `toposim`。
 - `TopoSimulator.exe`：命令行仿真入口，同时链接 ImGui BMP 查看器。
 - `BmpLogViewer.exe`：独立 BMP SQLite 日志查看器。
@@ -77,9 +79,10 @@ CMake 产物分为几个层次：
 flowchart TD
   JSON["Topology JSON"] --> TJ["TopologyJson"]
   TJ --> TM["TopoManager"]
-  TM --> R1["BgpRouter R1"]
-  TM --> R2["BgpRouter R2"]
-  TM --> RN["BgpRouter ..."]
+  TM --> RF["RouterFactory"]
+  RF --> R1["BgpRouter/custom R1"]
+  RF --> R2["BgpRouter/custom R2"]
+  RF --> RN["BgpRouter/custom ..."]
   R1 --> TM
   R2 --> TM
   RN --> TM
@@ -100,6 +103,7 @@ flowchart TD
 核心分工：
 
 - `BgpRouter`：单台路由器的 BGP 状态机、RIB、选路、进出口策略、MRAI 队列。
+- `RouterFactory`：维护可用路由器类注册表，按 `simulation.router_class` 创建本次实验使用的路由器对象。
 - `TopoManager`：拓扑级生命周期、链路和节点状态、消息投递、线程池、收敛检测、BMP 日志目录。
 - `ThreadPool`：执行延迟投递和定时任务。
 - `BmpLogManager`：收集 BMP 风格事件，维护实时内存窗口，异步写 JSONL 和 SQLite。
@@ -152,6 +156,7 @@ flowchart TD
   - `log_dir`
   - `worker_threads`
   - `convergence_quiet_ms`
+  - `router_class`
 - `RouterConfig`
   - `id`
   - `router_id`
@@ -196,16 +201,18 @@ flowchart TD
 
 1. 打开 JSON 文件。
 2. 用 `nlohmann::json` 解析为 `TopologyConfig`。
-3. `TopoManager` 构造时调用 `validateConfig()`。
-4. 构造 `BgpRouter`。
-5. 根据 links 补齐邻居。
-6. 构建运行时链路表。
-7. 初始化日志目录和 BMP 日志管理器。
+3. `main.cpp` 从 `--router-class`、`simulation.router_class` 或交互式选择中确定本次实验的 router class。
+4. `TopoManager` 构造时调用 `validateConfig()`。
+5. 根据选中的 `simulation.router_class` 通过 `RouterFactory` 构造路由器对象。
+6. 根据 links 补齐邻居。
+7. 构建运行时链路表。
+8. 初始化日志目录和 BMP 日志管理器。
 
 ### 5.1 配置校验
 
 `TopoManager::validateConfig()` 当前校验：
 
+- `simulation.router_class` 非空，且已经在 `RouterFactory` 中注册。
 - Router id 非空。
 - Router id 不包含内部 key 分隔符 `|` 或 `>`。
 - Router id 不重复。
@@ -903,14 +910,17 @@ sequenceDiagram
 1. 继承 `BgpRouter`。
 2. 覆盖 import/export/transform/select 中需要改变的部分。
 3. 保持父类对 RIB、MRAI、batch receive 的基本语义。
-4. 修改 `TopoManager::buildRouters()`，根据配置字段创建不同 router 子类。
-5. 为新增行为补充测试。
+4. 用 `registerRouterClass()` 注册一个类名到创建函数。
+5. 在拓扑 JSON 的 `simulation.router_class` 中选择该类，或启动时用 `--router-class <ClassName>` 覆盖。
+6. 为新增行为补充测试。
 
 注意：
 
 - 如果覆盖 `onUpdateMessage()`，需要小心保持 `receiveMessages()` 的 batch decision 语义。
 - 如果直接修改 RIB，需要持有 router mutex；但 mutex 是 private，当前更适合通过 protected hook 改变策略，而不是外部修改状态。
 - 如果新增策略字段，需要同步修改 `BgpTypes.hpp`、`TopologyJson.cpp`、TopoGenerator 的 JSON 模型。
+- `router_class` 是一次仿真实验的全局选择；如果需要同一拓扑内混用不同路由器实现，需要继续扩展 per-router 配置字段和工厂调用点。
+- `TopoSimulator.exe` 和 `TopoSimulatorTests.exe` 对 `toposim` 使用 MSVC whole-archive 链接，避免只靠静态注册的自定义 router `.cpp` 被链接器丢弃。
 
 ## 15. 测试覆盖
 
@@ -942,6 +952,8 @@ sequenceDiagram
 - 重复 link state / node state 操作是 no-op。
 - 取消 transient advertisement 不产生无意义 withdrawal。
 - router restart 后向重建 peer 宣告正确 best route。
+- 未注册 router class 会被拒绝。
+- `simulation.router_class` 指定的自定义路由器类会实际用于构建拓扑。
 
 这些测试既是回归测试，也是理解当前行为的好入口。
 
@@ -958,7 +970,7 @@ sequenceDiagram
 - route flap damping、community 策略等只保留数据字段，没有完整策略逻辑。
 - BMP 日志是仿真器内部事件格式，不是 RFC 7854 的 wire-format BMP。
 - 拓扑观察 pipe 当前只允许一个连接实例。
-- `BgpRouter` 子类扩展点存在，但 `TopoManager::buildRouters()` 目前总是创建基础 `BgpRouter`。
+- `router_class` 当前是实验级配置，同一拓扑内不能按单台路由器混用不同 C++ 类。
 - 核心工程是 Windows/MSVC 专用。
 
 ## 17. 阅读源码建议
@@ -968,31 +980,34 @@ sequenceDiagram
 1. `include/toposim/BgpTypes.hpp`
    先理解所有基础数据结构。
 
-2. `src/TopologyJson.cpp`
+2. `include/toposim/BgpRouter.hpp` 和 `include/toposim/RouterFactory.hpp`
+   理解路由器扩展点和启动时类选择机制。
+
+3. `src/TopologyJson.cpp`
    理解 JSON 如何映射成配置对象。
 
-3. `src/TopoManager.cpp`
+4. `src/TopoManager.cpp`
    理解拓扑生命周期、消息投递和收敛检测。
 
-4. `src/ThreadPool.cpp`
+5. `src/ThreadPool.cpp`
    理解延迟任务和 idle 判断。
 
-5. `src/BgpRouter.cpp`
+6. `src/BgpRouter.cpp`
    重点看 OPEN/UPDATE、选路、MRAI、传播逻辑。
 
-6. `src/BmpLogManager.cpp`
+7. `src/BmpLogManager.cpp`
    理解日志如何从仿真事件变成 JSONL 和 SQLite。
 
-7. `src/BmpLogViewer.cpp`
+8. `src/BmpLogViewer.cpp`
    理解 ImGui 查询 UI。
 
-8. `src/TopologyObserverServer.cpp`
+9. `src/TopologyObserverServer.cpp`
    理解 named pipe 观察协议。
 
-9. `src/main.cpp`
+10. `src/main.cpp`
    串起启动、CLI 命令和收敛等待。
 
-10. `tests/core_tests.cpp`
+11. `tests/core_tests.cpp`
     用测试反推关键行为和边界条件。
 
 ## 18. 一句话心智模型
@@ -1001,6 +1016,7 @@ sequenceDiagram
 
 ```text
 TopoManager 管拓扑和时间，
+RouterFactory 管实验使用的路由器类，
 BgpRouter 管路由状态和策略，
 ThreadPool 管异步投递和定时器，
 BmpLogManager 管事件落盘和查询，

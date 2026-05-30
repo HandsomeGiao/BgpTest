@@ -25,6 +25,7 @@
 
 #include "toposim/BmpLogManager.hpp"
 #include "toposim/BmpLogViewer.hpp"
+#include "toposim/RouterFactory.hpp"
 #include "toposim/TopoManager.hpp"
 #include "toposim/TopologyObserverServer.hpp"
 #include "toposim/TopologyJson.hpp"
@@ -644,6 +645,70 @@ std::optional<std::filesystem::path> topologyPathFromArgs(int argc,
   return topologies[selected - 1];
 }
 
+std::optional<std::string> routerClassFromArgs(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--router-class") {
+      if (i + 1 >= argc) {
+        throw std::runtime_error("--router-class requires a class name.");
+      }
+      return std::string{argv[++i]};
+    }
+  }
+  return std::nullopt;
+}
+
+std::string selectRouterClassForRun(const std::string &configured_class,
+                                    int argc, char **argv) {
+  if (const auto requested_class = routerClassFromArgs(argc, argv)) {
+    return *requested_class;
+  }
+
+  const auto classes = toposim::availableRouterClasses();
+  if (classes.size() <= 1 || !stdinIsTerminal()) {
+    return configured_class;
+  }
+
+  printInfoLine("Available router classes:");
+  for (std::size_t i = 0; i < classes.size(); ++i) {
+    writeColored("  * ", kDim);
+    writeColored(std::to_string(i + 1) + ". ", kArgument);
+    writeColored(classes[i], kCandidate);
+    if (classes[i] == configured_class) {
+      writeColored(" (topology default)", kDim);
+    }
+    std::cout << '\n';
+  }
+
+  if (!toposim::routerClassExists(configured_class)) {
+    printWarningLine("Topology requests unknown router class: " +
+                     configured_class);
+  }
+
+  writeColored("Select router class ", kInfo);
+  writeColored("[Enter = " + configured_class + "]: ", kArgument);
+
+  std::string line;
+  if (!std::getline(std::cin, line) || line.empty()) {
+    return configured_class;
+  }
+
+  try {
+    std::size_t consumed = 0;
+    const auto selected = std::stoul(line, &consumed);
+    if (consumed == line.size() && selected > 0 && selected <= classes.size()) {
+      return classes[selected - 1];
+    }
+  } catch (...) {
+  }
+
+  if (std::find(classes.begin(), classes.end(), line) != classes.end()) {
+    return line;
+  }
+
+  throw std::runtime_error("Invalid router class selection: " + line);
+}
+
 BmpViewerMode bmpViewerModeFromArgs(int argc, char **argv) {
   BmpViewerMode mode = BmpViewerMode::Auto;
   for (int i = 1; i < argc; ++i) {
@@ -688,6 +753,9 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto topology = toposim::loadTopologyConfig(*topology_path);
+    topology.simulation.router_class =
+        selectRouterClassForRun(topology.simulation.router_class, argc, argv);
+    const auto selected_router_class = topology.simulation.router_class;
     auto topology_json = toposim::toJson(topology);
     const auto observer_topology_path =
         std::filesystem::absolute(*topology_path).string();
@@ -699,6 +767,7 @@ int main(int argc, char **argv) {
       observer_server.publishBestPath(manager.bestPathSnapshot(router_id, prefix));
     });
     printInfoLine("Topology observer pipe: " + observer_server.pipeName());
+    printInfoLine("Router class: " + selected_router_class);
 
     const auto startup_started_at = std::chrono::steady_clock::now();
     manager.start();

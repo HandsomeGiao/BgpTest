@@ -3,7 +3,8 @@
     "name": "rr-demo",
     "log_dir": "tmp",
     "worker_threads": 4,
-    "convergence_quiet_ms": 1000
+    "convergence_quiet_ms": 1000,
+    "router_class": "BgpRouter"
   },
   "routers": [
     {

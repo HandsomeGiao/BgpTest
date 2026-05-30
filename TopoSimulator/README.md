@@ -21,6 +21,7 @@ TopoSimulator.exe
 └─ toposim
    ├─ TopoManager: topology lifecycle, link state, node state, message delivery
    ├─ BgpRouter: BGP speaker state machine, RIBs, route selection, route export
+   ├─ RouterFactory: experiment-wide router class registration and construction
    ├─ ThreadPool: asynchronous delivery workers and convergence idle detection
    ├─ BmpLogManager: BMP-like JSON Lines writer, SQLite history store and live buffer
    └─ BgpTypes: protocol messages, route attributes, config and snapshot structs
@@ -32,12 +33,13 @@ The intended dependency direction is one-way. Peripheral code may depend on the 
 
 1. The CLI finds a topology file from `--topology` or the executable directory's `topo/` folder.
 2. `TopologyJson` parses the JSON into plain `TopologyConfig` structs.
-3. `TopoManager` validates topology consistency, builds all `BgpRouter` instances, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
-4. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
-5. `TopoManager::sendMessage` and `TopoManager::sendMessages` are the only message transport paths. They check router/link state, assign sequence numbers, apply MRAI/link delay through the worker pool, recheck delivery state immediately before receipt, record each BMP receive event, then deliver the whole surviving batch to the destination router.
-6. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, 1000ms)`; MRAI-delayed UPDATEs are included because delayed MRAI work remains queued until it runs.
-7. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
-8. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
+3. `main.cpp` chooses the experiment-wide router class from `--router-class` or `simulation.router_class`; in an interactive console with multiple registered classes, it offers a startup selection prompt.
+4. `TopoManager` validates topology consistency, builds all router instances through `RouterFactory` using the selected router class, derives missing link-backed neighbors, creates the runtime link table, starts the thread pool and initializes the BMP JSONL/SQLite log manager.
+5. Each router starts by sending OPEN messages to enabled neighbors. Receiving OPEN establishes the simulated session, and routers then exchange UPDATE messages. KEEPALIVE and hold-timer liveness are intentionally not simulated; link/node state changes drive neighbor availability.
+6. `TopoManager::sendMessage` and `TopoManager::sendMessages` are the only message transport paths. They check router/link state, assign sequence numbers, apply MRAI/link delay through the worker pool, recheck delivery state immediately before receipt, record each BMP receive event, then deliver the whole surviving batch to the destination router.
+7. Convergence is detected when the thread pool remains idle for a quiet window. The quiet window is `max(convergence_quiet_ms, 1000ms)`; MRAI-delayed UPDATEs are included because delayed MRAI work remains queued until it runs.
+8. In an interactive console, `TopoSimulator.exe` starts the ImGui BMP viewer in a separate thread so live convergence events can be filtered while the CLI remains usable.
+9. After initial convergence, the CLI accepts runtime changes such as link up/down, node up/down, prefix advertise/withdraw and explicit convergence waits.
 
 ### Core Simulation Model
 
@@ -63,7 +65,7 @@ Policy hooks such as import policy, export policy, route transformation and best
 
 ### Extension Philosophy
 
-The base router is intentionally virtual at the protocol decision points. Custom protocol experiments should usually subclass `BgpRouter` and override import policy, export policy, route transformation, message handlers or best-route selection. `TopoManager` should remain responsible for topology lifecycle and message transport, so custom BGP behavior can evolve without duplicating simulation infrastructure.
+The base router is intentionally virtual at the protocol decision points. Custom protocol experiments should usually subclass `BgpRouter`, register the subclass with `RouterFactory`, then select it with `simulation.router_class` or `--router-class`. `TopoManager` should remain responsible for topology lifecycle and message transport, so custom BGP behavior can evolve without duplicating simulation infrastructure.
 
 New peripheral features should be added outside the core. For example, a different topology file format should become another adapter that produces `TopologyConfig`; a different UI should call `TopoManager`; a different snapshot output format should transform the standard snapshot structs.
 
@@ -146,7 +148,7 @@ Each run creates a directory below `tmp/` and writes both `bmp_collector.log` an
 
 The simulator accepts:
 
-- `simulation`: run name, log directory, worker count and convergence quiet period.
+- `simulation`: run name, log directory, worker count, convergence quiet period and experiment-wide router class.
 - `routers`: router id, BGP router-id, ASN, cluster id, originated prefixes and optional neighbors.
 - `links`: physical/logical connectivity, state and delivery delay.
 
@@ -228,26 +230,43 @@ protected:
 } // namespace toposim
 ```
 
-To use the custom router, add the header/source under `include/toposim/` and `src/`. If you add a `.cpp` file, list it in the `toposim` target in `CMakeLists.txt`. Then include the custom router in `src/TopoManager.cpp` and choose it in `TopoManager::buildRouters`:
+To use the custom router, add the header/source under `include/toposim/` and `src/`. If you add a `.cpp` file, list it in the `toposim` target in `CMakeLists.txt`. `TopoSimulator.exe` and `TopoSimulatorTests.exe` link the core library with MSVC whole-archive mode, so self-registration objects in custom router source files are retained. Then register the class once, usually in the custom router's `.cpp` file:
 
 ```cpp
 #include "toposim/LabRouter.hpp"
+#include "toposim/RouterFactory.hpp"
 
-void TopoManager::buildRouters() {
-  for (const auto &router_config : config_.routers) {
-    std::shared_ptr<BgpRouter> router;
-    if (router_config.id.starts_with("LAB")) {
-      router = std::make_shared<LabRouter>(router_config);
-    } else {
-      router = std::make_shared<BgpRouter>(router_config);
-    }
-    router->attachManager(this);
-    routers_[router_config.id] = std::move(router);
+namespace {
+
+const bool registered_lab_router = [] {
+  toposim::registerRouterClass(
+      "LabRouter", [](toposim::RouterConfig config) {
+        return std::make_shared<toposim::LabRouter>(std::move(config));
+      });
+  return true;
+}();
+
+} // namespace
+```
+
+Select the router class in the topology file:
+
+```json
+{
+  "simulation": {
+    "name": "lab",
+    "router_class": "LabRouter"
   }
 }
 ```
 
-For one experiment, branching by router id, ASN or cluster id is usually enough. If many router families are needed, add an explicit field to `RouterConfig` and the topology JSON, then centralize construction in a small router factory.
+Or override it for one run:
+
+```powershell
+.\TopoSimulator.exe --topology testtopology.json --router-class LabRouter
+```
+
+The selected class is experiment-wide: every router in that `TopoManager` run is constructed with the same registered class. The built-in class name is `BgpRouter`.
 
 The override hooks are called outside the router's internal mutex. Avoid storing references to route candidates after the function returns, and prefer returning modified copies. Use the protected `sendMessage` helper only when implementing new message behavior that should still go through `TopoManager`, BMP logging and delivery checks.
 

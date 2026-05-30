@@ -25,6 +25,7 @@ add_library(toposim
     src/BmpLogManager.cpp
     src/BgpRouter.cpp
     src/BgpTypes.cpp
+    src/RouterFactory.cpp
     src/ThreadPool.cpp
     src/TopoManager.cpp
 )
@@ -62,6 +63,7 @@ target_link_libraries(TopoSimulator
         d3d11
         dxgi
 )
+target_link_options(TopoSimulator PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:toposim>")
 target_compile_options(TopoSimulator PRIVATE /W4 /permissive-)
 
 add_custom_command(TARGET TopoSimulator POST_BUILD
@@ -86,6 +88,7 @@ target_compile_options(BmpLogViewer PRIVATE /W4 /permissive-)
 
 add_executable(TopoSimulatorTests tests/core_tests.cpp)
 target_link_libraries(TopoSimulatorTests PRIVATE toposim)
+target_link_options(TopoSimulatorTests PRIVATE "/WHOLEARCHIVE:$<TARGET_FILE:toposim>")
 target_compile_options(TopoSimulatorTests PRIVATE /W4 /permissive-)
 
 add_test(NAME TopoSimulatorTests COMMAND TopoSimulatorTests)

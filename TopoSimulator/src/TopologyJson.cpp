@@ -201,6 +201,7 @@ void to_json(nlohmann::json &j, const SimulationConfig &config) {
       {"log_dir", config.log_dir},
       {"worker_threads", config.worker_threads},
       {"convergence_quiet_ms", config.convergence_quiet_ms},
+      {"router_class", config.router_class},
   };
 }
 
@@ -209,6 +210,7 @@ void from_json(const nlohmann::json &j, SimulationConfig &config) {
   getIfPresent(j, "log_dir", config.log_dir);
   getIfPresent(j, "worker_threads", config.worker_threads);
   getIfPresent(j, "convergence_quiet_ms", config.convergence_quiet_ms);
+  getIfPresent(j, "router_class", config.router_class);
 }
 
 void to_json(nlohmann::json &j, const TopologyConfig &config) {
