@@ -1,0 +1,72 @@
+{
+  "simulation": {
+    "name": "rr-ebgp-demo",
+    "log_dir": "tmp",
+    "convergence_quiet_ms": 1000
+  },
+  "routers": [
+    {
+      "id": "RR1",
+      "router_id": "10.0.0.1",
+      "asn": 65000,
+      "cluster_id": "10.0.0.1",
+      "originated_prefixes": [],
+      "position": {"x": 420, "y": 220}
+    },
+    {
+      "id": "C1",
+      "router_id": "10.0.0.2",
+      "asn": 65000,
+      "cluster_id": "10.0.0.2",
+      "originated_prefixes": ["10.1.0.0/24"],
+      "position": {"x": 180, "y": 430}
+    },
+    {
+      "id": "C2",
+      "router_id": "10.0.0.3",
+      "asn": 65000,
+      "cluster_id": "10.0.0.3",
+      "originated_prefixes": ["10.2.0.0/24"],
+      "position": {"x": 660, "y": 430}
+    },
+    {
+      "id": "EDGE",
+      "router_id": "10.0.0.4",
+      "asn": 65000,
+      "cluster_id": "10.0.0.4",
+      "originated_prefixes": [],
+      "position": {"x": 420, "y": 570}
+    },
+    {
+      "id": "ISP",
+      "router_id": "10.1.0.1",
+      "asn": 65100,
+      "cluster_id": "10.1.0.1",
+      "originated_prefixes": ["192.0.2.0/24"],
+      "position": {"x": 420, "y": 780}
+    }
+  ],
+  "links": [
+    {
+      "a": "RR1", "b": "C1", "enabled": true, "delay_ms": 5,
+      "rr_client_from_a": true, "rr_client_from_b": false,
+      "mrai_ms_from_a": 100, "mrai_ms_from_b": 100
+    },
+    {
+      "a": "RR1", "b": "C2", "enabled": true, "delay_ms": 5,
+      "rr_client_from_a": true, "rr_client_from_b": false,
+      "mrai_ms_from_a": 100, "mrai_ms_from_b": 100
+    },
+    {
+      "a": "RR1", "b": "EDGE", "enabled": true, "delay_ms": 8,
+      "rr_client_from_a": true, "rr_client_from_b": false,
+      "mrai_ms_from_a": 100, "mrai_ms_from_b": 100
+    },
+    {
+      "a": "EDGE", "b": "ISP", "enabled": true, "delay_ms": 20,
+      "rr_client_from_a": false, "rr_client_from_b": false,
+      "mrai_ms_from_a": 250, "mrai_ms_from_b": 250
+    }
+  ]
+}
+

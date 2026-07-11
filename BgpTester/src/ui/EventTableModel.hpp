@@ -1,0 +1,55 @@
+#pragma once
+
+#include "engine/BgpTypes.hpp"
+
+#include <QAbstractTableModel>
+#include <QVector>
+
+namespace bgptester {
+
+class EventTableModel final : public QAbstractTableModel {
+  Q_OBJECT
+
+public:
+  enum Column {
+    Id,
+    Time,
+    Event,
+    Router,
+    From,
+    To,
+    FromAs,
+    ToAs,
+    MessageType,
+    Action,
+    Sequence,
+    Prefixes,
+    Withdrawn,
+    NextHop,
+    AsPath,
+    LocalPref,
+    Med,
+    ColumnCount
+  };
+
+  explicit EventTableModel(QObject *parent = nullptr);
+
+  [[nodiscard]] int rowCount(const QModelIndex &parent = {}) const override;
+  [[nodiscard]] int columnCount(const QModelIndex &parent = {}) const override;
+  [[nodiscard]] QVariant data(const QModelIndex &index,
+                              int role = Qt::DisplayRole) const override;
+  [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation,
+                                    int role) const override;
+
+  void appendEvent(const SimulationEvent &event);
+  void setEvents(QVector<SimulationEvent> events);
+  void clear();
+  [[nodiscard]] const SimulationEvent *eventAt(int row) const;
+
+private:
+  QVector<SimulationEvent> events_;
+  static constexpr qsizetype capacity_ = 20000;
+};
+
+} // namespace bgptester
+
