@@ -1,6 +1,6 @@
 # BgpTester
 
-`BgpTester` 是将原 `TopoGenerator` 与 `TopoSimulator` 完整合并后的 Qt 6 / C++20 桌面程序。拓扑编辑、BGP 仿真、运行时扰动、RIB/Peer 检查、路径高亮和 BMP 风格日志浏览都位于同一窗口。
+`BgpTester` 是统一完成拓扑编辑与 BGP 测试的 Qt 6 / C++20 桌面程序。拓扑编辑、BGP 仿真、运行时扰动、RIB/Peer 检查、路径高亮和 BMP 风格日志浏览都位于同一窗口。
 
 ## 依赖
 

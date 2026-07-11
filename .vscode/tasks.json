@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "TopoSimulator: build Debug",
+      "label": "BgpTester: build Debug",
       "type": "shell",
       "command": "powershell.exe",
       "args": [
@@ -10,7 +10,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\TopoSimulator\\build.ps1",
+        "${workspaceFolder}\\BgpTester\\build.ps1",
         "-Configuration",
         "Debug"
       ],
@@ -24,7 +24,7 @@
       }
     },
     {
-      "label": "TopoSimulator: build Release",
+      "label": "BgpTester: build Release",
       "type": "shell",
       "command": "powershell.exe",
       "args": [
@@ -32,7 +32,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-File",
-        "${workspaceFolder}\\TopoSimulator\\build.ps1",
+        "${workspaceFolder}\\BgpTester\\build.ps1",
         "-Configuration",
         "Release"
       ],

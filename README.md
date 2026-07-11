@@ -1,8 +1,6 @@
 # BGP 网络测试框架
 
-当前实现是 [`BgpTester/`](BgpTester/)：一个使用 C++20 与 Qt 6 完整重写的统一桌面程序。它将原来的 Python/PyQt `TopoGenerator` 和 C++/ImGui/CLI `TopoSimulator` 合并到同一个进程、同一个工程和同一个窗口中。
-
-旧的 `TopoGenerator/` 与 `TopoSimulator/` 目录仅作为历史实现保留；新程序不链接、调用或依赖其中的任何代码。
+当前实现是 [`BgpTester/`](BgpTester/)：一个使用 C++20 与 Qt 6 编写的统一桌面程序。拓扑编辑、BGP 仿真、运行时控制和日志查看均位于同一个进程、工程与窗口中。
 
 ## BgpTester 功能
 
@@ -40,7 +38,5 @@ cd BgpTester
 ```text
 .
 ├─ BgpTester/       # 当前 Qt 6 / C++20 统一实现
-├─ TopoGenerator/   # 历史 Python/PyQt 实现，仅供参考
-├─ TopoSimulator/   # 历史 C++/ImGui/CLI 实现，仅供参考
 └─ misc/            # RFC 与实验辅助文件
 ```

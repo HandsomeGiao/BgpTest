@@ -2,19 +2,17 @@
   "version": 4,
   "configurations": [
     {
-      "name": "TopoSimulator CMake",
+      "name": "BgpTester CMake",
       "configurationProvider": "ms-vscode.cmake-tools",
       "intelliSenseMode": "windows-msvc-x64",
       "cppStandard": "c++20",
       "cStandard": "c17",
       "includePath": [
-        "${workspaceFolder}/TopoSimulator/include",
-        "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include"
+        "${workspaceFolder}/BgpTester/src"
       ],
       "browse": {
         "path": [
-          "${workspaceFolder}/TopoSimulator/include",
-          "${workspaceFolder}/TopoSimulator/build/vcpkg_installed/x64-windows/include"
+          "${workspaceFolder}/BgpTester/src"
         ],
         "limitSymbolsToIncludedHeaders": true
       },
