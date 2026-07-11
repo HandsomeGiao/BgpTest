@@ -1,5 +1,6 @@
 #include "engine/SimulationEngine.hpp"
 #include "persistence/EventStore.hpp"
+#include "plugin/RouterPluginRegistry.hpp"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -46,13 +47,17 @@ Topology twoRouterTopology(int mraiMs = 0, bool sameAs = false) {
                   .asn = 65001,
                   .clusterId = QStringLiteral("10.0.0.1"),
                   .originatedPrefixes = {QStringLiteral("203.0.113.0/24")},
-                  .position = QPointF(100, 100)};
+                  .position = QPointF(100, 100),
+                  .pluginId = StandardRouterPluginId,
+                  .pluginSettings = {}};
   RouterConfig r2{.id = QStringLiteral("R2"),
                   .routerId = QStringLiteral("10.0.0.2"),
                   .asn = sameAs ? 65001U : 65002U,
                   .clusterId = QStringLiteral("10.0.0.2"),
                   .originatedPrefixes = {},
-                  .position = QPointF(300, 100)};
+                  .position = QPointF(300, 100),
+                  .pluginId = StandardRouterPluginId,
+                  .pluginSettings = {}};
   topology.routers.insert(r1.id, r1);
   topology.routers.insert(r2.id, r2);
   topology.links.append(LinkConfig{.a = r1.id,
@@ -68,6 +73,10 @@ void topologyRoundTripPreservesDirectionalFields() {
   topology.links[0].rrClientFromA = true;
   topology.links[0].rrClientFromB = false;
   topology.links[0].mraiMsFromB = 456;
+  topology.routers[QStringLiteral("R1")].pluginId =
+      QStringLiteral("org.example.round-trip");
+  topology.routers[QStringLiteral("R1")].pluginSettings =
+      QJsonObject{{QStringLiteral("preference"), 321}};
   QString error;
   const auto parsed = Topology::fromJson(topology.toJson(), &error);
   require(parsed.has_value(), "topology JSON round trip failed");
@@ -78,6 +87,11 @@ void topologyRoundTripPreservesDirectionalFields() {
           "round trip lost directional RR flags");
   require(link.mraiMsFromA == 123 && link.mraiMsFromB == 456,
           "round trip lost directional MRAI values");
+  const auto &router = parsed->routers.value(QStringLiteral("R1"));
+  require(router.pluginId == QStringLiteral("org.example.round-trip") &&
+              router.pluginSettings.value(QStringLiteral("preference"))
+                      .toInt() == 321,
+          "round trip lost router plugin configuration");
 }
 
 void topologyValidationRejectsBrokenData() {
@@ -88,6 +102,20 @@ void topologyValidationRejectsBrokenData() {
   const auto problems = topology.validate();
   require(problems.size() >= 2,
           "validation did not reject duplicate router id and link");
+}
+
+void missingRouterPluginPreventsSimulationStart() {
+  auto topology = twoRouterTopology();
+  topology.routers[QStringLiteral("R1")].pluginId =
+      QStringLiteral("org.example.missing");
+  QString error;
+  SimulationEngine engine;
+  QObject::connect(&engine, &SimulationEngine::errorOccurred,
+                   [&error](const QString &message) { error = message; });
+  engine.startSimulation(topology);
+  require(!engine.isRunning() &&
+              error.contains(QStringLiteral("org.example.missing")),
+          "missing router plugin did not prevent simulation start");
 }
 
 void ebgpRoutesPropagateAndWithdraw() {
@@ -182,6 +210,64 @@ void staleMraiAdvertisementDoesNotReappear() {
   engine.stopSimulation();
 }
 
+void dynamicRouterPluginControlsRouteExport() {
+  QString error;
+  const auto pluginPath =
+      QDir::fromNativeSeparators(QStringLiteral(BGPTESTER_TEST_PLUGIN_PATH));
+  require(RouterPluginRegistry::instance().loadPlugin(pluginPath, &error),
+          error.toUtf8().constData());
+  require(RouterPluginRegistry::instance().contains(
+              QStringLiteral("org.bgptester.example.configurable-export")),
+          "dynamic router plugin was not registered");
+
+  auto topology = twoRouterTopology();
+  auto &customRouter = topology.routers[QStringLiteral("R1")];
+  customRouter.pluginId =
+      QStringLiteral("org.bgptester.example.configurable-export");
+  customRouter.pluginSettings =
+      QJsonObject{{QStringLiteral("export_routes"), false},
+                  {QStringLiteral("local_preference"), 250}};
+
+  SimulationEngine engine;
+  engine.startSimulation(topology);
+  require(waitFor([&] { return engine.isConverged(); }, 1500),
+          "custom router topology did not converge");
+  require(engine.ribSnapshot(QStringLiteral("R1"))
+              .locRib.contains(QStringLiteral("203.0.113.0/24")),
+          "custom router did not install its local route");
+  require(!engine.ribSnapshot(QStringLiteral("R2"))
+               .locRib.contains(QStringLiteral("203.0.113.0/24")),
+          "custom router ignored export_routes=false");
+  engine.stopSimulation();
+
+  customRouter.pluginSettings[QStringLiteral("export_routes")] = true;
+  engine.startSimulation(topology);
+  require(waitFor(
+              [&] {
+                return engine.ribSnapshot(QStringLiteral("R2"))
+                    .locRib.contains(QStringLiteral("203.0.113.0/24"));
+              },
+              1500),
+          "custom router did not export routes when enabled");
+  const auto route = engine.ribSnapshot(QStringLiteral("R2"))
+                         .locRib.value(QStringLiteral("203.0.113.0/24"));
+  require(route.attributes.localPref == 250,
+          "custom router settings did not affect route attributes");
+  engine.stopSimulation();
+
+  QString startError;
+  QObject::connect(&engine, &SimulationEngine::errorOccurred,
+                   [&startError](const QString &message) {
+                     startError = message;
+                   });
+  customRouter.pluginSettings[QStringLiteral("export_routes")] =
+      QStringLiteral("not-a-boolean");
+  engine.startSimulation(topology);
+  require(!engine.isRunning() &&
+              startError.contains(QStringLiteral("export_routes")),
+          "invalid plugin configuration did not prevent simulation start");
+}
+
 void eventStoreWritesJsonAndSqlite() {
   QTemporaryDir directory(
       QDir::current().filePath(QStringLiteral("event-store-test-XXXXXX")));
@@ -227,9 +313,11 @@ int main(int argc, char **argv) {
   try {
     topologyRoundTripPreservesDirectionalFields();
     topologyValidationRejectsBrokenData();
+    missingRouterPluginPreventsSimulationStart();
     ebgpRoutesPropagateAndWithdraw();
     routeReflectorPropagatesClientRoute();
     staleMraiAdvertisementDoesNotReappear();
+    dynamicRouterPluginControlsRouteExport();
     eventStoreWritesJsonAndSqlite();
   } catch (const std::exception &error) {
     std::cerr << "FAILED: " << error.what() << '\n';

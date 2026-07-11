@@ -644,6 +644,7 @@ void MainWindow::startSimulation() {
   runtimeLinks_.clear();
   scene_->clearRuntimeState();
   startAction_->setEnabled(false);
+  simulationStartPending_ = true;
   const auto copy = topology_;
   QMetaObject::invokeMethod(
       engine_, [engine = engine_, copy] { engine->startSimulation(copy); },
@@ -657,6 +658,7 @@ void MainWindow::stopSimulation() {
 }
 
 void MainWindow::onRunningChanged(bool running) {
+  simulationStartPending_ = false;
   simulationRunning_ = running;
   scene_->setEditable(!running);
   updateEditorActions();
@@ -736,6 +738,13 @@ void MainWindow::onLinkRuntimeState(const QString &a, const QString &b,
 }
 
 void MainWindow::onEngineError(const QString &message) {
+  if (simulationStartPending_) {
+    simulationStartPending_ = false;
+    eventStore_->endRun();
+    updateEditorActions();
+    simulationStatusLabel_->setText(QStringLiteral("● 启动失败"));
+    simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#b02a37"));
+  }
   QMessageBox::critical(this, QStringLiteral("仿真错误"), message);
 }
 
@@ -1109,13 +1118,17 @@ Topology MainWindow::starterTopology() {
                   .asn = 65001,
                   .clusterId = QStringLiteral("10.0.0.1"),
                   .originatedPrefixes = {QStringLiteral("10.1.0.0/24")},
-                  .position = QPointF(180, 220)};
+                  .position = QPointF(180, 220),
+                  .pluginId = StandardRouterPluginId,
+                  .pluginSettings = {}};
   RouterConfig r2{.id = QStringLiteral("R2"),
                   .routerId = QStringLiteral("10.0.0.2"),
                   .asn = 65002,
                   .clusterId = QStringLiteral("10.0.0.2"),
                   .originatedPrefixes = {QStringLiteral("10.2.0.0/24")},
-                  .position = QPointF(450, 220)};
+                  .position = QPointF(450, 220),
+                  .pluginId = StandardRouterPluginId,
+                  .pluginSettings = {}};
   topology.routers.insert(r1.id, r1);
   topology.routers.insert(r2.id, r2);
   topology.links.append(LinkConfig{.a = r1.id, .b = r2.id, .delayMs = 10});

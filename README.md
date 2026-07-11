@@ -7,6 +7,7 @@
 - 可视化添加、编辑、拖动和删除路由器与链路；
 - AS 分组框、RR 标记、方向性 RR Client/MRAI 与链路状态可视化；
 - JSON 拓扑加载、保存与旧拓扑方向字段读取；
+- 节点级路由器插件、动态加载与插件私有 JSON 配置；
 - 事件驱动 BGP OPEN、UPDATE、NOTIFICATION 仿真；
 - Adj-RIB-In、Loc-RIB、Adj-RIB-Out、EBGP、IBGP 和基础 Route Reflector；
 - LOCAL_PREF、AS_PATH、MED、会话类型、旧路径稳定性与确定性 tie-break 选路；
@@ -14,7 +15,7 @@
 - 运行时节点/链路上下线、前缀发布/撤销与收敛状态；
 - 最佳路由、全部路径、Peer 状态检查以及画布逐跳路径高亮；
 - BMP 风格实时事件表、全列过滤、JSON 详情、JSONL 和 SQLite 历史日志；
-- 核心回归测试，覆盖 JSON、校验、EBGP、RR、MRAI 与日志持久化。
+- 核心回归测试，覆盖 JSON、校验、EBGP、RR、MRAI、动态插件与日志持久化。
 
 ## 构建
 

@@ -1,12 +1,17 @@
 #include "ui/Dialogs.hpp"
 
+#include "plugin/RouterPluginRegistry.hpp"
+
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QJsonDocument>
+#include <QJsonParseError>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
@@ -35,11 +40,57 @@ RouterDialog::RouterDialog(const RouterConfig &router,
   prefixesEdit_->setAcceptRichText(false);
   prefixesEdit_->setPlainText(router.originatedPrefixes.join(u'\n'));
   prefixesEdit_->setMinimumHeight(110);
+  pluginCombo_ = new QComboBox(this);
+  for (const auto &plugin : RouterPluginRegistry::instance().plugins()) {
+    pluginCombo_->addItem(
+        QStringLiteral("%1  (%2)")
+            .arg(plugin.metadata.displayName, plugin.metadata.id),
+        plugin.metadata.id);
+  }
+  auto pluginIndex = pluginCombo_->findData(router.pluginId);
+  if (pluginIndex < 0) {
+    pluginCombo_->addItem(
+        QStringLiteral("未加载：%1").arg(router.pluginId), router.pluginId);
+    pluginIndex = pluginCombo_->count() - 1;
+  }
+  pluginCombo_->setCurrentIndex(pluginIndex);
+  pluginDescriptionLabel_ = new QLabel(this);
+  pluginDescriptionLabel_->setWordWrap(true);
+  pluginDescriptionLabel_->setTextInteractionFlags(
+      Qt::TextSelectableByMouse);
+  pluginSettingsEdit_ = new QTextEdit(this);
+  pluginSettingsEdit_->setAcceptRichText(false);
+  pluginSettingsEdit_->setMinimumHeight(90);
+  pluginSettingsEdit_->setPlainText(QString::fromUtf8(
+      QJsonDocument(router.pluginSettings).toJson(QJsonDocument::Indented)));
+
+  const auto updateDescription = [this] {
+    const auto id = pluginCombo_->currentData().toString();
+    const auto metadata = RouterPluginRegistry::instance().metadata(id);
+    pluginDescriptionLabel_->setText(
+        metadata ? metadata->description
+                 : QStringLiteral("该插件当前未加载；拓扑可以保存，但无法启动仿真。"));
+  };
+  updateDescription();
+  connect(pluginCombo_, &QComboBox::activated, this,
+          [this, updateDescription](int) {
+            updateDescription();
+            const auto metadata = RouterPluginRegistry::instance().metadata(
+                pluginCombo_->currentData().toString());
+            if (metadata) {
+              pluginSettingsEdit_->setPlainText(QString::fromUtf8(
+                  QJsonDocument(metadata->defaultSettings)
+                      .toJson(QJsonDocument::Indented)));
+            }
+          });
   form->addRow(QStringLiteral("节点 ID"), idEdit_);
   form->addRow(QStringLiteral("BGP Router ID"), routerIdEdit_);
   form->addRow(QStringLiteral("ASN"), asnEdit_);
   form->addRow(QStringLiteral("Cluster ID"), clusterIdEdit_);
   form->addRow(QStringLiteral("本地起源前缀（每行一个）"), prefixesEdit_);
+  form->addRow(QStringLiteral("路由器插件"), pluginCombo_);
+  form->addRow(QStringLiteral("插件说明"), pluginDescriptionLabel_);
+  form->addRow(QStringLiteral("插件配置（JSON 对象）"), pluginSettingsEdit_);
   layout->addLayout(form);
   auto *buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -64,6 +115,12 @@ RouterConfig RouterDialog::router() const {
       result.originatedPrefixes.append(prefix);
     }
   }
+  result.pluginId = pluginCombo_->currentData().toString().trimmed();
+  const auto settingsDocument = QJsonDocument::fromJson(
+      pluginSettingsEdit_->toPlainText().trimmed().toUtf8());
+  if (settingsDocument.isObject()) {
+    result.pluginSettings = settingsDocument.object();
+  }
   return result;
 }
 
@@ -82,6 +139,20 @@ void RouterDialog::accept() {
       asn > std::numeric_limits<quint32>::max()) {
     QMessageBox::warning(this, QStringLiteral("输入无效"),
                          QStringLiteral("ASN 必须在 1 到 4294967295 之间。"));
+    return;
+  }
+  QJsonParseError settingsError;
+  const auto settingsDocument = QJsonDocument::fromJson(
+      pluginSettingsEdit_->toPlainText().trimmed().toUtf8(), &settingsError);
+  if (settingsError.error != QJsonParseError::NoError ||
+      !settingsDocument.isObject()) {
+    QMessageBox::warning(
+        this, QStringLiteral("输入无效"),
+        settingsError.error == QJsonParseError::NoError
+            ? QStringLiteral("插件配置必须是 JSON 对象。")
+            : QStringLiteral("插件配置 JSON 无效（偏移 %1）：%2")
+                  .arg(settingsError.offset)
+                  .arg(settingsError.errorString()));
     return;
   }
   Topology topology;
@@ -190,4 +261,3 @@ void SimulationSettingsDialog::accept() {
 }
 
 } // namespace bgptester
-

@@ -47,6 +47,9 @@ ctest --test-dir build --output-on-failure
 - `Q` 或“添加链路”：依次单击两台路由器，设置链路延迟、两个方向的 MRAI 与 RR Client 关系。
 - `V` 返回选择模式；拖动路由器可调整布局，右键/中键拖动画布，滚轮缩放。
 - 双击路由器或链路可编辑；Delete 删除所选对象。
+- 路由器属性中的“路由器插件”可为每个节点选择不同实现，并以 JSON
+  对象保存该插件的私有配置。
+- 使用非内置插件的节点会显示蓝色 `P` 徽标，悬停可查看插件 ID。
 - 同一 AS 的节点会自动显示在同色分组框中，带 `RR` 徽标的节点至少配置了一个 RR Client。
 
 ### 运行仿真
@@ -69,6 +72,40 @@ ctest --test-dir build --output-on-failure
 - 每邻居 MRAI，withdrawal 立即发送；延迟队列使用 generation guard，旧 UPDATE 不会复活已撤销路由；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定。
 
+## 路由器插件
+
+仿真引擎只管理事件队列、链路、BGP 会话传输和 RIB；每个节点对应一个
+`RouterNode` 插件实例。插件控制以下策略点：
+
+- 本地起源路由的创建；
+- UPDATE 入站接受、拒绝与属性修改；
+- 候选路由的最佳路径选择；
+- 面向每个邻居的出口过滤与属性变换；
+- 仿真启动/停止及 Peer 状态通知。
+
+公共接口位于 `src/plugin/RouterPlugin.hpp`。插件工厂需实现
+`RouterNodePlugin`，并声明：
+
+```cpp
+Q_PLUGIN_METADATA(IID BGPTESTER_ROUTER_PLUGIN_IID)
+Q_INTERFACES(bgptester::RouterNodePlugin)
+```
+
+完整、可独立构建的实现见
+`examples/router-plugin/ConfigurableExportRouterPlugin.cpp`。插件必须使用与
+BgpTester 相同的 Qt、编译器、CPU 架构和 C++ ABI，且不得让异常越过插件
+边界。
+
+程序启动时会从以下位置加载动态库：
+
+- `BgpTester.exe` 同目录下的 `plugins/routers/`；
+- `BgpTester.exe` 同目录下的 `router-plugins/`；
+- `--router-plugin-dir <目录>` 指定的目录（参数可重复）；
+- `BGPTESTER_ROUTER_PLUGIN_PATH` 环境变量中的目录列表。
+
+插件 ID 在进程内必须唯一，API 版本当前为 `1`。插件缺失、ID 重复、API
+版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
+
 ### 日志
 
 每次运行在 `<log_dir>/<实验名>_<时间>/` 下生成：
@@ -87,5 +124,15 @@ ctest --test-dir build --output-on-failure
 - `rr_client_from_b` / `mrai_ms_from_b`：反方向。
 
 保存时会同时生成每台路由器的 `neighbors` 数组，便于人工阅读。加载旧拓扑时也会读取其中的方向性 MRAI/RR 字段。
+
+每台路由器可使用独立插件；旧拓扑未提供 `plugin` 时自动使用内置标准
+BGP 插件：
+
+```json
+"plugin": {
+  "id": "org.bgptester.router.standard-bgp",
+  "settings": {}
+}
+```
 
 示例见 `topo/sample_topology.json`。

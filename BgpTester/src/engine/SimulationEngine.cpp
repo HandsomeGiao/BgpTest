@@ -1,48 +1,17 @@
 #include "engine/SimulationEngine.hpp"
 
+#include "plugin/RouterPluginRegistry.hpp"
+
 #include <QCoreApplication>
 #include <QHostAddress>
 #include <QThread>
 
 #include <algorithm>
 #include <limits>
-#include <tuple>
 #include <utility>
 
 namespace bgptester {
 namespace {
-
-bool primaryBetter(const RouteEntry &lhs, const RouteEntry &rhs) {
-  if (lhs.localOrigin != rhs.localOrigin) {
-    return lhs.localOrigin;
-  }
-  if (lhs.attributes.localPref != rhs.attributes.localPref) {
-    return lhs.attributes.localPref > rhs.attributes.localPref;
-  }
-  if (lhs.attributes.asPath.size() != rhs.attributes.asPath.size()) {
-    return lhs.attributes.asPath.size() < rhs.attributes.asPath.size();
-  }
-  if (lhs.attributes.med != rhs.attributes.med) {
-    return lhs.attributes.med < rhs.attributes.med;
-  }
-  if (lhs.sourceSession != rhs.sourceSession) {
-    return lhs.sourceSession == SessionType::Ebgp;
-  }
-  return false;
-}
-
-bool samePrimaryPreference(const RouteEntry &lhs, const RouteEntry &rhs) {
-  return lhs.localOrigin == rhs.localOrigin &&
-         lhs.attributes.localPref == rhs.attributes.localPref &&
-         lhs.attributes.asPath.size() == rhs.attributes.asPath.size() &&
-         lhs.attributes.med == rhs.attributes.med &&
-         lhs.sourceSession == rhs.sourceSession;
-}
-
-bool deterministicBetter(const RouteEntry &lhs, const RouteEntry &rhs) {
-  return std::tie(lhs.attributes.nextHop, lhs.learnedFrom) <
-         std::tie(rhs.attributes.nextHop, rhs.learnedFrom);
-}
 
 bool advertisedRouteEqual(const RouteEntry &lhs, const RouteEntry &rhs) {
   return lhs.prefix == rhs.prefix && lhs.attributes == rhs.attributes;
@@ -100,13 +69,22 @@ void SimulationEngine::startSimulation(Topology topology) {
     return;
   }
 
-  topology_ = std::move(topology);
   clearRuntime();
+  topology_ = std::move(topology);
+  QString pluginError;
+  if (!buildRuntime(&pluginError)) {
+    clearRuntime();
+    emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(pluginError));
+    return;
+  }
   clock_.start();
   lastActivityAt_ = 0;
   running_ = true;
   converged_ = false;
-  buildRuntime();
+  for (auto &router : routers_) {
+    router.node->simulationStarted();
+    router.node->routerStateChanged(true);
+  }
 
   emit runningChanged(true);
   emit convergenceChanged(false);
@@ -154,11 +132,14 @@ void SimulationEngine::stopSimulation() {
   events_ = {};
   for (auto &router : routers_) {
     router.active = false;
+    router.node->routerStateChanged(false);
     for (auto &peer : router.peers) {
       peer.state = PeerState::Idle;
+      router.node->peerStateChanged(peer.config, peer.state);
       peer.pending.clear();
       peer.flushScheduled = false;
     }
+    router.node->simulationStopped();
   }
   requestAllSnapshots();
   publishStats();
@@ -170,6 +151,10 @@ void SimulationEngine::clearRuntime() {
   eventTimer_->stop();
   statusTimer_->stop();
   events_ = {};
+  for (auto &router : routers_) {
+    delete router.node;
+    router.node = nullptr;
+  }
   routers_.clear();
   links_.clear();
   nextSequence_ = 0;
@@ -178,7 +163,10 @@ void SimulationEngine::clearRuntime() {
   deliveredMessages_ = 0;
 }
 
-void SimulationEngine::buildRuntime() {
+bool SimulationEngine::buildRuntime(QString *error) {
+  if (error) {
+    error->clear();
+  }
   for (auto it = topology_.routers.cbegin(); it != topology_.routers.cend();
        ++it) {
     RouterRuntime runtime;
@@ -190,12 +178,29 @@ void SimulationEngine::buildRuntime() {
       peer.nextMraiAt = neighbor.mraiMs;
       runtime.peers.insert(neighbor.id, peer);
     }
+    QString creationError;
+    runtime.node = RouterPluginRegistry::instance().createRouterNode(
+        runtime.config, topology_, this, &creationError);
+    if (!runtime.node) {
+      if (error) {
+        *error = creationError;
+      }
+      return false;
+    }
+    const auto configurationProblems = runtime.node->validateConfiguration();
+    if (!configurationProblems.isEmpty()) {
+      if (error) {
+        *error = QStringLiteral("路由器 %1 的插件配置无效：\n%2")
+                     .arg(runtime.config.id,
+                          configurationProblems.join(u'\n'));
+      }
+      delete runtime.node;
+      runtime.node = nullptr;
+      return false;
+    }
     for (const auto &prefix : runtime.config.originatedPrefixes) {
-      RouteEntry route;
+      auto route = runtime.node->createOriginatedRoute(prefix);
       route.prefix = prefix;
-      route.attributes.nextHop = runtime.config.routerId;
-      route.learnedFrom = runtime.config.id;
-      route.localOrigin = true;
       runtime.localRoutes.insert(prefix, route);
       runtime.locRib.insert(prefix, route);
     }
@@ -204,6 +209,7 @@ void SimulationEngine::buildRuntime() {
   for (const auto &link : topology_.links) {
     links_.insert(Topology::edgeKey(link.a, link.b), link);
   }
+  return true;
 }
 
 void SimulationEngine::armNextEvent() {
@@ -426,6 +432,7 @@ void SimulationEngine::sendOpen(const QString &from, const QString &to) {
   }
   if (peerIt->state != PeerState::Established) {
     peerIt->state = PeerState::OpenSent;
+    fromIt->node->peerStateChanged(peerIt->config, peerIt->state);
   }
   BgpMessage message;
   message.type = MessageType::Open;
@@ -451,6 +458,7 @@ void SimulationEngine::handleOpen(const BgpMessage &message) {
     notification.errorData = QStringLiteral("Bad Peer AS");
     scheduleMessages(message.to, message.from, {notification});
     peerIt->state = PeerState::Idle;
+    receiverIt->node->peerStateChanged(peerIt->config, peerIt->state);
     return;
   }
 
@@ -459,6 +467,7 @@ void SimulationEngine::handleOpen(const BgpMessage &message) {
     sendOpen(message.to, message.from);
   }
   peerIt->state = PeerState::Established;
+  receiverIt->node->peerStateChanged(peerIt->config, peerIt->state);
   if (!wasEstablished) {
     const auto routes = receiverIt->locRib;
     for (auto routeIt = routes.cbegin(); routeIt != routes.cend(); ++routeIt) {
@@ -490,29 +499,18 @@ void SimulationEngine::handleUpdateBatch(
       }
     }
     for (const auto &prefix : message.nlri) {
-      bool rejected = message.attributes.asPath.contains(routerIt->config.asn);
-      rejected = rejected ||
-                 (!message.attributes.originatorId.isEmpty() &&
-                  message.attributes.originatorId == routerIt->config.routerId);
-      const auto clusterId = routerIt->config.clusterId.isEmpty()
-                                 ? routerIt->config.routerId
-                                 : routerIt->config.clusterId;
-      rejected = rejected || message.attributes.clusterList.contains(clusterId);
-      if (rejected) {
+      auto imported = routerIt->node->importRoute(
+          prefix, message.attributes, peerIt->config);
+      if (!imported) {
         if (peerRoutes.remove(prefix) > 0) {
           changed.insert(prefix);
         }
         continue;
       }
-      RouteEntry route;
-      route.prefix = prefix;
-      route.attributes = message.attributes;
-      route.learnedFrom = sender;
-      route.sourceSession = peerIt->config.sessionType;
-      route.localOrigin = false;
+      imported->prefix = prefix;
       const auto old = peerRoutes.constFind(prefix);
-      if (old == peerRoutes.cend() || old.value() != route) {
-        peerRoutes.insert(prefix, route);
+      if (old == peerRoutes.cend() || old.value() != *imported) {
+        peerRoutes.insert(prefix, *imported);
         changed.insert(prefix);
       }
     }
@@ -536,6 +534,7 @@ void SimulationEngine::neighborDown(const QString &routerId,
     return;
   }
   peerIt->state = PeerState::Idle;
+  routerIt->node->peerStateChanged(peerIt->config, peerIt->state);
   peerIt->pending.clear();
   peerIt->flushScheduled = false;
   auto &generations = routerIt->outboundGenerations[peerId];
@@ -605,92 +604,17 @@ SimulationEngine::selectBest(const RouterRuntime &router,
       candidates.append(route.value());
     }
   }
-  if (candidates.isEmpty()) {
-    return std::nullopt;
+  const auto old = router.locRib.constFind(prefix);
+  const std::optional<RouteEntry> currentBest =
+      old == router.locRib.cend()
+          ? std::nullopt
+          : std::optional<RouteEntry>(old.value());
+  auto selected =
+      router.node->selectBestRoute(prefix, candidates, currentBest);
+  if (selected) {
+    selected->prefix = prefix;
   }
-
-  RouteEntry primaryBest = candidates.front();
-  for (const auto &candidate : candidates) {
-    if (primaryBetter(candidate, primaryBest)) {
-      primaryBest = candidate;
-    }
-  }
-
-  if (const auto old = router.locRib.constFind(prefix);
-      old != router.locRib.cend() &&
-      samePrimaryPreference(old.value(), primaryBest)) {
-    const auto stillPresent =
-        std::find(candidates.cbegin(), candidates.cend(), old.value());
-    if (stillPresent != candidates.cend()) {
-      return old.value();
-    }
-  }
-
-  RouteEntry result = primaryBest;
-  for (const auto &candidate : candidates) {
-    if (samePrimaryPreference(candidate, primaryBest) &&
-        deterministicBetter(candidate, result)) {
-      result = candidate;
-    }
-  }
-  return result;
-}
-
-bool SimulationEngine::exportAllowed(const RouterRuntime &router,
-                                     const RouteEntry &route,
-                                     const PeerRuntime &peer) const {
-  if (route.learnedFrom == peer.config.id) {
-    return false;
-  }
-  if (peer.config.sessionType == SessionType::Ebgp) {
-    return true;
-  }
-  if (route.localOrigin || route.sourceSession == SessionType::Ebgp) {
-    return true;
-  }
-  if (!hasRouteReflectorClients(router)) {
-    return false;
-  }
-  const auto learnedPeer = router.peers.constFind(route.learnedFrom);
-  const auto learnedFromClient =
-      learnedPeer != router.peers.cend() && learnedPeer->config.rrClient;
-  return learnedFromClient || peer.config.rrClient;
-}
-
-RouteEntry SimulationEngine::transformForPeer(const RouterRuntime &router,
-                                              const RouteEntry &route,
-                                              const PeerRuntime &peer) const {
-  RouteEntry result = route;
-  result.learnedFrom = router.config.id;
-  result.localOrigin = false;
-  result.sourceSession = peer.config.sessionType;
-  if (peer.config.sessionType == SessionType::Ebgp) {
-    result.attributes.asPath.prepend(router.config.asn);
-    result.attributes.nextHop = router.config.routerId;
-    result.attributes.originatorId.clear();
-    result.attributes.clusterList.clear();
-    return result;
-  }
-
-  if (result.attributes.nextHop.isEmpty()) {
-    result.attributes.nextHop = router.config.routerId;
-  }
-  if (route.sourceSession == SessionType::Ibgp && !route.localOrigin &&
-      hasRouteReflectorClients(router)) {
-    if (result.attributes.originatorId.isEmpty()) {
-      const auto learned = routers_.constFind(route.learnedFrom);
-      result.attributes.originatorId =
-          learned == routers_.cend() ? route.attributes.nextHop
-                                     : learned->config.routerId;
-    }
-    const auto clusterId = router.config.clusterId.isEmpty()
-                               ? router.config.routerId
-                               : router.config.clusterId;
-    if (!result.attributes.clusterList.contains(clusterId)) {
-      result.attributes.clusterList.append(clusterId);
-    }
-  }
-  return result;
+  return selected;
 }
 
 void SimulationEngine::disseminate(const QString &routerId,
@@ -709,8 +633,13 @@ void SimulationEngine::disseminate(const QString &routerId,
       continue;
     }
     std::optional<RouteEntry> outbound;
-    if (route && exportAllowed(*routerIt, *route, *peerIt)) {
-      outbound = transformForPeer(*routerIt, *route, *peerIt);
+    if (route) {
+      outbound = routerIt->node->exportRoute(*route, peerIt->config);
+      if (outbound) {
+        outbound->prefix = prefix;
+      }
+    }
+    if (outbound) {
       if (const auto outboundRoutes = routerIt->adjRibOut.constFind(peerId);
           outboundRoutes != routerIt->adjRibOut.cend()) {
         const auto existing = outboundRoutes->constFind(prefix);
@@ -847,6 +776,7 @@ void SimulationEngine::setRouterState(const QString &routerId, bool enabled) {
   markActivity();
   if (!enabled) {
     routerIt->active = false;
+    routerIt->node->routerStateChanged(false);
     const auto oldPrefixes = routerIt->locRib.keys();
     const auto peers = routerIt->peers.keys();
     for (const auto &peerId : peers) {
@@ -858,6 +788,7 @@ void SimulationEngine::setRouterState(const QString &routerId, bool enabled) {
     routerIt->adjRibOut.clear();
     for (auto &peer : routerIt->peers) {
       peer.state = PeerState::Idle;
+      routerIt->node->peerStateChanged(peer.config, peer.state);
       peer.pending.clear();
       peer.flushScheduled = false;
     }
@@ -869,13 +800,11 @@ void SimulationEngine::setRouterState(const QString &routerId, bool enabled) {
     }
   } else {
     routerIt->active = true;
+    routerIt->node->routerStateChanged(true);
     QSet<QString> localPrefixes;
     for (const auto &prefix : routerIt->config.originatedPrefixes) {
-      RouteEntry route;
+      auto route = routerIt->node->createOriginatedRoute(prefix);
       route.prefix = prefix;
-      route.attributes.nextHop = routerIt->config.routerId;
-      route.learnedFrom = routerId;
-      route.localOrigin = true;
       routerIt->localRoutes.insert(prefix, route);
       localPrefixes.insert(prefix);
     }
@@ -917,11 +846,8 @@ void SimulationEngine::originatePrefix(const QString &routerId,
   if (!routerIt->active || routerIt->localRoutes.contains(prefix)) {
     return;
   }
-  RouteEntry route;
+  auto route = routerIt->node->createOriginatedRoute(prefix);
   route.prefix = prefix;
-  route.attributes.nextHop = routerIt->config.routerId;
-  route.learnedFrom = routerId;
-  route.localOrigin = true;
   routerIt->localRoutes.insert(prefix, route);
   markActivity();
   runDecision(routerId, {prefix});

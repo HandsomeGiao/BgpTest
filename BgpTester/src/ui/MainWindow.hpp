@@ -104,6 +104,7 @@ private:
   bool dirty_ = false;
   bool simulationRunning_ = false;
   bool simulationConverged_ = false;
+  bool simulationStartPending_ = false;
   bool closing_ = false;
 
   TopologyScene *scene_ = nullptr;
@@ -153,4 +154,3 @@ private:
 };
 
 } // namespace bgptester
-

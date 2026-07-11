@@ -156,6 +156,9 @@ QJsonObject Topology::toJson() const {
         {QStringLiteral("position"),
          QJsonObject{{QStringLiteral("x"), router.position.x()},
                      {QStringLiteral("y"), router.position.y()}}},
+        {QStringLiteral("plugin"),
+         QJsonObject{{QStringLiteral("id"), router.pluginId},
+                     {QStringLiteral("settings"), router.pluginSettings}}},
         {QStringLiteral("neighbors"), neighborArrays.value(router.id)},
     });
   }
@@ -231,6 +234,39 @@ std::optional<Topology> Topology::fromJson(const QJsonObject &object,
                     .toDouble(140.0 + (index % 5) * 150.0),
                 position.value(QStringLiteral("y"))
                     .toDouble(120.0 + (index / 5) * 120.0));
+    const auto pluginValue = entry.value(QStringLiteral("plugin"));
+    if (!pluginValue.isUndefined() && !pluginValue.isNull() &&
+        !pluginValue.isString() && !pluginValue.isObject()) {
+      if (error) {
+        *error = QStringLiteral("路由器 %1 的 plugin 必须是字符串或对象")
+                     .arg(router.id);
+      }
+      return std::nullopt;
+    }
+    const auto pluginObject = pluginValue.toObject();
+    router.pluginId =
+        (pluginValue.isString()
+             ? pluginValue.toString()
+             : pluginObject.value(QStringLiteral("id"))
+                   .toString(entry.value(QStringLiteral("plugin_id"))
+                                 .toString(StandardRouterPluginId)))
+            .trimmed();
+    const auto settingsValue =
+        pluginObject.value(QStringLiteral("settings"));
+    if (!settingsValue.isUndefined() && !settingsValue.isObject()) {
+      if (error) {
+        *error = QStringLiteral("路由器 %1 的 plugin.settings 必须是对象")
+                     .arg(router.id);
+      }
+      return std::nullopt;
+    }
+    if (settingsValue.isObject()) {
+      router.pluginSettings =
+          settingsValue.toObject();
+    } else if (entry.value(QStringLiteral("plugin_settings")).isObject()) {
+      router.pluginSettings =
+          entry.value(QStringLiteral("plugin_settings")).toObject();
+    }
     topology.routers.insert(router.id, router);
     ++index;
   }
@@ -393,6 +429,10 @@ QStringList Topology::validate() const {
     if (router.asn == 0) {
       problems.append(QStringLiteral("%1 的 ASN 必须大于 0").arg(router.id));
     }
+    if (router.pluginId.trimmed().isEmpty()) {
+      problems.append(QStringLiteral("%1 的路由器插件 ID 不能为空")
+                          .arg(router.id));
+    }
     if (!router.clusterId.isEmpty() && !isIpv4(router.clusterId)) {
       problems.append(QStringLiteral("%1 的 Cluster ID 无效：%2")
                           .arg(router.id, router.clusterId));
@@ -523,4 +563,3 @@ QString Topology::edgeKey(const QString &a, const QString &b) {
 }
 
 } // namespace bgptester
-

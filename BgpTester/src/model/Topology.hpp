@@ -12,6 +12,9 @@
 
 namespace bgptester {
 
+inline const QString StandardRouterPluginId =
+    QStringLiteral("org.bgptester.router.standard-bgp");
+
 enum class SessionType { Ibgp, Ebgp };
 
 QString toString(SessionType type);
@@ -30,6 +33,8 @@ struct RouterConfig {
   QString clusterId;
   QStringList originatedPrefixes;
   QPointF position{100.0, 100.0};
+  QString pluginId = StandardRouterPluginId;
+  QJsonObject pluginSettings;
 
   bool operator==(const RouterConfig &) const = default;
 };
@@ -89,4 +94,3 @@ Q_DECLARE_METATYPE(bgptester::Topology)
 Q_DECLARE_METATYPE(bgptester::RouterConfig)
 Q_DECLARE_METATYPE(bgptester::LinkConfig)
 Q_DECLARE_METATYPE(bgptester::NeighborConfig)
-

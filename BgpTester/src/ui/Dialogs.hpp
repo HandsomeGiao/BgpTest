@@ -6,6 +6,8 @@
 #include <QStringList>
 
 class QCheckBox;
+class QComboBox;
+class QLabel;
 class QLineEdit;
 class QSpinBox;
 class QTextEdit;
@@ -31,6 +33,9 @@ private:
   QLineEdit *asnEdit_ = nullptr;
   QLineEdit *clusterIdEdit_ = nullptr;
   QTextEdit *prefixesEdit_ = nullptr;
+  QComboBox *pluginCombo_ = nullptr;
+  QLabel *pluginDescriptionLabel_ = nullptr;
+  QTextEdit *pluginSettingsEdit_ = nullptr;
 };
 
 class LinkDialog final : public QDialog {
@@ -68,4 +73,3 @@ private:
 };
 
 } // namespace bgptester
-

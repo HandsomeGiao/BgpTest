@@ -11,6 +11,10 @@
       "asn": 65000,
       "cluster_id": "10.0.0.1",
       "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.standard-bgp",
+        "settings": {}
+      },
       "position": {"x": 420, "y": 220}
     },
     {
@@ -69,4 +73,3 @@
     }
   ]
 }
-

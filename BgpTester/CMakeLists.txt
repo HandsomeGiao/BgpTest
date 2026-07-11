@@ -16,6 +16,8 @@ qt_standard_project_setup()
 add_library(bgptester_core STATIC
     src/model/Topology.cpp
     src/engine/SimulationEngine.cpp
+    src/plugin/RouterPluginRegistry.cpp
+    src/plugin/StandardBgpRouterPlugin.cpp
     src/persistence/EventStore.cpp
 )
 
@@ -55,6 +57,8 @@ set_target_properties(BgpTester PROPERTIES
 )
 
 add_custom_command(TARGET BgpTester POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:BgpTester>/plugins/routers"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/topo"
         "$<TARGET_FILE_DIR:BgpTester>/topo"
@@ -62,8 +66,25 @@ add_custom_command(TARGET BgpTester POST_BUILD
 
 include(CTest)
 if(BUILD_TESTING)
+    add_library(BgpTesterExampleRouterPlugin MODULE
+        examples/router-plugin/ConfigurableExportRouterPlugin.cpp
+    )
+    target_include_directories(BgpTesterExampleRouterPlugin PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(BgpTesterExampleRouterPlugin PRIVATE Qt6::Core)
+    set_target_properties(BgpTesterExampleRouterPlugin PROPERTIES
+        PREFIX ""
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-plugins"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-plugins"
+    )
+
     add_executable(BgpTesterTests tests/CoreTests.cpp)
     target_link_libraries(BgpTesterTests PRIVATE bgptester_core)
+    add_dependencies(BgpTesterTests BgpTesterExampleRouterPlugin)
+    target_compile_definitions(BgpTesterTests PRIVATE
+        BGPTESTER_TEST_PLUGIN_PATH="$<TARGET_FILE:BgpTesterExampleRouterPlugin>"
+    )
     if(MSVC)
         target_compile_options(BgpTesterTests PRIVATE /W4 /permissive-)
     else()
@@ -71,4 +92,3 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME BgpTesterTests COMMAND BgpTesterTests)
 endif()
-

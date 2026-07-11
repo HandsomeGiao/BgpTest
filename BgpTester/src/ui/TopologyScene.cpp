@@ -65,6 +65,8 @@ public:
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setAcceptHoverEvents(true);
     setZValue(2.0);
+    setToolTip(QStringLiteral("%1\n插件：%2")
+                   .arg(config_.id, config_.pluginId));
   }
 
   int type() const override { return Type; }
@@ -149,6 +151,18 @@ protected:
       painter->setFont(tiny);
       painter->drawText(QRectF(34, -33, 18, 18), Qt::AlignCenter,
                         QStringLiteral("RR"));
+    }
+    if (config_.pluginId != StandardRouterPluginId) {
+      painter->setPen(Qt::NoPen);
+      painter->setBrush(QColor(QStringLiteral("#1976d2")));
+      painter->drawEllipse(QPointF(-43, -24), 9, 9);
+      painter->setPen(Qt::white);
+      auto tiny = painter->font();
+      tiny.setPointSize(7);
+      tiny.setBold(true);
+      painter->setFont(tiny);
+      painter->drawText(QRectF(-52, -33, 18, 18), Qt::AlignCenter,
+                        QStringLiteral("P"));
     }
   }
 

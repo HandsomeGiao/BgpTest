@@ -14,6 +14,8 @@
 
 namespace bgptester {
 
+class RouterNode;
+
 class SimulationEngine final : public QObject {
   Q_OBJECT
 
@@ -75,6 +77,7 @@ private:
 
   struct RouterRuntime {
     RouterConfig config;
+    RouterNode *node = nullptr;
     bool active = false;
     QMap<QString, PeerRuntime> peers;
     QMap<QString, RouteEntry> localRoutes;
@@ -107,7 +110,7 @@ private:
 
   [[nodiscard]] qint64 now() const;
   void clearRuntime();
-  void buildRuntime();
+  [[nodiscard]] bool buildRuntime(QString *error);
   void armNextEvent();
   void markActivity();
   void publishStats();
@@ -135,12 +138,6 @@ private:
                    const QSet<QString> &changedPrefixes);
   [[nodiscard]] std::optional<RouteEntry>
   selectBest(const RouterRuntime &router, const QString &prefix) const;
-  [[nodiscard]] bool exportAllowed(const RouterRuntime &router,
-                                   const RouteEntry &route,
-                                   const PeerRuntime &peer) const;
-  [[nodiscard]] RouteEntry transformForPeer(const RouterRuntime &router,
-                                            const RouteEntry &route,
-                                            const PeerRuntime &peer) const;
   void disseminate(const QString &routerId, const QString &prefix,
                    const std::optional<RouteEntry> &route);
   void queueAdvertisement(const QString &routerId, const QString &peerId,
@@ -176,4 +173,3 @@ private:
 };
 
 } // namespace bgptester
-
