@@ -252,7 +252,7 @@ void bulkUpdatesAreAggregated()
     require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.size() == prefixCount && engine.isConverged(); }, 10000),
             "bulk route set did not converge");
     require(advertisedPrefixes >= prefixCount, "bulk route events lost advertised prefixes");
-    require(updateEvents <= 16, "bulk routes were emitted as too many individual UPDATE events");
+    require(updateEvents == 1, "one advertisement flush was split into multiple UPDATE events");
     engine.stopSimulation();
 }
 
@@ -301,7 +301,7 @@ void bulkWithdrawalsAreAggregated()
     require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.isEmpty() && engine.isConverged(); }, 10000),
             "bulk withdrawals did not converge");
     require(withdrawnPrefixes == prefixCount, "bulk withdrawal lost prefixes");
-    require(withdrawalEvents <= 16, "bulk withdrawals were emitted as too many individual UPDATE events");
+    require(withdrawalEvents == 1, "one withdrawal flush was split into multiple UPDATE events");
     engine.stopSimulation();
 }
 

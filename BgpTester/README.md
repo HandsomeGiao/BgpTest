@@ -70,7 +70,8 @@ ctest --test-dir build --output-on-failure
 - IBGP split-horizon 和基础 Route Reflector client/non-client 传播；
 - 选路顺序：本地起源、LOCAL_PREF、AS_PATH 长度、MED、EBGP 优先、旧路稳定性、确定性 tie-break；
 - 每邻居 MRAI；参考 FRR 的 Adj-RIB-Out 待发送队列聚合 withdrawal，同一前缀的新状态覆盖旧状态；
-- withdrawal 不等待 MRAI，但会在本轮事件处理结束后按报文容量批量发送；generation guard 按前缀过滤，不会误丢同批其他路由；
+- 同一轮中路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；
+- withdrawal 不等待 MRAI，并将本轮待撤销前缀全部聚合到一条报文；generation guard 按前缀过滤，不会误丢同批其他路由；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定。
 
 ## 路由器插件

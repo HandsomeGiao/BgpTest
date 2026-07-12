@@ -15,8 +15,6 @@ namespace bgptester
 namespace
 {
 
-constexpr qsizetype MaxNlriPerMessage = 512;
-
 QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route)
 {
     quint64 first = 0x9e3779b97f4a7c15ULL;
@@ -475,8 +473,7 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
         if (current == pending.generation)
         {
             if (!messages.isEmpty() && messages.last().advertisedRoute &&
-                advertisementTemplateEqual(*messages.last().advertisedRoute, *pending.route) &&
-                messages.last().nlri.size() < MaxNlriPerMessage)
+                advertisementTemplateEqual(*messages.last().advertisedRoute, *pending.route))
             {
                 messages.last().nlri.append(prefix);
                 messages.last().generations.insert(prefix, pending.generation);
@@ -530,7 +527,7 @@ void SimulationEngine::flushWithdrawals(const QString& from, const QString& to)
         const auto current = peerGenerations == routerIt->outboundGenerations.cend() ? 0 : peerGenerations->value(prefix);
         if (current == pending.generation)
         {
-            if (!messages.isEmpty() && messages.last().withdrawn.size() < MaxNlriPerMessage)
+            if (!messages.isEmpty())
             {
                 messages.last().withdrawn.append(prefix);
                 messages.last().generations.insert(prefix, pending.generation);
