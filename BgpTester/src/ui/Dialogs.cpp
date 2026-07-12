@@ -50,7 +50,7 @@ RouterDialog::RouterDialog(const RouterConfig &router,
   auto pluginIndex = pluginCombo_->findData(router.pluginId);
   if (pluginIndex < 0) {
     pluginCombo_->addItem(
-        QStringLiteral("未加载：%1").arg(router.pluginId), router.pluginId);
+        QStringLiteral("未注册：%1").arg(router.pluginId), router.pluginId);
     pluginIndex = pluginCombo_->count() - 1;
   }
   pluginCombo_->setCurrentIndex(pluginIndex);
@@ -69,7 +69,7 @@ RouterDialog::RouterDialog(const RouterConfig &router,
     const auto metadata = RouterPluginRegistry::instance().metadata(id);
     pluginDescriptionLabel_->setText(
         metadata ? metadata->description
-                 : QStringLiteral("该插件当前未加载；拓扑可以保存，但无法启动仿真。"));
+                 : QStringLiteral("该插件当前未编译或未注册；拓扑可以保存，但无法启动仿真。"));
   };
   updateDescription();
   connect(pluginCombo_, &QComboBox::activated, this,

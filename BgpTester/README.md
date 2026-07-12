@@ -83,25 +83,30 @@ ctest --test-dir build --output-on-failure
 - 面向每个邻居的出口过滤与属性变换；
 - 仿真启动/停止及 Peer 状态通知。
 
-公共接口位于 `src/plugin/RouterPlugin.hpp`。插件工厂需实现
-`RouterNodePlugin`，并声明：
+### 添加一个插件
+
+公共接口位于 `src/plugin/RouterPlugin.hpp`。新增插件不需要修改任何 CMake
+文件，也不需要生成或复制 DLL：
+
+1. 在 `src/router_plugins/` 下添加同名的 `.hpp` 和 `.cpp` 文件；
+2. 在头文件中声明一个实现 `RouterNodePlugin` 的工厂类；
+3. `.cpp` 包含 `plugin/RouterPluginRegistry.hpp`，并在文件末尾注册该工厂：
 
 ```cpp
-Q_PLUGIN_METADATA(IID BGPTESTER_ROUTER_PLUGIN_IID)
-Q_INTERFACES(bgptester::RouterNodePlugin)
+BGPTESTER_REGISTER_ROUTER_PLUGIN(my_namespace::MyRouterPlugin)
 ```
 
-完整、可独立构建的实现见
-`examples/router-plugin/ConfigurableExportRouterPlugin.cpp`。插件必须使用与
-BgpTester 相同的 Qt、编译器、CPU 架构和 C++ ABI，且不得让异常越过插件
-边界。
+4. 正常执行 `build.ps1` 或 `cmake --build build`；
+5. 启动程序，新插件会直接出现在路由器属性的插件列表中。
 
-程序启动时会从以下位置加载动态库：
+CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入或删除
+的源码。插件源码会直接编译进 BgpTester，不需要命令行参数、环境变量或
+额外部署步骤。子目录同样会被自动扫描。
 
-- `BgpTester.exe` 同目录下的 `plugins/routers/`；
-- `BgpTester.exe` 同目录下的 `router-plugins/`；
-- `--router-plugin-dir <目录>` 指定的目录（参数可重复）；
-- `BGPTESTER_ROUTER_PLUGIN_PATH` 环境变量中的目录列表。
+完整的两文件示例见：
+
+- `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
+- `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
 
 插件 ID 在进程内必须唯一，API 版本当前为 `1`。插件缺失、ID 重复、API
 版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。

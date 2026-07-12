@@ -1,4 +1,6 @@
-#include "plugin/StandardBgpRouterPlugin.hpp"
+#include "router_plugins/StandardBgpRouterPlugin.hpp"
+
+#include "plugin/RouterPluginRegistry.hpp"
 
 #include <algorithm>
 #include <tuple>
@@ -192,3 +194,5 @@ RouterNode *StandardBgpRouterPlugin::createRouterNode(
 }
 
 } // namespace bgptester
+
+BGPTESTER_REGISTER_ROUTER_PLUGIN(bgptester::StandardBgpRouterPlugin)

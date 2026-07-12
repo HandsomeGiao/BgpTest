@@ -4,18 +4,12 @@
 
 #include <QMap>
 #include <QReadWriteLock>
-#include <QSet>
 #include <QStringList>
 #include <QVector>
 
-#include <memory>
 #include <optional>
 
-class QPluginLoader;
-
 namespace bgptester {
-
-class StandardBgpRouterPlugin;
 
 struct RegisteredRouterPlugin {
   RouterPluginMetadata metadata;
@@ -34,9 +28,13 @@ public:
   [[nodiscard]] std::optional<RouterPluginMetadata>
   metadata(const QString &pluginId) const;
   [[nodiscard]] bool contains(const QString &pluginId) const;
+  [[nodiscard]] QStringList registrationErrors() const;
 
-  bool loadPlugin(const QString &filePath, QString *error = nullptr);
-  [[nodiscard]] QStringList loadDirectory(const QString &directoryPath);
+  // Called by BGPTESTER_REGISTER_ROUTER_PLUGIN during process startup.
+  // Plugin objects have static storage duration and remain owned by their
+  // translation units.
+  bool registerStaticPlugin(RouterNodePlugin *plugin,
+                            const QString &source);
 
   [[nodiscard]] RouterNode *createRouterNode(const RouterConfig &config,
                                              const Topology &topology,
@@ -57,9 +55,23 @@ private:
 
   mutable QReadWriteLock lock_;
   QMap<QString, Entry> entries_;
-  QSet<QString> loadedFiles_;
-  QVector<QPluginLoader *> loaders_;
-  std::unique_ptr<StandardBgpRouterPlugin> standardPlugin_;
+  QStringList registrationErrors_;
 };
 
 } // namespace bgptester
+
+#define BGPTESTER_DETAIL_JOIN_IMPL(lhs, rhs) lhs##rhs
+#define BGPTESTER_DETAIL_JOIN(lhs, rhs) BGPTESTER_DETAIL_JOIN_IMPL(lhs, rhs)
+
+// Put this once at the end of a router plugin .cpp file. CMake automatically
+// compiles every .cpp under src/router_plugins, so no build-file edit or
+// runtime loading step is required.
+#define BGPTESTER_REGISTER_ROUTER_PLUGIN(PluginType)                         \
+  namespace {                                                               \
+  [[maybe_unused]] const bool BGPTESTER_DETAIL_JOIN(                         \
+      bgptesterRouterPluginRegistered_, __LINE__) = [] {                     \
+    static PluginType plugin;                                                \
+    return ::bgptester::RouterPluginRegistry::instance()                    \
+        .registerStaticPlugin(&plugin, QString::fromUtf8(__FILE__));          \
+  }();                                                                       \
+  }

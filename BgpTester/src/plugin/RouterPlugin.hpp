@@ -90,9 +90,3 @@ public:
 };
 
 } // namespace bgptester
-
-#define BGPTESTER_ROUTER_PLUGIN_IID                                          \
-  "org.bgptester.RouterNodePlugin/1.0"
-
-Q_DECLARE_INTERFACE(bgptester::RouterNodePlugin,
-                    BGPTESTER_ROUTER_PLUGIN_IID)

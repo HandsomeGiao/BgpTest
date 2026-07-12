@@ -1,4 +1,6 @@
-#include "plugin/RouterPlugin.hpp"
+#include "router_plugins/ConfigurableExportRouterPlugin.hpp"
+
+#include "plugin/RouterPluginRegistry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -6,9 +8,8 @@
 #include <tuple>
 #include <utility>
 
+namespace bgptester {
 namespace {
-
-using namespace bgptester;
 
 class ConfigurableExportRouterNode final : public RouterNode {
 public:
@@ -72,8 +73,6 @@ public:
     return *std::min_element(
         candidates.cbegin(), candidates.cend(),
         [](const RouteEntry &lhs, const RouteEntry &rhs) {
-          // Deliberately simple custom policy: local, then LOCAL_PREF, then
-          // shortest AS_PATH, followed by a stable peer-id tie break.
           return std::tuple(!lhs.localOrigin,
                             std::numeric_limits<quint32>::max() -
                                 lhs.attributes.localPref,
@@ -111,36 +110,31 @@ public:
   }
 };
 
-class ConfigurableExportRouterPlugin final : public QObject,
-                                             public RouterNodePlugin {
-  Q_OBJECT
-  Q_PLUGIN_METADATA(IID BGPTESTER_ROUTER_PLUGIN_IID)
-  Q_INTERFACES(bgptester::RouterNodePlugin)
-
-public:
-  RouterPluginMetadata metadata() const override {
-    return RouterPluginMetadata{
-        .id = QStringLiteral("org.bgptester.example.configurable-export"),
-        .displayName = QStringLiteral("示例：可配置出口路由器"),
-        .version = QStringLiteral("1.0.0"),
-        .description = QStringLiteral(
-            "演示自定义选路与出口控制；export_routes 决定是否发布路由。"),
-        .apiVersion = RouterPluginApiVersion,
-        .defaultSettings =
-            QJsonObject{{QStringLiteral("export_routes"), false},
-                        {QStringLiteral("local_preference"), 100}},
-    };
-  }
-
-  RouterNode *createRouterNode(const RouterNodeContext &context,
-                               QObject *parent, QString *error) override {
-    if (error) {
-      error->clear();
-    }
-    return new ConfigurableExportRouterNode(context, parent);
-  }
-};
-
 } // namespace
 
-#include "ConfigurableExportRouterPlugin.moc"
+RouterPluginMetadata ConfigurableExportRouterPlugin::metadata() const {
+  return RouterPluginMetadata{
+      .id = QStringLiteral("org.bgptester.example.configurable-export"),
+      .displayName = QStringLiteral("示例：可配置出口路由器"),
+      .version = QStringLiteral("1.0.0"),
+      .description = QStringLiteral(
+          "演示自定义选路与出口控制；export_routes 决定是否发布路由。"),
+      .apiVersion = RouterPluginApiVersion,
+      .defaultSettings =
+          QJsonObject{{QStringLiteral("export_routes"), false},
+                      {QStringLiteral("local_preference"), 100}},
+  };
+}
+
+RouterNode *ConfigurableExportRouterPlugin::createRouterNode(
+    const RouterNodeContext &context, QObject *parent, QString *error) {
+  if (error) {
+    error->clear();
+  }
+  return new ConfigurableExportRouterNode(context, parent);
+}
+
+} // namespace bgptester
+
+BGPTESTER_REGISTER_ROUTER_PLUGIN(
+    bgptester::ConfigurableExportRouterPlugin)

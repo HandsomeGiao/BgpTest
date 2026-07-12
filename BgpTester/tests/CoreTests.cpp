@@ -210,15 +210,10 @@ void staleMraiAdvertisementDoesNotReappear() {
   engine.stopSimulation();
 }
 
-void dynamicRouterPluginControlsRouteExport() {
-  QString error;
-  const auto pluginPath =
-      QDir::fromNativeSeparators(QStringLiteral(BGPTESTER_TEST_PLUGIN_PATH));
-  require(RouterPluginRegistry::instance().loadPlugin(pluginPath, &error),
-          error.toUtf8().constData());
+void sourceRouterPluginControlsRouteExport() {
   require(RouterPluginRegistry::instance().contains(
               QStringLiteral("org.bgptester.example.configurable-export")),
-          "dynamic router plugin was not registered");
+          "source router plugin was not registered automatically");
 
   auto topology = twoRouterTopology();
   auto &customRouter = topology.routers[QStringLiteral("R1")];
@@ -317,7 +312,7 @@ int main(int argc, char **argv) {
     ebgpRoutesPropagateAndWithdraw();
     routeReflectorPropagatesClientRoute();
     staleMraiAdvertisementDoesNotReappear();
-    dynamicRouterPluginControlsRouteExport();
+    sourceRouterPluginControlsRouteExport();
     eventStoreWritesJsonAndSqlite();
   } catch (const std::exception &error) {
     std::cerr << "FAILED: " << error.what() << '\n';
