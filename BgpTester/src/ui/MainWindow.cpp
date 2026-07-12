@@ -82,6 +82,34 @@ void configureDataTable(QTableWidget* table)
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 }
 
+void setDisplayedShortcut(QAction* action, const QKeySequence& shortcut)
+{
+    action->setShortcut(shortcut);
+    action->setShortcutVisibleInContextMenu(true);
+
+    const auto shortcutText = shortcut.toString(QKeySequence::NativeText);
+    if (!shortcutText.isEmpty())
+    {
+        action->setToolTip(QStringLiteral("%1（%2）").arg(action->text(), shortcutText));
+    }
+}
+
+void showShortcutOnToolbarButton(QToolBar* toolbar, QAction* action)
+{
+    const auto shortcutText = action->shortcut().toString(QKeySequence::NativeText);
+    const auto toolbarText = QStringLiteral("%1 [%2]").arg(action->text(), shortcutText);
+    action->setIconText(toolbarText);
+
+    auto* button = qobject_cast<QToolButton*>(toolbar->widgetForAction(action));
+    if (!button)
+    {
+        return;
+    }
+
+    button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    button->setText(toolbarText);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
@@ -162,16 +190,16 @@ MainWindow::~MainWindow()
 void MainWindow::buildActions()
 {
     newAction_ = new QAction(QStringLiteral("新建"), this);
-    newAction_->setShortcut(QKeySequence::New);
+    setDisplayedShortcut(newAction_, QKeySequence::New);
     connect(newAction_, &QAction::triggered, this, &MainWindow::newTopology);
     openAction_ = new QAction(QStringLiteral("打开拓扑…"), this);
-    openAction_->setShortcut(QKeySequence::Open);
+    setDisplayedShortcut(openAction_, QKeySequence::Open);
     connect(openAction_, &QAction::triggered, this, &MainWindow::openTopology);
     saveAction_ = new QAction(QStringLiteral("保存"), this);
-    saveAction_->setShortcut(QKeySequence::Save);
+    setDisplayedShortcut(saveAction_, QKeySequence::Save);
     connect(saveAction_, &QAction::triggered, this, &MainWindow::saveTopology);
     saveAsAction_ = new QAction(QStringLiteral("另存为…"), this);
-    saveAsAction_->setShortcut(QKeySequence::SaveAs);
+    setDisplayedShortcut(saveAsAction_, QKeySequence::SaveAs);
     connect(saveAsAction_, &QAction::triggered, this, &MainWindow::saveTopologyAs);
     openHistoryAction_ = new QAction(QStringLiteral("打开 SQLite 日志…"), this);
     connect(openHistoryAction_, &QAction::triggered, this, &MainWindow::openHistory);
@@ -183,13 +211,13 @@ void MainWindow::buildActions()
     selectModeAction_ = new QAction(QStringLiteral("选择/移动"), this);
     selectModeAction_->setCheckable(true);
     selectModeAction_->setChecked(true);
-    selectModeAction_->setShortcut(Qt::Key_V);
+    setDisplayedShortcut(selectModeAction_, QKeySequence(Qt::Key_V));
     addRouterAction_ = new QAction(QStringLiteral("添加路由器"), this);
     addRouterAction_->setCheckable(true);
-    addRouterAction_->setShortcut(Qt::Key_R);
+    setDisplayedShortcut(addRouterAction_, QKeySequence(Qt::Key_R));
     addLinkAction_ = new QAction(QStringLiteral("添加链路"), this);
     addLinkAction_->setCheckable(true);
-    addLinkAction_->setShortcut(Qt::Key_Q);
+    setDisplayedShortcut(addLinkAction_, QKeySequence(Qt::Key_Q));
     modeGroup_->addAction(selectModeAction_);
     modeGroup_->addAction(addRouterAction_);
     modeGroup_->addAction(addLinkAction_);
@@ -197,10 +225,10 @@ void MainWindow::buildActions()
     connect(addRouterAction_, &QAction::triggered, this, [this] { scene_->setMode(TopologyScene::Mode::AddRouter); });
     connect(addLinkAction_, &QAction::triggered, this, [this] { scene_->setMode(TopologyScene::Mode::AddLink); });
     deleteAction_ = new QAction(QStringLiteral("删除所选"), this);
-    deleteAction_->setShortcut(QKeySequence::Delete);
+    setDisplayedShortcut(deleteAction_, QKeySequence::Delete);
     connect(deleteAction_, &QAction::triggered, this, &MainWindow::deleteSelection);
     fitAction_ = new QAction(QStringLiteral("适合窗口"), this);
-    fitAction_->setShortcut(Qt::Key_F);
+    setDisplayedShortcut(fitAction_, QKeySequence(Qt::Key_F));
     connect(fitAction_, &QAction::triggered, this,
             [this]
             {
@@ -211,10 +239,10 @@ void MainWindow::buildActions()
             });
 
     startAction_ = new QAction(QStringLiteral("启动仿真"), this);
-    startAction_->setShortcut(Qt::Key_F5);
+    setDisplayedShortcut(startAction_, QKeySequence(Qt::Key_F5));
     connect(startAction_, &QAction::triggered, this, &MainWindow::startSimulation);
     stopAction_ = new QAction(QStringLiteral("停止"), this);
-    stopAction_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F5));
+    setDisplayedShortcut(stopAction_, QKeySequence(Qt::SHIFT | Qt::Key_F5));
     stopAction_->setEnabled(false);
     connect(stopAction_, &QAction::triggered, this, &MainWindow::stopSimulation);
 }
@@ -227,7 +255,7 @@ void MainWindow::buildMenusAndToolbar()
     fileMenu->addAction(openHistoryAction_);
     fileMenu->addSeparator();
     auto* exitAction = fileMenu->addAction(QStringLiteral("退出"));
-    exitAction->setShortcut(QKeySequence::Quit);
+    setDisplayedShortcut(exitAction, QKeySequence::Quit);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     auto* editMenu = menuBar()->addMenu(QStringLiteral("编辑(&E)"));
     editMenu->addActions({selectModeAction_, addRouterAction_, addLinkAction_, deleteAction_});
@@ -245,6 +273,10 @@ void MainWindow::buildMenusAndToolbar()
     toolbar->addSeparator();
     toolbar->addActions({selectModeAction_, addRouterAction_, addLinkAction_, deleteAction_});
     toolbar->addAction(fitAction_);
+    for (auto* action : {selectModeAction_, addRouterAction_, addLinkAction_, deleteAction_, fitAction_})
+    {
+        showShortcutOnToolbarButton(toolbar, action);
+    }
     toolbar->addSeparator();
     toolbar->addActions({startAction_, stopAction_});
     toolbar->addSeparator();
