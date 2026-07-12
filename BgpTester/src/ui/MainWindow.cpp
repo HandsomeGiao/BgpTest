@@ -34,6 +34,7 @@
 #include <QMetaObject>
 #include <QPushButton>
 #include <QProgressDialog>
+#include <QRandomGenerator>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -228,6 +229,8 @@ void MainWindow::buildActions()
     connect(openHistoryAction_, &QAction::triggered, this, &MainWindow::openHistory);
     settingsAction_ = new QAction(QStringLiteral("仿真设置…"), this);
     connect(settingsAction_, &QAction::triggered, this, &MainWindow::editSimulationSettings);
+    batchTopologyAction_ = new QAction(QStringLiteral("批量配置拓扑…"), this);
+    connect(batchTopologyAction_, &QAction::triggered, this, &MainWindow::editTopologyBatchProperties);
 
     modeGroup_ = new QActionGroup(this);
     modeGroup_->setExclusive(true);
@@ -283,6 +286,7 @@ void MainWindow::buildMenusAndToolbar()
     auto* editMenu = menuBar()->addMenu(QStringLiteral("编辑(&E)"));
     editMenu->addActions({selectModeAction_, addRouterAction_, addLinkAction_, deleteAction_});
     editMenu->addSeparator();
+    editMenu->addAction(batchTopologyAction_);
     editMenu->addAction(settingsAction_);
     auto* simulationMenu = menuBar()->addMenu(QStringLiteral("仿真(&S)"));
     simulationMenu->addActions({startAction_, stopAction_});
@@ -304,6 +308,7 @@ void MainWindow::buildMenusAndToolbar()
     toolbar->addSeparator();
     toolbar->addActions({startAction_, stopAction_});
     toolbar->addSeparator();
+    toolbar->addAction(batchTopologyAction_);
     toolbar->addAction(settingsAction_);
 }
 
@@ -678,6 +683,66 @@ void MainWindow::editSimulationSettings()
     if (dialog.exec() == QDialog::Accepted)
     {
         topology_.simulation = dialog.settings();
+        setDirty(true);
+    }
+}
+
+void MainWindow::editTopologyBatchProperties()
+{
+    if (topology_.links.isEmpty())
+    {
+        QMessageBox::information(this, QStringLiteral("没有链路"), QStringLiteral("当前拓扑没有可批量配置的链路。"));
+        return;
+    }
+
+    TopologyBatchEditDialog dialog(topology_.links, this);
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+
+    auto changedLinks = 0;
+    if (dialog.delayMode() == TopologyBatchEditDialog::DelayMode::Fixed)
+    {
+        const auto delayMs = dialog.fixedDelayMs();
+        for (auto& link : topology_.links)
+        {
+            if (link.delayMs != delayMs)
+            {
+                link.delayMs = delayMs;
+                ++changedLinks;
+            }
+        }
+        statusBar()->showMessage(QStringLiteral("已将全部 %1 条链路的延迟设置为 %2 ms")
+                                     .arg(topology_.links.size())
+                                     .arg(delayMs),
+                                 4000);
+    }
+    else
+    {
+        const auto minimumDelayMs = dialog.minimumDelayMs();
+        const auto maximumDelayMs = dialog.maximumDelayMs();
+        const auto valueCount = static_cast<quint32>(maximumDelayMs - minimumDelayMs + 1);
+        for (auto& link : topology_.links)
+        {
+            const auto delayMs = minimumDelayMs + static_cast<int>(QRandomGenerator::global()->bounded(valueCount));
+            if (link.delayMs != delayMs)
+            {
+                link.delayMs = delayMs;
+                ++changedLinks;
+            }
+        }
+        statusBar()->showMessage(QStringLiteral("已将全部 %1 条链路的延迟随机设置在 %2–%3 ms 范围内")
+                                     .arg(topology_.links.size())
+                                     .arg(minimumDelayMs)
+                                     .arg(maximumDelayMs),
+                                 4000);
+    }
+
+    if (changedLinks > 0)
+    {
+        scene_->rebuild();
+        refreshTopologySelectors();
         setDirty(true);
     }
 }
@@ -1167,7 +1232,8 @@ void MainWindow::updateEditorActions()
 {
     const auto editable = !simulationRunning_;
     for (auto* action :
-         {newAction_, openAction_, saveAsAction_, settingsAction_, selectModeAction_, addRouterAction_, addLinkAction_, deleteAction_})
+         {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
+          addLinkAction_, deleteAction_})
     {
         action->setEnabled(editable);
     }

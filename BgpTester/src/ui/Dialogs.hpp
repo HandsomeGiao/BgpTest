@@ -9,6 +9,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QRadioButton;
 class QSpinBox;
 class QTextEdit;
 
@@ -55,6 +56,35 @@ private:
     QCheckBox* rrFromBCheck_ = nullptr;
     QSpinBox* mraiFromASpin_ = nullptr;
     QSpinBox* mraiFromBSpin_ = nullptr;
+};
+
+class TopologyBatchEditDialog final : public QDialog
+{
+    Q_OBJECT
+
+public:
+    enum class DelayMode
+    {
+        Fixed,
+        RandomRange,
+    };
+
+    explicit TopologyBatchEditDialog(const QVector<LinkConfig>& links, QWidget* parent = nullptr);
+
+    DelayMode delayMode() const;
+    int fixedDelayMs() const;
+    int minimumDelayMs() const;
+    int maximumDelayMs() const;
+
+public slots:
+    void accept() override;
+
+private:
+    QRadioButton* fixedDelayRadio_ = nullptr;
+    QSpinBox* fixedDelaySpin_ = nullptr;
+    QRadioButton* randomDelayRadio_ = nullptr;
+    QSpinBox* minimumDelaySpin_ = nullptr;
+    QSpinBox* maximumDelaySpin_ = nullptr;
 };
 
 class SimulationSettingsDialog final : public QDialog

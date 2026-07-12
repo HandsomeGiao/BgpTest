@@ -6,18 +6,22 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QRadioButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QSpinBox>
 #include <QTextEdit>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <limits>
 
 namespace bgptester
@@ -209,6 +213,111 @@ LinkConfig LinkDialog::link() const
     result.mraiMsFromA = mraiFromASpin_->value();
     result.mraiMsFromB = mraiFromBSpin_->value();
     return result;
+}
+
+TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& links, QWidget* parent) : QDialog(parent)
+{
+    constexpr auto maximumDelayMs = 24 * 60 * 60 * 1000;
+
+    setWindowTitle(QStringLiteral("批量配置拓扑"));
+    setMinimumWidth(480);
+
+    auto* layout = new QVBoxLayout(this);
+    auto* summaryLabel = new QLabel(QStringLiteral("将配置应用到当前拓扑的全部 %1 条链路。").arg(links.size()), this);
+    summaryLabel->setWordWrap(true);
+    layout->addWidget(summaryLabel);
+
+    auto* delayGroup = new QGroupBox(QStringLiteral("链路延迟"), this);
+    auto* delayLayout = new QVBoxLayout(delayGroup);
+
+    fixedDelayRadio_ = new QRadioButton(QStringLiteral("固定值"), delayGroup);
+    fixedDelayRadio_->setChecked(true);
+    fixedDelaySpin_ = new QSpinBox(delayGroup);
+    fixedDelaySpin_->setRange(0, maximumDelayMs);
+    fixedDelaySpin_->setSuffix(QStringLiteral(" ms"));
+    auto* fixedRow = new QHBoxLayout;
+    fixedRow->addWidget(fixedDelayRadio_);
+    fixedRow->addWidget(fixedDelaySpin_, 1);
+    delayLayout->addLayout(fixedRow);
+
+    randomDelayRadio_ = new QRadioButton(QStringLiteral("随机范围（包含上下限）"), delayGroup);
+    minimumDelaySpin_ = new QSpinBox(delayGroup);
+    minimumDelaySpin_->setRange(0, maximumDelayMs);
+    minimumDelaySpin_->setSuffix(QStringLiteral(" ms"));
+    maximumDelaySpin_ = new QSpinBox(delayGroup);
+    maximumDelaySpin_->setRange(0, maximumDelayMs);
+    maximumDelaySpin_->setSuffix(QStringLiteral(" ms"));
+    auto* randomRow = new QHBoxLayout;
+    randomRow->addWidget(randomDelayRadio_);
+    randomRow->addWidget(new QLabel(QStringLiteral("最小"), delayGroup));
+    randomRow->addWidget(minimumDelaySpin_, 1);
+    randomRow->addWidget(new QLabel(QStringLiteral("最大"), delayGroup));
+    randomRow->addWidget(maximumDelaySpin_, 1);
+    delayLayout->addLayout(randomRow);
+
+    if (!links.isEmpty())
+    {
+        auto minimum = links.front().delayMs;
+        auto maximum = minimum;
+        for (const auto& link : links)
+        {
+            minimum = std::min(minimum, link.delayMs);
+            maximum = std::max(maximum, link.delayMs);
+        }
+        fixedDelaySpin_->setValue(minimum == maximum ? minimum : 0);
+        minimumDelaySpin_->setValue(minimum);
+        maximumDelaySpin_->setValue(maximum);
+    }
+
+    const auto updateInputState = [this]
+    {
+        fixedDelaySpin_->setEnabled(fixedDelayRadio_->isChecked());
+        minimumDelaySpin_->setEnabled(randomDelayRadio_->isChecked());
+        maximumDelaySpin_->setEnabled(randomDelayRadio_->isChecked());
+    };
+    connect(fixedDelayRadio_, &QRadioButton::toggled, this, [updateInputState](bool) { updateInputState(); });
+    updateInputState();
+
+    layout->addWidget(delayGroup);
+    auto* noteLabel = new QLabel(QStringLiteral("随机模式会为每条链路独立生成一个整数毫秒值。"), this);
+    noteLabel->setWordWrap(true);
+    layout->addWidget(noteLabel);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("应用"));
+    connect(buttons, &QDialogButtonBox::accepted, this, &TopologyBatchEditDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    layout->addWidget(buttons);
+}
+
+TopologyBatchEditDialog::DelayMode TopologyBatchEditDialog::delayMode() const
+{
+    return fixedDelayRadio_->isChecked() ? DelayMode::Fixed : DelayMode::RandomRange;
+}
+
+int TopologyBatchEditDialog::fixedDelayMs() const
+{
+    return fixedDelaySpin_->value();
+}
+
+int TopologyBatchEditDialog::minimumDelayMs() const
+{
+    return minimumDelaySpin_->value();
+}
+
+int TopologyBatchEditDialog::maximumDelayMs() const
+{
+    return maximumDelaySpin_->value();
+}
+
+void TopologyBatchEditDialog::accept()
+{
+    if (delayMode() == DelayMode::RandomRange && minimumDelayMs() > maximumDelayMs())
+    {
+        QMessageBox::warning(this, QStringLiteral("输入无效"), QStringLiteral("随机延迟的最小值不能大于最大值。"));
+        return;
+    }
+    QDialog::accept();
 }
 
 SimulationSettingsDialog::SimulationSettingsDialog(const SimulationSettings& settings, QWidget* parent) : QDialog(parent)

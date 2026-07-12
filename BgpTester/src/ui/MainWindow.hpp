@@ -53,6 +53,7 @@ private slots:
     bool saveTopologyAs();
     void openHistory();
     void editSimulationSettings();
+    void editTopologyBatchProperties();
     void createRouter(const QPointF& position);
     void editRouter(const QString& routerId);
     void createLink(const QString& a, const QString& b);
@@ -134,6 +135,7 @@ private:
     QAction* saveAsAction_ = nullptr;
     QAction* openHistoryAction_ = nullptr;
     QAction* settingsAction_ = nullptr;
+    QAction* batchTopologyAction_ = nullptr;
     QAction* selectModeAction_ = nullptr;
     QAction* addRouterAction_ = nullptr;
     QAction* addLinkAction_ = nullptr;
