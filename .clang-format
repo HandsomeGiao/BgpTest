@@ -1,0 +1,48 @@
+Language: Cpp
+BasedOnStyle: Microsoft
+
+# 每行最大字符数
+ColumnLimit: 140
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# 指针和引用靠近类型
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# 大括号采用 Microsoft 风格
+BreakBeforeBraces: Allman
+
+# 参数与初始化列表
+BinPackArguments: true
+BinPackParameters: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# include 排序
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+# 命名空间
+NamespaceIndentation: None
+FixNamespaceComments: true
+
+# 注释
+ReflowComments: true
+SpacesBeforeTrailingComments: 1
+
+# 其他常用设置
+AccessModifierOffset: -4
+IndentCaseLabels: true
+IndentPPDirectives: None
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Standard: Latest

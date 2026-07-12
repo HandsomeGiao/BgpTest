@@ -12,81 +12,92 @@
 #include <optional>
 #include <utility>
 
-namespace bgptester {
+namespace bgptester
+{
 
 inline constexpr int RouterPluginApiVersion = 1;
 
-struct RouterPluginMetadata {
-  QString id;
-  QString displayName;
-  QString version;
-  QString description;
-  int apiVersion = RouterPluginApiVersion;
-  QJsonObject defaultSettings;
+struct RouterPluginMetadata
+{
+    QString id;
+    QString displayName;
+    QString version;
+    QString description;
+    int apiVersion = RouterPluginApiVersion;
+    QJsonObject defaultSettings;
 };
 
 // This is an immutable view of the topology when a simulation starts. A
 // RouterNode instance is created for every RouterConfig in the topology.
-struct RouterNodeContext {
-  RouterConfig config;
-  QMap<QString, RouterConfig> topologyRouters;
-  QMap<QString, NeighborConfig> neighbors;
+struct RouterNodeContext
+{
+    RouterConfig config;
+    QMap<QString, RouterConfig> topologyRouters;
+    QMap<QString, NeighborConfig> neighbors;
 };
 
 // RouterNode owns the protocol policy for one router. SimulationEngine keeps
 // responsibility for the event queue, links, BGP session transport and RIB
 // storage; plugins control route creation, import, selection and export.
-class RouterNode : public QObject {
+class RouterNode : public QObject
+{
 public:
-  explicit RouterNode(RouterNodeContext context, QObject *parent = nullptr)
-      : QObject(parent), context_(std::move(context)) {}
-  ~RouterNode() override = default;
+    explicit RouterNode(RouterNodeContext context, QObject* parent = nullptr) : QObject(parent), context_(std::move(context))
+    {
+    }
+    ~RouterNode() override = default;
 
-  RouterNode(const RouterNode &) = delete;
-  RouterNode &operator=(const RouterNode &) = delete;
+    RouterNode(const RouterNode&) = delete;
+    RouterNode& operator=(const RouterNode&) = delete;
 
-  [[nodiscard]] const RouterNodeContext &context() const { return context_; }
+    [[nodiscard]] const RouterNodeContext& context() const
+    {
+        return context_;
+    }
 
-  [[nodiscard]] virtual QStringList validateConfiguration() const {
-    return {};
-  }
-  virtual void simulationStarted() {}
-  virtual void simulationStopped() {}
-  virtual void routerStateChanged(bool) {}
-  virtual void peerStateChanged(const NeighborConfig &, PeerState) {}
+    [[nodiscard]] virtual QStringList validateConfiguration() const
+    {
+        return {};
+    }
+    virtual void simulationStarted()
+    {
+    }
+    virtual void simulationStopped()
+    {
+    }
+    virtual void routerStateChanged(bool)
+    {
+    }
+    virtual void peerStateChanged(const NeighborConfig&, PeerState)
+    {
+    }
 
-  [[nodiscard]] virtual RouteEntry
-  createOriginatedRoute(const QString &prefix) = 0;
+    [[nodiscard]] virtual RouteEntry createOriginatedRoute(const QString& prefix) = 0;
 
-  [[nodiscard]] virtual std::optional<RouteEntry>
-  importRoute(const QString &prefix, const PathAttributes &attributes,
-              const NeighborConfig &fromPeer) = 0;
+    [[nodiscard]] virtual std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes,
+                                                                const NeighborConfig& fromPeer) = 0;
 
-  [[nodiscard]] virtual std::optional<RouteEntry>
-  selectBestRoute(const QString &prefix,
-                  const QVector<RouteEntry> &candidates,
-                  const std::optional<RouteEntry> &currentBest) = 0;
+    [[nodiscard]] virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
+                                                                    const std::optional<RouteEntry>& currentBest) = 0;
 
-  // Returning std::nullopt filters (or withdraws) the route for this peer.
-  [[nodiscard]] virtual std::optional<RouteEntry>
-  exportRoute(const RouteEntry &route, const NeighborConfig &toPeer) = 0;
+    // Returning std::nullopt filters (or withdraws) the route for this peer.
+    [[nodiscard]] virtual std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) = 0;
 
 private:
-  RouterNodeContext context_;
+    RouterNodeContext context_;
 };
 
-class RouterNodePlugin {
+class RouterNodePlugin
+{
 public:
-  virtual ~RouterNodePlugin() = default;
+    virtual ~RouterNodePlugin() = default;
 
-  [[nodiscard]] virtual RouterPluginMetadata metadata() const = 0;
+    [[nodiscard]] virtual RouterPluginMetadata metadata() const = 0;
 
-  // The factory can be called from the simulation thread. Implementations
-  // must not retain the parent or error pointer and must not throw across the
-  // plugin boundary.
-  [[nodiscard]] virtual RouterNode *
-  createRouterNode(const RouterNodeContext &context, QObject *parent,
-                   QString *error) = 0;
+    // The factory can be called from the simulation thread. Implementations
+    // must not retain the parent or error pointer and must not throw across the
+    // plugin boundary.
+    [[nodiscard]] virtual RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) = 0;
 };
 
 } // namespace bgptester
