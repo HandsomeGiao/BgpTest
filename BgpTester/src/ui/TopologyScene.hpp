@@ -66,6 +66,7 @@ protected:
 private:
     void updateConnectedLinks(const QString& routerId);
     void rebuildAsGroups();
+    void updateSceneRectFromRouters();
     void updateSelectionContext();
     RouterGraphicsItem* routerItemAt(const QPointF& position) const;
 

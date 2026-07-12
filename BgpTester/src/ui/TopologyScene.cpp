@@ -349,6 +349,7 @@ void TopologyScene::rebuild()
     pendingLinkStart_.clear();
     if (!topology_)
     {
+        updateSceneRectFromRouters();
         rebuilding_ = false;
         return;
     }
@@ -389,6 +390,7 @@ void TopologyScene::rebuild()
         linkItems_.insert(key, item);
     }
     rebuildAsGroups();
+    updateSceneRectFromRouters();
     rebuilding_ = false;
 }
 
@@ -521,6 +523,7 @@ void TopologyScene::routerMoved(const QString& routerId, const QPointF& position
     topology_->routers[routerId].position = position;
     updateConnectedLinks(routerId);
     rebuildAsGroups();
+    updateSceneRectFromRouters();
     emit topologyModified();
 }
 
@@ -611,6 +614,26 @@ void TopologyScene::rebuildAsGroups()
     }
 }
 
+void TopologyScene::updateSceneRectFromRouters()
+{
+    if (routerItems_.isEmpty())
+    {
+        setSceneRect(-1000, -800, 3000, 2200);
+        return;
+    }
+
+    QRectF routerBounds;
+    bool firstRouter = true;
+    for (const auto* router : std::as_const(routerItems_))
+    {
+        routerBounds = firstRouter ? router->sceneBoundingRect() : routerBounds.united(router->sceneBoundingRect());
+        firstRouter = false;
+    }
+
+    constexpr qreal sceneMargin = 250.0;
+    setSceneRect(routerBounds.adjusted(-sceneMargin, -sceneMargin, sceneMargin, sceneMargin));
+}
+
 void TopologyScene::updateSelectionContext()
 {
     QString routerId;
@@ -656,11 +679,26 @@ TopologyView::TopologyView(TopologyScene* scene, QWidget* parent) : QGraphicsVie
 
 void TopologyView::wheelEvent(QWheelEvent* event)
 {
-    const qreal factor = event->angleDelta().y() > 0 ? 1.15 : 1.0 / 1.15;
-    const auto nextScale = transform().m11() * factor;
-    if (nextScale >= 0.2 && nextScale <= 4.0)
+    const auto delta = event->angleDelta().y();
+    if (delta == 0)
     {
-        scale(factor, factor);
+        event->accept();
+        return;
+    }
+
+    constexpr qreal minimumScale = 0.02;
+    constexpr qreal maximumScale = 4.0;
+    const bool zoomingIn = delta > 0;
+    const qreal factor = zoomingIn ? 1.15 : 1.0 / 1.15;
+    const auto currentScale = transform().m11();
+
+    // fitInView() may legitimately produce a scale below minimumScale for a
+    // very large topology. Always allow movement back toward the valid range
+    // so the view cannot become permanently stuck below the lower limit.
+    if ((zoomingIn && currentScale < maximumScale) || (!zoomingIn && currentScale > minimumScale))
+    {
+        const auto targetScale = std::clamp(currentScale * factor, minimumScale, maximumScale);
+        scale(targetScale / currentScale, targetScale / currentScale);
     }
     event->accept();
 }
