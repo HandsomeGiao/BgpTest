@@ -14,6 +14,7 @@ class QCloseEvent;
 class QComboBox;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QSortFilterProxyModel;
 class QTableView;
 class QTableWidget;
@@ -141,6 +142,7 @@ private:
     QAction* stopAction_ = nullptr;
     QAction* fitAction_ = nullptr;
     QActionGroup* modeGroup_ = nullptr;
+    QMenu* viewMenu_ = nullptr;
 
     QComboBox* routerCombo_ = nullptr;
     QComboBox* linkCombo_ = nullptr;
@@ -158,6 +160,7 @@ private:
     QTableView* eventView_ = nullptr;
     QLineEdit* eventFilterEdit_ = nullptr;
     QCheckBox* followEventsCheck_ = nullptr;
+    QLabel* eventCountLabel_ = nullptr;
     QLabel* simulationStatusLabel_ = nullptr;
     QLabel* statsLabel_ = nullptr;
     QLabel* logPathLabel_ = nullptr;
@@ -168,6 +171,7 @@ private:
     QTimer* ribRefreshTimer_ = nullptr;
     bool snapshotRequestPending_ = false;
     bool snapshotRefreshNeeded_ = false;
+    bool historyLoadInProgress_ = false;
 };
 
 } // namespace bgptester

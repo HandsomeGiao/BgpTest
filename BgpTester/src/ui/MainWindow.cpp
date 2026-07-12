@@ -33,6 +33,7 @@
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QPushButton>
+#include <QProgressDialog>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -47,11 +48,22 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <atomic>
+#include <memory>
 
 namespace bgptester
 {
 namespace
 {
+
+struct HistoryLoadState
+{
+    QVector<SimulationEvent> events;
+    QString error;
+    std::atomic<qint64> loadedRows{0};
+    std::atomic<qint64> totalRows{0};
+    std::atomic_bool cancelRequested{false};
+};
 
 QTableWidgetItem* tableItem(const QString& text, Qt::Alignment alignment = Qt::AlignCenter)
 {
@@ -274,8 +286,9 @@ void MainWindow::buildMenusAndToolbar()
     editMenu->addAction(settingsAction_);
     auto* simulationMenu = menuBar()->addMenu(QStringLiteral("仿真(&S)"));
     simulationMenu->addActions({startAction_, stopAction_});
-    auto* viewMenu = menuBar()->addMenu(QStringLiteral("视图(&V)"));
-    viewMenu->addAction(fitAction_);
+    viewMenu_ = menuBar()->addMenu(QStringLiteral("视图(&V)"));
+    viewMenu_->addAction(fitAction_);
+    viewMenu_->addSeparator();
 
     auto* toolbar = addToolBar(QStringLiteral("主工具栏"));
     toolbar->setObjectName(QStringLiteral("mainToolbar"));
@@ -389,6 +402,7 @@ void MainWindow::buildInspectorDock()
     layout->addWidget(tabs, 1);
     dock->setWidget(container);
     addDockWidget(Qt::RightDockWidgetArea, dock);
+    viewMenu_->addAction(dock->toggleViewAction());
 }
 
 void MainWindow::buildEventDock()
@@ -403,6 +417,8 @@ void MainWindow::buildEventDock()
     eventFilterEdit_ = new QLineEdit(container);
     eventFilterEdit_->setClearButtonEnabled(true);
     eventFilterEdit_->setPlaceholderText(QStringLiteral("过滤所有列：路由器、动作、ASN、前缀…"));
+    eventCountLabel_ = new QLabel(QStringLiteral("显示 0 / 共 0 条"), container);
+    eventCountLabel_->setMinimumWidth(125);
     followEventsCheck_ = new QCheckBox(QStringLiteral("跟随实时"), container);
     followEventsCheck_->setChecked(true);
     auto* clearButton = new QPushButton(QStringLiteral("清空表格"), container);
@@ -410,6 +426,7 @@ void MainWindow::buildEventDock()
     connect(clearButton, &QPushButton::clicked, eventModel_, &EventTableModel::clear);
     connect(historyButton, &QPushButton::clicked, this, &MainWindow::openHistory);
     filterRow->addWidget(eventFilterEdit_, 1);
+    filterRow->addWidget(eventCountLabel_);
     filterRow->addWidget(followEventsCheck_);
     filterRow->addWidget(clearButton);
     filterRow->addWidget(historyButton);
@@ -422,6 +439,15 @@ void MainWindow::buildEventDock()
     eventProxy_->setFilterRole(Qt::UserRole);
     eventProxy_->setSortRole(Qt::DisplayRole);
     connect(eventFilterEdit_, &QLineEdit::textChanged, eventProxy_, &QSortFilterProxyModel::setFilterFixedString);
+    const auto updateEventCount = [this]
+    {
+        eventCountLabel_->setText(
+            QStringLiteral("显示 %1 / 共 %2 条").arg(eventProxy_->rowCount()).arg(eventModel_->rowCount()));
+    };
+    connect(eventProxy_, &QAbstractItemModel::rowsInserted, this, updateEventCount);
+    connect(eventProxy_, &QAbstractItemModel::rowsRemoved, this, updateEventCount);
+    connect(eventProxy_, &QAbstractItemModel::modelReset, this, updateEventCount);
+    connect(eventProxy_, &QAbstractItemModel::layoutChanged, this, updateEventCount);
     eventView_ = new QTableView(container);
     eventView_->setModel(eventProxy_);
     eventView_->setAlternatingRowColors(true);
@@ -441,6 +467,7 @@ void MainWindow::buildEventDock()
     layout->addWidget(eventView_, 1);
     dock->setWidget(container);
     addDockWidget(Qt::BottomDockWidgetArea, dock);
+    viewMenu_->addAction(dock->toggleViewAction());
     resizeDocks({dock}, {280}, Qt::Vertical);
 }
 
@@ -549,23 +576,100 @@ bool MainWindow::saveTopologyAs()
 
 void MainWindow::openHistory()
 {
+    if (historyLoadInProgress_)
+    {
+        return;
+    }
+
     const auto path = QFileDialog::getOpenFileName(this, QStringLiteral("打开 BMP SQLite 日志"), QDir::currentPath(),
                                                    QStringLiteral("SQLite database (*.sqlite *.db);;所有文件 (*.*)"));
     if (path.isEmpty())
     {
         return;
     }
-    QString error;
-    auto events = EventStore::readDatabase(path, 50000, &error);
-    if (!error.isEmpty())
-    {
-        QMessageBox::critical(this, QStringLiteral("无法读取日志"), error);
-        return;
-    }
-    eventModel_->setEvents(std::move(events));
-    followEventsCheck_->setChecked(false);
-    logPathLabel_->setText(QStringLiteral("历史：%1").arg(QDir::toNativeSeparators(path)));
-    statusBar()->showMessage(QStringLiteral("已载入历史 BMP 日志"), 4000);
+
+    historyLoadInProgress_ = true;
+    openHistoryAction_->setEnabled(false);
+    auto state = std::make_shared<HistoryLoadState>();
+
+    auto* progressDialog = new QProgressDialog(this);
+    progressDialog->setWindowTitle(QStringLiteral("加载 SQLite 日志"));
+    progressDialog->setLabelText(QStringLiteral("正在读取历史记录…"));
+    progressDialog->setCancelButtonText(QStringLiteral("取消加载"));
+    progressDialog->setWindowModality(Qt::WindowModal);
+    progressDialog->setMinimumDuration(0);
+    progressDialog->setAutoClose(false);
+    progressDialog->setAutoReset(false);
+    progressDialog->setRange(0, 0);
+    connect(progressDialog, &QProgressDialog::canceled, progressDialog,
+            [state] { state->cancelRequested.store(true, std::memory_order_relaxed); });
+    progressDialog->show();
+
+    auto* progressTimer = new QTimer(progressDialog);
+    progressTimer->setInterval(100);
+    connect(progressTimer, &QTimer::timeout, progressDialog,
+            [state, progressDialog]
+            {
+                const auto loaded = state->loadedRows.load(std::memory_order_relaxed);
+                const auto total = state->totalRows.load(std::memory_order_relaxed);
+                if (total <= 0)
+                {
+                    progressDialog->setRange(0, 0);
+                    progressDialog->setLabelText(QStringLiteral("正在读取历史记录… 已加载 %1 条").arg(loaded));
+                    return;
+                }
+
+                progressDialog->setRange(0, 1000);
+                progressDialog->setValue(static_cast<int>(std::min<qint64>(1000, loaded * 1000 / total)));
+                progressDialog->setLabelText(QStringLiteral("正在读取历史记录… %1 / %2 条").arg(loaded).arg(total));
+            });
+    progressTimer->start();
+
+    auto* loadThread = QThread::create(
+        [state, path]
+        {
+            state->events = EventStore::readDatabase(
+                path, 0, &state->error,
+                [state](qsizetype loaded, qsizetype total)
+                {
+                    state->loadedRows.store(loaded, std::memory_order_relaxed);
+                    state->totalRows.store(total, std::memory_order_relaxed);
+                    return !state->cancelRequested.load(std::memory_order_relaxed);
+                });
+        });
+    connect(loadThread, &QThread::finished, this,
+            [this, state, path, progressDialog]
+            {
+                historyLoadInProgress_ = false;
+                openHistoryAction_->setEnabled(!simulationRunning_);
+                progressDialog->setRange(0, 1000);
+                progressDialog->setValue(1000);
+
+                if (state->cancelRequested.load(std::memory_order_relaxed))
+                {
+                    progressDialog->deleteLater();
+                    statusBar()->showMessage(QStringLiteral("已取消加载历史 BMP 日志"), 4000);
+                    return;
+                }
+
+                if (!state->error.isEmpty())
+                {
+                    progressDialog->deleteLater();
+                    QMessageBox::critical(this, QStringLiteral("无法读取日志"), state->error);
+                    return;
+                }
+
+                const auto eventCount = state->events.size();
+                progressDialog->setLabelText(QStringLiteral("正在更新日志表格…"));
+                eventProxy_->sort(-1);
+                eventModel_->setEvents(std::move(state->events));
+                followEventsCheck_->setChecked(false);
+                logPathLabel_->setText(QStringLiteral("历史：%1").arg(QDir::toNativeSeparators(path)));
+                statusBar()->showMessage(QStringLiteral("已载入 %1 条历史 BMP 日志").arg(eventCount), 4000);
+                progressDialog->deleteLater();
+            });
+    connect(loadThread, &QThread::finished, loadThread, &QObject::deleteLater);
+    loadThread->start();
 }
 
 void MainWindow::editSimulationSettings()

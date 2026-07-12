@@ -13,6 +13,7 @@
 #include <QWaitCondition>
 
 #include <deque>
+#include <functional>
 
 namespace bgptester
 {
@@ -49,7 +50,8 @@ public:
     {
         return runSerial_;
     }
-    static QVector<SimulationEvent> readDatabase(const QString& path, int limit, QString* error = nullptr);
+    static QVector<SimulationEvent> readDatabase(const QString& path, int limit, QString* error = nullptr,
+                                                 const std::function<bool(qsizetype, qsizetype)>& progress = {});
     static QJsonObject eventToJson(const SimulationEvent& event);
 
 public slots:

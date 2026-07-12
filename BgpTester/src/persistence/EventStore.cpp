@@ -499,7 +499,8 @@ QJsonObject EventStore::eventToJson(const SimulationEvent& event)
     return object;
 }
 
-QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit, QString* error)
+QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit, QString* error,
+                                                  const std::function<bool(qsizetype, qsizetype)>& progress)
 {
     QVector<SimulationEvent> result;
     const auto connection = uniqueConnectionName("bgptester-history");
@@ -516,11 +517,34 @@ QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit
         }
         else
         {
+            qsizetype totalRows = 0;
+            if (progress)
+            {
+                QSqlQuery countQuery(database);
+                if (countQuery.exec(QStringLiteral("SELECT COUNT(*) FROM bmp_events")) && countQuery.next())
+                {
+                    totalRows = countQuery.value(0).toLongLong();
+                    if (limit > 0)
+                    {
+                        totalRows = std::min(totalRows, static_cast<qsizetype>(limit));
+                    }
+                }
+                progress(0, totalRows);
+            }
+
             QSqlQuery query(database);
-            query.prepare(QStringLiteral("SELECT id,timestamp,event,router,from_peer,to_peer,from_as,to_as,"
-                                         "msg_type,action,sequence,prefixes,withdrawn,next_hop,as_path,"
-                                         "local_pref,med,raw_json FROM bmp_events ORDER BY id DESC LIMIT ?"));
-            query.addBindValue(std::clamp(limit, 1, 100000));
+            const auto select = QStringLiteral("SELECT id,timestamp,event,router,from_peer,to_peer,from_as,to_as,"
+                                               "msg_type,action,sequence,prefixes,withdrawn,next_hop,as_path,"
+                                               "local_pref,med,raw_json FROM bmp_events");
+            if (limit > 0)
+            {
+                query.prepare(select + QStringLiteral(" ORDER BY id DESC LIMIT ?"));
+                query.addBindValue(limit);
+            }
+            else
+            {
+                query.prepare(select + QStringLiteral(" ORDER BY id ASC"));
+            }
             if (!query.exec())
             {
                 if (error)
@@ -530,9 +554,27 @@ QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit
             }
             else
             {
+                qsizetype loadedRows = 0;
                 while (query.next())
                 {
-                    result.prepend(eventFromQuery(query));
+                    if (limit > 0)
+                    {
+                        result.prepend(eventFromQuery(query));
+                    }
+                    else
+                    {
+                        result.append(eventFromQuery(query));
+                    }
+                    ++loadedRows;
+                    if (progress && loadedRows % 512 == 0 && !progress(loadedRows, totalRows))
+                    {
+                        result.clear();
+                        break;
+                    }
+                }
+                if (progress)
+                {
+                    progress(loadedRows, totalRows);
                 }
             }
             database.close();

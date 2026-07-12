@@ -173,10 +173,6 @@ void EventTableModel::appendEvents(QVector<SimulationEvent> events)
 void EventTableModel::setEvents(QVector<SimulationEvent> events)
 {
     beginResetModel();
-    if (events.size() > capacity_)
-    {
-        events.remove(0, events.size() - capacity_);
-    }
     events_ = std::move(events);
     endResetModel();
 }
