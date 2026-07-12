@@ -256,6 +256,128 @@ void bulkUpdatesAreAggregated()
     engine.stopSimulation();
 }
 
+void bulkWithdrawalsAreAggregated()
+{
+    constexpr int prefixCount = 4096;
+    auto topology = twoRouterTopology();
+    auto& prefixes = topology.routers[QStringLiteral("R1")].originatedPrefixes;
+    prefixes.clear();
+    prefixes.reserve(prefixCount);
+    for (int index = 0; index < prefixCount; ++index)
+    {
+        prefixes.append(QStringLiteral("100.65.%1.%2/32").arg(index / 256).arg(index % 256));
+    }
+    const auto originated = prefixes;
+
+    bool countWithdrawals = false;
+    int withdrawalEvents = 0;
+    int withdrawnPrefixes = 0;
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         if (!countWithdrawals)
+                         {
+                             return;
+                         }
+                         for (const auto& event : events)
+                         {
+                             if (event.action == QStringLiteral("WITHDRAW"))
+                             {
+                                 ++withdrawalEvents;
+                                 withdrawnPrefixes += event.withdrawn.size();
+                             }
+                         }
+                     });
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.size() == prefixCount && engine.isConverged(); }, 10000),
+            "bulk route set did not converge before withdrawal");
+
+    countWithdrawals = true;
+    for (const auto& prefix : originated)
+    {
+        engine.withdrawPrefix(QStringLiteral("R1"), prefix);
+    }
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.isEmpty() && engine.isConverged(); }, 10000),
+            "bulk withdrawals did not converge");
+    require(withdrawnPrefixes == prefixCount, "bulk withdrawal lost prefixes");
+    require(withdrawalEvents <= 16, "bulk withdrawals were emitted as too many individual UPDATE events");
+    engine.stopSimulation();
+}
+
+void transientWithdrawalIsSupersededBeforeFlush()
+{
+    auto topology = twoRouterTopology();
+    const auto prefix = topology.routers.value(QStringLiteral("R1")).originatedPrefixes.front();
+    int withdrawalEvents = 0;
+    bool countWithdrawals = false;
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         if (!countWithdrawals)
+                         {
+                             return;
+                         }
+                         for (const auto& event : events)
+                         {
+                             if (event.action == QStringLiteral("WITHDRAW"))
+                             {
+                                 ++withdrawalEvents;
+                             }
+                         }
+                     });
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.contains(prefix) && engine.isConverged(); }, 1500),
+            "route did not converge before transient withdrawal");
+
+    countWithdrawals = true;
+    engine.withdrawPrefix(QStringLiteral("R1"), prefix);
+    engine.originatePrefix(QStringLiteral("R1"), prefix);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.contains(prefix) && engine.isConverged(); }, 1500),
+            "superseding advertisement did not preserve the route");
+    require(withdrawalEvents == 0, "superseded withdrawal was still emitted");
+    engine.stopSimulation();
+}
+
+void stalePrefixDoesNotDiscardAggregatedWithdrawal()
+{
+    constexpr int prefixCount = 512;
+    auto topology = twoRouterTopology();
+    topology.links.front().delayMs = 100;
+    auto& prefixes = topology.routers[QStringLiteral("R1")].originatedPrefixes;
+    prefixes.clear();
+    prefixes.reserve(prefixCount);
+    for (int index = 0; index < prefixCount; ++index)
+    {
+        prefixes.append(QStringLiteral("100.66.%1.%2/32").arg(index / 256).arg(index % 256));
+    }
+    const auto originated = prefixes;
+
+    SimulationEngine engine;
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.size() == prefixCount && engine.isConverged(); }, 3000),
+            "delayed bulk route set did not converge");
+    for (const auto& prefix : originated)
+    {
+        engine.withdrawPrefix(QStringLiteral("R1"), prefix);
+    }
+
+    // Let the zero-delay withdrawal flush build one in-flight message, then
+    // supersede only one prefix while the message is crossing the link.
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    engine.originatePrefix(QStringLiteral("R1"), originated.front());
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("R2")).locRib;
+                    return rib.size() == 1 && rib.contains(originated.front()) && engine.isConverged();
+                },
+                3000),
+            "one stale prefix discarded valid siblings from an aggregated withdrawal");
+    engine.stopSimulation();
+}
+
 void eventStoreWritesJsonAndSqlite()
 {
     QTemporaryDir directory(QDir::current().filePath(QStringLiteral("event-store-test-XXXXXX")));
@@ -357,6 +479,10 @@ int runTopologyStress(const QString& path, int durationMs)
 
     quint64 eventCount = 0;
     quint64 eventPrefixes = 0;
+    quint64 updateEvents = 0;
+    quint64 withdrawalEvents = 0;
+    quint64 advertisedPrefixes = 0;
+    quint64 withdrawnPrefixes = 0;
     SimulationStats latestStats;
     SimulationEngine engine;
     QObject::connect(&engine, &SimulationEngine::eventsGenerated,
@@ -366,6 +492,16 @@ int runTopologyStress(const QString& path, int durationMs)
                          for (const auto& event : events)
                          {
                              eventPrefixes += static_cast<quint64>(event.prefixes.size() + event.withdrawn.size());
+                             if (event.action == QStringLiteral("UPDATE"))
+                             {
+                                 ++updateEvents;
+                                 advertisedPrefixes += static_cast<quint64>(event.prefixes.size());
+                             }
+                             else if (event.action == QStringLiteral("WITHDRAW"))
+                             {
+                                 ++withdrawalEvents;
+                                 withdrawnPrefixes += static_cast<quint64>(event.withdrawn.size());
+                             }
                          }
                      });
     QObject::connect(&engine, &SimulationEngine::statsChanged, [&](const SimulationStats& stats) { latestStats = stats; });
@@ -382,7 +518,7 @@ int runTopologyStress(const QString& path, int durationMs)
         {
             std::cout << "stress elapsed_ms=" << elapsed.elapsed() << " messages=" << latestStats.deliveredMessages
                       << " scheduled=" << latestStats.pendingEvents << " log_events=" << eventCount << " event_prefixes=" << eventPrefixes
-                      << '\n';
+                      << std::endl;
             nextReport += 1000;
         }
     }
@@ -395,7 +531,9 @@ int runTopologyStress(const QString& path, int durationMs)
     }
     std::cout << "stress done elapsed_ms=" << elapsed.elapsed() << " converged=" << converged
               << " messages=" << latestStats.deliveredMessages << " scheduled=" << latestStats.pendingEvents << " log_events=" << eventCount
-              << " event_prefixes=" << eventPrefixes << " loc_rib_entries=" << locRibEntries << '\n';
+              << " event_prefixes=" << eventPrefixes << " updates=" << updateEvents << " advertised_prefixes=" << advertisedPrefixes
+              << " withdrawals=" << withdrawalEvents << " withdrawn_prefixes=" << withdrawnPrefixes << " loc_rib_entries=" << locRibEntries
+              << '\n';
     engine.stopSimulation();
     return 0;
 }
@@ -420,6 +558,9 @@ int main(int argc, char** argv)
         staleMraiAdvertisementDoesNotReappear();
         sourceRouterPluginControlsRouteExport();
         bulkUpdatesAreAggregated();
+        bulkWithdrawalsAreAggregated();
+        transientWithdrawalIsSupersededBeforeFlush();
+        stalePrefixDoesNotDiscardAggregatedWithdrawal();
         eventStoreWritesJsonAndSqlite();
         eventStoreWorkerQueuePersistsBatches();
     }

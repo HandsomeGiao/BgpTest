@@ -80,6 +80,7 @@ private:
         PeerState state = PeerState::Idle;
         qint64 nextMraiAt = 0;
         bool flushScheduled = false;
+        bool withdrawalFlushScheduled = false;
         QMap<QString, PendingUpdate> pending;
     };
 
@@ -99,7 +100,8 @@ private:
     enum class ScheduledKind
     {
         DeliverMessages,
-        FlushMrai
+        FlushMrai,
+        FlushWithdrawals
     };
 
     struct ScheduledEvent
@@ -133,11 +135,13 @@ private:
 
     void scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs = 0);
     void scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt);
+    void scheduleWithdrawalFlush(const QString& from, const QString& to);
     void deliverMessages(const ScheduledEvent& event);
     void flushMrai(const QString& from, const QString& to);
+    void flushWithdrawals(const QString& from, const QString& to);
     bool messageDeliverable(const QString& from, const QString& to) const;
     int linkDelay(const QString& from, const QString& to) const;
-    bool generationIsCurrent(const BgpMessage& message) const;
+    bool retainCurrentRoutes(BgpMessage& message) const;
     void commitOutbound(const BgpMessage& message);
 
     void sendOpen(const QString& from, const QString& to);

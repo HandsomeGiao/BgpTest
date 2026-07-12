@@ -11,7 +11,7 @@
 - 事件驱动 BGP OPEN、UPDATE、NOTIFICATION 仿真；
 - Adj-RIB-In、Loc-RIB、Adj-RIB-Out、EBGP、IBGP 和基础 Route Reflector；
 - LOCAL_PREF、AS_PATH、MED、会话类型、旧路径稳定性与确定性 tie-break 选路；
-- 每邻居 MRAI、withdrawal bypass、链路延迟和 stale UPDATE generation guard；
+- 每邻居 MRAI、FRR 风格 withdrawal 聚合、链路延迟和逐前缀 stale UPDATE generation guard；
 - 运行时节点/链路上下线、前缀发布/撤销与收敛状态；
 - 最佳路由、全部路径、Peer 状态检查以及画布逐跳路径高亮；
 - BMP 风格实时事件表、全列过滤、JSON 详情、JSONL 和 SQLite 历史日志；
