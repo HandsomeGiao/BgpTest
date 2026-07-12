@@ -62,8 +62,10 @@ signals:
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
+    void finishRouterMove();
     void updateConnectedLinks(const QString& routerId);
     void rebuildAsGroups();
     void updateSceneRectFromRouters();
@@ -81,6 +83,7 @@ private:
     Mode mode_ = Mode::Select;
     bool editable_ = true;
     bool rebuilding_ = false;
+    bool routerMovePending_ = false;
 };
 
 class TopologyView final : public QGraphicsView

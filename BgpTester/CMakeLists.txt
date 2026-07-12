@@ -91,6 +91,8 @@ add_custom_command(TARGET BgpTester POST_BUILD
 
 include(CTest)
 if(BUILD_TESTING)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+
     add_executable(BgpTesterTests tests/CoreTests.cpp)
     target_sources(BgpTesterTests PRIVATE
         $<TARGET_OBJECTS:bgptester_router_plugins>
@@ -102,4 +104,23 @@ if(BUILD_TESTING)
         target_compile_options(BgpTesterTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME BgpTesterTests COMMAND BgpTesterTests)
+
+    add_executable(BgpTesterUiTests
+        tests/UiTests.cpp
+        src/ui/TopologyScene.cpp
+    )
+    target_link_libraries(BgpTesterUiTests
+        PRIVATE
+            bgptester_core
+            Qt6::Gui
+            Qt6::Widgets
+            Qt6::Test
+    )
+    if(MSVC)
+        target_compile_options(BgpTesterUiTests PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(BgpTesterUiTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME BgpTesterUiTests COMMAND BgpTesterUiTests)
+    set_tests_properties(BgpTesterUiTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

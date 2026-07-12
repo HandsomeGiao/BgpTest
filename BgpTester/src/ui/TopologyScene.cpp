@@ -342,6 +342,7 @@ void TopologyScene::setTopology(Topology* topology)
 void TopologyScene::rebuild()
 {
     rebuilding_ = true;
+    routerMovePending_ = false;
     clear();
     routerItems_.clear();
     linkItems_.clear();
@@ -520,11 +521,14 @@ void TopologyScene::routerMoved(const QString& routerId, const QPointF& position
     {
         return;
     }
-    topology_->routers[routerId].position = position;
+    auto& router = topology_->routers[routerId];
+    if (router.position == position)
+    {
+        return;
+    }
+    router.position = position;
     updateConnectedLinks(routerId);
-    rebuildAsGroups();
-    updateSceneRectFromRouters();
-    emit topologyModified();
+    routerMovePending_ = true;
 }
 
 void TopologyScene::requestRouterEdit(const QString& routerId)
@@ -569,6 +573,27 @@ void TopologyScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
         }
     }
     QGraphicsScene::mousePressEvent(event);
+}
+
+void TopologyScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
+{
+    QGraphicsScene::mouseReleaseEvent(event);
+    if (event->button() == Qt::LeftButton)
+    {
+        finishRouterMove();
+    }
+}
+
+void TopologyScene::finishRouterMove()
+{
+    if (rebuilding_ || !routerMovePending_)
+    {
+        return;
+    }
+    routerMovePending_ = false;
+    rebuildAsGroups();
+    updateSceneRectFromRouters();
+    emit topologyModified();
 }
 
 void TopologyScene::updateConnectedLinks(const QString& routerId)

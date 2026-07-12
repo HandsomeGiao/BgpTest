@@ -6,7 +6,7 @@
 
 - CMake 3.25 或更新版本
 - 支持 C++20 的编译器
-- Qt 6.5 或更新版本，需安装 `Core`、`Gui`、`Widgets`、`Network`、`Sql` 模块和 SQLite driver
+- Qt 6.5 或更新版本，需安装 `Core`、`Gui`、`Widgets`、`Network`、`Sql` 模块、SQLite driver，以及仅回归测试使用的 `Test` 模块
 - 与 Qt kit 匹配的构建工具（MinGW kit 通常使用 `mingw32-make`，其他 kit 可使用 Ninja）
 
 工程不使用 vcpkg，也不会自动下载依赖。Qt 与编译器由使用者自行安装；请确保所选编译器与 Qt kit 匹配，并把该 kit 的 `bin` 目录加入 `PATH`。`build.ps1` 会优先按 Qt kit 记录的 GCC 主版本，从 Qt 安装目录的 `Tools` 中选择对应 MinGW，避免误用 PATH 中 ABI 不匹配的编译器。
