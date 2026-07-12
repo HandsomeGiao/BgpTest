@@ -31,12 +31,12 @@ public:
     void setTopology(Topology* topology);
     void rebuild();
     void setMode(Mode mode);
-    [[nodiscard]] Mode mode() const
+    Mode mode() const
     {
         return mode_;
     }
     void setEditable(bool editable);
-    [[nodiscard]] bool isEditable() const
+    bool isEditable() const
     {
         return editable_;
     }

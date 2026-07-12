@@ -9,8 +9,8 @@ namespace bgptester
 class ConfigurableExportRouterPlugin final : public RouterNodePlugin
 {
 public:
-    [[nodiscard]] RouterPluginMetadata metadata() const override;
-    [[nodiscard]] RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) override;
+    RouterPluginMetadata metadata() const override;
+    RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) override;
 };
 
 } // namespace bgptester

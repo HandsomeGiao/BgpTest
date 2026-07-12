@@ -21,7 +21,7 @@ class RouterDialog final : public QDialog
 
 public:
     RouterDialog(const RouterConfig& router, const QStringList& otherRouterIds, QWidget* parent = nullptr);
-    [[nodiscard]] RouterConfig router() const;
+    RouterConfig router() const;
 
 public slots:
     void accept() override;
@@ -45,7 +45,7 @@ class LinkDialog final : public QDialog
 
 public:
     explicit LinkDialog(const LinkConfig& link, QWidget* parent = nullptr);
-    [[nodiscard]] LinkConfig link() const;
+    LinkConfig link() const;
 
 private:
     LinkConfig original_;
@@ -63,7 +63,7 @@ class SimulationSettingsDialog final : public QDialog
 
 public:
     explicit SimulationSettingsDialog(const SimulationSettings& settings, QWidget* parent = nullptr);
-    [[nodiscard]] SimulationSettings settings() const;
+    SimulationSettings settings() const;
 
 public slots:
     void accept() override;

@@ -27,18 +27,17 @@ public:
     RouterPluginRegistry& operator=(const RouterPluginRegistry&) = delete;
     ~RouterPluginRegistry();
 
-    [[nodiscard]] QVector<RegisteredRouterPlugin> plugins() const;
-    [[nodiscard]] std::optional<RouterPluginMetadata> metadata(const QString& pluginId) const;
-    [[nodiscard]] bool contains(const QString& pluginId) const;
-    [[nodiscard]] QStringList registrationErrors() const;
+    QVector<RegisteredRouterPlugin> plugins() const;
+    std::optional<RouterPluginMetadata> metadata(const QString& pluginId) const;
+    bool contains(const QString& pluginId) const;
+    QStringList registrationErrors() const;
 
     // Called by BGPTESTER_REGISTER_ROUTER_PLUGIN during process startup.
     // Plugin objects have static storage duration and remain owned by their
     // translation units.
     bool registerStaticPlugin(RouterNodePlugin* plugin, const QString& source);
 
-    [[nodiscard]] RouterNode* createRouterNode(const RouterConfig& config, const Topology& topology, QObject* parent,
-                                               QString* error = nullptr) const;
+    RouterNode* createRouterNode(const RouterConfig& config, const Topology& topology, QObject* parent, QString* error = nullptr) const;
 
 private:
     RouterPluginRegistry();

@@ -25,18 +25,18 @@ public:
     explicit SimulationEngine(QObject* parent = nullptr);
     ~SimulationEngine() override = default;
 
-    [[nodiscard]] bool isRunning() const
+    bool isRunning() const
     {
         return running_;
     }
-    [[nodiscard]] bool isConverged() const
+    bool isConverged() const
     {
         return converged_;
     }
-    [[nodiscard]] RibSnapshot ribSnapshot(const QString& routerId) const;
-    [[nodiscard]] QVector<PeerSnapshot> peerSnapshots(const QString& routerId) const;
-    [[nodiscard]] QVector<RouterSnapshot> routerSnapshots() const;
-    [[nodiscard]] BestPathUpdate bestPath(const QString& routerId, const QString& prefix) const;
+    RibSnapshot ribSnapshot(const QString& routerId) const;
+    QVector<PeerSnapshot> peerSnapshots(const QString& routerId) const;
+    QVector<RouterSnapshot> routerSnapshots() const;
+    BestPathUpdate bestPath(const QString& routerId, const QString& prefix) const;
 
 public slots:
     void startSimulation(bgptester::Topology topology);
@@ -123,9 +123,9 @@ private:
         }
     };
 
-    [[nodiscard]] qint64 now() const;
+    qint64 now() const;
     void clearRuntime();
-    [[nodiscard]] bool buildRuntime(QString* error);
+    bool buildRuntime(QString* error);
     void armNextEvent();
     void markActivity();
     void publishStats();
@@ -134,9 +134,9 @@ private:
     void scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt);
     void deliverMessages(const ScheduledEvent& event);
     void flushMrai(const QString& from, const QString& to);
-    [[nodiscard]] bool messageDeliverable(const QString& from, const QString& to) const;
-    [[nodiscard]] int linkDelay(const QString& from, const QString& to) const;
-    [[nodiscard]] bool generationIsCurrent(const BgpMessage& message) const;
+    bool messageDeliverable(const QString& from, const QString& to) const;
+    int linkDelay(const QString& from, const QString& to) const;
+    bool generationIsCurrent(const BgpMessage& message) const;
     void commitOutbound(const BgpMessage& message);
 
     void sendOpen(const QString& from, const QString& to);
@@ -146,15 +146,15 @@ private:
     void neighborDown(const QString& routerId, const QString& peerId);
 
     void runDecision(const QString& routerId, const QSet<QString>& changedPrefixes);
-    [[nodiscard]] std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix) const;
+    std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix) const;
     void disseminate(const QString& routerId, const QString& prefix, const std::optional<RouteEntry>& route);
     void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route);
-    [[nodiscard]] BgpMessage makeUpdateMessage(const QString& from, const QString& to, const QString& prefix,
-                                               const std::optional<RouteEntry>& route, quint64 generation) const;
+    BgpMessage makeUpdateMessage(const QString& from, const QString& to, const QString& prefix, const std::optional<RouteEntry>& route,
+                                 quint64 generation) const;
 
     void recordMessage(const BgpMessage& message);
     void recordTopologyEvent(const QString& name, QMap<QString, QString> details = {});
-    [[nodiscard]] bool hasRouteReflectorClients(const RouterRuntime& router) const;
+    bool hasRouteReflectorClients(const RouterRuntime& router) const;
 
     Topology topology_;
     QMap<QString, RouterRuntime> routers_;

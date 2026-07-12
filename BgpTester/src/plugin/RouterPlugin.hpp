@@ -50,12 +50,12 @@ public:
     RouterNode(const RouterNode&) = delete;
     RouterNode& operator=(const RouterNode&) = delete;
 
-    [[nodiscard]] const RouterNodeContext& context() const
+    const RouterNodeContext& context() const
     {
         return context_;
     }
 
-    [[nodiscard]] virtual QStringList validateConfiguration() const
+    virtual QStringList validateConfiguration() const
     {
         return {};
     }
@@ -72,16 +72,16 @@ public:
     {
     }
 
-    [[nodiscard]] virtual RouteEntry createOriginatedRoute(const QString& prefix) = 0;
+    virtual RouteEntry createOriginatedRoute(const QString& prefix) = 0;
 
-    [[nodiscard]] virtual std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes,
-                                                                const NeighborConfig& fromPeer) = 0;
+    virtual std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes,
+                                                  const NeighborConfig& fromPeer) = 0;
 
-    [[nodiscard]] virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
-                                                                    const std::optional<RouteEntry>& currentBest) = 0;
+    virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
+                                                      const std::optional<RouteEntry>& currentBest) = 0;
 
     // Returning std::nullopt filters (or withdraws) the route for this peer.
-    [[nodiscard]] virtual std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) = 0;
+    virtual std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) = 0;
 
 private:
     RouterNodeContext context_;
@@ -92,12 +92,12 @@ class RouterNodePlugin
 public:
     virtual ~RouterNodePlugin() = default;
 
-    [[nodiscard]] virtual RouterPluginMetadata metadata() const = 0;
+    virtual RouterPluginMetadata metadata() const = 0;
 
     // The factory can be called from the simulation thread. Implementations
     // must not retain the parent or error pointer and must not throw across the
     // plugin boundary.
-    [[nodiscard]] virtual RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) = 0;
+    virtual RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) = 0;
 };
 
 } // namespace bgptester

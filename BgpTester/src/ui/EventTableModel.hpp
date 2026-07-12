@@ -37,15 +37,15 @@ public:
 
     explicit EventTableModel(QObject* parent = nullptr);
 
-    [[nodiscard]] int rowCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] int columnCount(const QModelIndex& parent = {}) const override;
-    [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
-    [[nodiscard]] QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+    int rowCount(const QModelIndex& parent = {}) const override;
+    int columnCount(const QModelIndex& parent = {}) const override;
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
     void appendEvent(const SimulationEvent& event);
     void setEvents(QVector<SimulationEvent> events);
     void clear();
-    [[nodiscard]] const SimulationEvent* eventAt(int row) const;
+    const SimulationEvent* eventAt(int row) const;
 
 private:
     QVector<SimulationEvent> events_;

@@ -21,34 +21,34 @@ public:
     explicit EventStore(QObject* parent = nullptr);
     ~EventStore() override;
 
-    [[nodiscard]] bool beginRun(const SimulationSettings& settings, QString* error = nullptr);
+    bool beginRun(const SimulationSettings& settings, QString* error = nullptr);
     void endRun();
     void flush();
     void clearRecent();
 
-    [[nodiscard]] bool isOpen() const
+    bool isOpen() const
     {
         return database_.isOpen();
     }
-    [[nodiscard]] QString runDirectory() const
+    QString runDirectory() const
     {
         return runDirectory_;
     }
-    [[nodiscard]] QString logFilePath() const
+    QString logFilePath() const
     {
         return logFile_.fileName();
     }
-    [[nodiscard]] QString databasePath() const
+    QString databasePath() const
     {
         return databasePath_;
     }
-    [[nodiscard]] const QVector<SimulationEvent>& recentEvents() const
+    const QVector<SimulationEvent>& recentEvents() const
     {
         return recentEvents_;
     }
 
-    [[nodiscard]] static QVector<SimulationEvent> readDatabase(const QString& path, int limit, QString* error = nullptr);
-    [[nodiscard]] static QJsonObject eventToJson(const SimulationEvent& event);
+    static QVector<SimulationEvent> readDatabase(const QString& path, int limit, QString* error = nullptr);
+    static QJsonObject eventToJson(const SimulationEvent& event);
 
 public slots:
     void appendEvent(bgptester::SimulationEvent event);

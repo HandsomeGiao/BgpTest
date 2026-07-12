@@ -78,19 +78,19 @@ public:
     QMap<QString, RouterConfig> routers;
     QVector<LinkConfig> links;
 
-    [[nodiscard]] QJsonObject toJson() const;
-    [[nodiscard]] static std::optional<Topology> fromJson(const QJsonObject& object, QString* error = nullptr);
-    [[nodiscard]] static std::optional<Topology> load(const QString& path, QString* error = nullptr);
-    [[nodiscard]] bool save(const QString& path, QString* error = nullptr) const;
+    QJsonObject toJson() const;
+    static std::optional<Topology> fromJson(const QJsonObject& object, QString* error = nullptr);
+    static std::optional<Topology> load(const QString& path, QString* error = nullptr);
+    bool save(const QString& path, QString* error = nullptr) const;
 
-    [[nodiscard]] QStringList validate() const;
-    [[nodiscard]] QVector<NeighborConfig> neighborsFor(const QString& routerId) const;
-    [[nodiscard]] const LinkConfig* findLink(const QString& a, const QString& b) const;
-    [[nodiscard]] LinkConfig* findLink(const QString& a, const QString& b);
-    [[nodiscard]] QString nextRouterName() const;
-    [[nodiscard]] QString nextBgpRouterId() const;
-    [[nodiscard]] static QString routerIdFromIndex(int oneBasedIndex);
-    [[nodiscard]] static QString edgeKey(const QString& a, const QString& b);
+    QStringList validate() const;
+    QVector<NeighborConfig> neighborsFor(const QString& routerId) const;
+    const LinkConfig* findLink(const QString& a, const QString& b) const;
+    LinkConfig* findLink(const QString& a, const QString& b);
+    QString nextRouterName() const;
+    QString nextBgpRouterId() const;
+    static QString routerIdFromIndex(int oneBasedIndex);
+    static QString edgeKey(const QString& a, const QString& b);
 };
 
 } // namespace bgptester
