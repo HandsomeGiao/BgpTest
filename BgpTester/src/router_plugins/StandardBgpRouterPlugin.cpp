@@ -54,17 +54,16 @@ StandardBgpRouterNode::StandardBgpRouterNode(RouterNodeContext context, QObject*
 {
 }
 
-RouteEntry StandardBgpRouterNode::createOriginatedRoute(const QString& prefix)
+RouteEntry StandardBgpRouterNode::createOriginatedRoute(const QString&)
 {
     RouteEntry route;
-    route.prefix = prefix;
     route.attributes.nextHop = context().config.routerId;
     route.learnedFrom = context().config.id;
     route.localOrigin = true;
     return route;
 }
 
-std::optional<RouteEntry> StandardBgpRouterNode::importRoute(const QString& prefix, const PathAttributes& attributes,
+std::optional<RouteEntry> StandardBgpRouterNode::importRoute(const QString&, const PathAttributes& attributes,
                                                              const NeighborConfig& fromPeer)
 {
     if (attributes.asPath.contains(context().config.asn))
@@ -82,7 +81,6 @@ std::optional<RouteEntry> StandardBgpRouterNode::importRoute(const QString& pref
     }
 
     RouteEntry route;
-    route.prefix = prefix;
     route.attributes = attributes;
     route.learnedFrom = fromPeer.id;
     route.sourceSession = fromPeer.sessionType;

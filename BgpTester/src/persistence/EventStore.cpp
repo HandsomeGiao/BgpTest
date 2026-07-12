@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMetaObject>
+#include <QMutexLocker>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QThread>
@@ -60,6 +62,7 @@ QString safeRunName(QString value)
 
 EventStore::EventStore(QObject* parent) : QObject(parent)
 {
+    qRegisterMetaType<QVector<SimulationEvent>>();
     connectionName_ = uniqueConnectionName("bgptester-live");
 }
 
@@ -71,8 +74,8 @@ EventStore::~EventStore()
 bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
 {
     endRun();
-    clearRecent();
     nextId_ = 1;
+    ++runSerial_;
 
     QDir baseDirectory(settings.logDirectory);
     if (QDir::isRelativePath(settings.logDirectory))
@@ -134,15 +137,35 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
         endRun();
         return false;
     }
+    if (!prepareInsert(error))
+    {
+        endRun();
+        return false;
+    }
     transactionOpen_ = database_.transaction();
     pendingTransactionRows_ = 0;
+    {
+        QMutexLocker locker(&queueMutex_);
+        acceptingEvents_ = true;
+    }
     emit pathsChanged(logFile_.fileName(), databasePath_);
     return true;
 }
 
 void EventStore::endRun()
 {
-    flush();
+    {
+        QMutexLocker locker(&queueMutex_);
+        acceptingEvents_ = false;
+        queueNotFull_.wakeAll();
+    }
+    drainAllPending();
+    commitTransaction(false);
+    if (logFile_.isOpen())
+    {
+        logFile_.flush();
+    }
+    insertQuery_ = QSqlQuery();
     if (database_.isValid())
     {
         database_.close();
@@ -159,76 +182,189 @@ void EventStore::endRun()
 
 void EventStore::flush()
 {
-    if (database_.isOpen() && transactionOpen_)
-    {
-        if (!database_.commit())
-        {
-            emit storeError(QStringLiteral("提交 SQLite 日志失败：%1").arg(database_.lastError().text()));
-        }
-        transactionOpen_ = database_.transaction();
-        pendingTransactionRows_ = 0;
-    }
+    drainAllPending();
+    commitTransaction(true);
     if (logFile_.isOpen())
     {
         logFile_.flush();
     }
 }
 
-void EventStore::clearRecent()
+void EventStore::enqueueEvents(QVector<SimulationEvent> events)
 {
-    recentEvents_.clear();
+    qsizetype offset = 0;
+    while (offset < events.size())
+    {
+        bool scheduleDrain = false;
+        {
+            QMutexLocker locker(&queueMutex_);
+            while (acceptingEvents_ && static_cast<qsizetype>(pendingEvents_.size()) >= maxQueuedEvents_)
+            {
+                queueNotFull_.wait(&queueMutex_);
+            }
+            if (!acceptingEvents_)
+            {
+                return;
+            }
+
+            const auto available = maxQueuedEvents_ - static_cast<qsizetype>(pendingEvents_.size());
+            const auto count = std::min(available, events.size() - offset);
+            for (qsizetype index = 0; index < count; ++index)
+            {
+                pendingEvents_.push_back(std::move(events[offset + index]));
+            }
+            offset += count;
+            if (!drainScheduled_)
+            {
+                drainScheduled_ = true;
+                scheduleDrain = true;
+            }
+        }
+        if (scheduleDrain)
+        {
+            QMetaObject::invokeMethod(this, &EventStore::drainQueue, Qt::QueuedConnection);
+        }
+    }
 }
 
 void EventStore::appendEvent(SimulationEvent event)
 {
-    if (!event.timestamp.isValid())
+    QVector<SimulationEvent> events;
+    events.append(std::move(event));
+    enqueueEvents(std::move(events));
+}
+
+void EventStore::drainQueue()
+{
+    QVector<SimulationEvent> batch;
+    batch.reserve(writeBatchSize_);
     {
-        event.timestamp = QDateTime::currentDateTime();
+        QMutexLocker locker(&queueMutex_);
+        const auto count = std::min(writeBatchSize_, static_cast<qsizetype>(pendingEvents_.size()));
+        for (qsizetype index = 0; index < count; ++index)
+        {
+            batch.append(std::move(pendingEvents_.front()));
+            pendingEvents_.pop_front();
+        }
+        queueNotFull_.wakeAll();
     }
-    if (event.id == 0)
+    if (!batch.isEmpty())
     {
-        event.id = nextId_++;
-    }
-    else
-    {
-        nextId_ = std::max(nextId_, event.id + 1);
+        persistBatch(std::move(batch));
     }
 
-    const auto rawJson = QJsonDocument(eventToJson(event)).toJson(QJsonDocument::Compact);
-    if (logFile_.isOpen())
+    bool scheduleAgain = false;
     {
-        logFile_.write(rawJson);
-        logFile_.write("\n");
-    }
-    if (database_.isOpen())
-    {
-        QString error;
-        if (!insertEvent(event, rawJson, &error))
+        QMutexLocker locker(&queueMutex_);
+        if (pendingEvents_.empty())
         {
-            emit storeError(error);
+            drainScheduled_ = false;
         }
         else
         {
-            ++pendingTransactionRows_;
-            if (pendingTransactionRows_ >= 256)
+            scheduleAgain = true;
+        }
+    }
+    if (scheduleAgain)
+    {
+        QMetaObject::invokeMethod(this, &EventStore::drainQueue, Qt::QueuedConnection);
+    }
+}
+
+void EventStore::persistBatch(QVector<SimulationEvent> events)
+{
+    QByteArray logBuffer;
+    logBuffer.reserve(events.size() * 256);
+    for (auto& event : events)
+    {
+        if (!event.timestamp.isValid())
+        {
+            event.timestamp = QDateTime::currentDateTime();
+        }
+        if (event.id == 0)
+        {
+            event.id = nextId_++;
+        }
+        else
+        {
+            nextId_ = std::max(nextId_, event.id + 1);
+        }
+
+        const auto rawJson = QJsonDocument(eventToJson(event)).toJson(QJsonDocument::Compact);
+        logBuffer.append(rawJson);
+        logBuffer.append('\n');
+        if (database_.isOpen())
+        {
+            QString error;
+            if (!insertEvent(event, rawJson, &error))
             {
-                flush();
+                emit storeError(error);
+            }
+            else
+            {
+                ++pendingTransactionRows_;
+                if (pendingTransactionRows_ >= transactionBatchSize_)
+                {
+                    commitTransaction(true);
+                }
             }
         }
     }
-
-    recentEvents_.append(event);
-    if (recentEvents_.size() > recentCapacity_)
+    if (logFile_.isOpen() && !logBuffer.isEmpty())
     {
-        recentEvents_.remove(0, recentEvents_.size() - recentCapacity_);
+        logFile_.write(logBuffer);
     }
-    emit eventStored(event);
+    emit eventsStored(runSerial_, std::move(events));
+}
+
+void EventStore::drainAllPending()
+{
+    while (true)
+    {
+        QVector<SimulationEvent> batch;
+        batch.reserve(writeBatchSize_);
+        {
+            QMutexLocker locker(&queueMutex_);
+            const auto count = std::min(writeBatchSize_, static_cast<qsizetype>(pendingEvents_.size()));
+            for (qsizetype index = 0; index < count; ++index)
+            {
+                batch.append(std::move(pendingEvents_.front()));
+                pendingEvents_.pop_front();
+            }
+            if (pendingEvents_.empty())
+            {
+                drainScheduled_ = false;
+            }
+            queueNotFull_.wakeAll();
+        }
+        if (batch.isEmpty())
+        {
+            return;
+        }
+        persistBatch(std::move(batch));
+    }
+}
+
+void EventStore::commitTransaction(bool restart)
+{
+    if (!database_.isOpen() || !transactionOpen_)
+    {
+        return;
+    }
+    if (!database_.commit())
+    {
+        emit storeError(QStringLiteral("提交 SQLite 日志失败：%1").arg(database_.lastError().text()));
+    }
+    transactionOpen_ = restart && database_.transaction();
+    pendingTransactionRows_ = 0;
 }
 
 bool EventStore::initializeSchema(QString* error)
 {
     QSqlQuery query(database_);
     const QStringList statements{
+        QStringLiteral("PRAGMA journal_mode=WAL"),
+        QStringLiteral("PRAGMA synchronous=NORMAL"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS bmp_events ("
                        "id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, event TEXT, "
                        "router TEXT, from_peer TEXT, to_peer TEXT, from_as INTEGER, "
@@ -257,39 +393,52 @@ bool EventStore::initializeSchema(QString* error)
     return true;
 }
 
+bool EventStore::prepareInsert(QString* error)
+{
+    insertQuery_ = QSqlQuery(database_);
+    if (insertQuery_.prepare(QStringLiteral("INSERT INTO bmp_events "
+                                            "(id,timestamp,event,router,from_peer,to_peer,from_as,to_as,msg_type,"
+                                            "action,sequence,prefixes,withdrawn,next_hop,as_path,local_pref,med,"
+                                            "raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")))
+    {
+        return true;
+    }
+    if (error)
+    {
+        *error = QStringLiteral("准备 SQLite 写入语句失败：%1").arg(insertQuery_.lastError().text());
+    }
+    return false;
+}
+
 bool EventStore::insertEvent(const SimulationEvent& event, const QByteArray& rawJson, QString* error)
 {
-    QSqlQuery query(database_);
-    query.prepare(QStringLiteral("INSERT INTO bmp_events "
-                                 "(id,timestamp,event,router,from_peer,to_peer,from_as,to_as,msg_type,"
-                                 "action,sequence,prefixes,withdrawn,next_hop,as_path,local_pref,med,"
-                                 "raw_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
-    query.addBindValue(static_cast<qulonglong>(event.id));
-    query.addBindValue(event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")));
-    query.addBindValue(event.event);
-    query.addBindValue(event.router);
-    query.addBindValue(event.from);
-    query.addBindValue(event.to);
-    query.addBindValue(event.fromAs ? QVariant::fromValue(*event.fromAs) : QVariant{});
-    query.addBindValue(event.toAs ? QVariant::fromValue(*event.toAs) : QVariant{});
-    query.addBindValue(event.messageType);
-    query.addBindValue(event.action);
-    query.addBindValue(static_cast<qulonglong>(event.sequence));
-    query.addBindValue(event.prefixes.join(u','));
-    query.addBindValue(event.withdrawn.join(u','));
-    query.addBindValue(event.nextHop);
-    query.addBindValue(joinedAsPath(event.asPath));
-    query.addBindValue(event.localPref ? QVariant::fromValue(*event.localPref) : QVariant{});
-    query.addBindValue(event.med ? QVariant::fromValue(*event.med) : QVariant{});
-    query.addBindValue(QString::fromUtf8(rawJson));
-    if (!query.exec())
+    insertQuery_.bindValue(0, static_cast<qulonglong>(event.id));
+    insertQuery_.bindValue(1, event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")));
+    insertQuery_.bindValue(2, event.event);
+    insertQuery_.bindValue(3, event.router);
+    insertQuery_.bindValue(4, event.from);
+    insertQuery_.bindValue(5, event.to);
+    insertQuery_.bindValue(6, event.fromAs ? QVariant::fromValue(*event.fromAs) : QVariant{});
+    insertQuery_.bindValue(7, event.toAs ? QVariant::fromValue(*event.toAs) : QVariant{});
+    insertQuery_.bindValue(8, event.messageType);
+    insertQuery_.bindValue(9, event.action);
+    insertQuery_.bindValue(10, static_cast<qulonglong>(event.sequence));
+    insertQuery_.bindValue(11, event.prefixes.join(u','));
+    insertQuery_.bindValue(12, event.withdrawn.join(u','));
+    insertQuery_.bindValue(13, event.nextHop);
+    insertQuery_.bindValue(14, joinedAsPath(event.asPath));
+    insertQuery_.bindValue(15, event.localPref ? QVariant::fromValue(*event.localPref) : QVariant{});
+    insertQuery_.bindValue(16, event.med ? QVariant::fromValue(*event.med) : QVariant{});
+    insertQuery_.bindValue(17, QString::fromUtf8(rawJson));
+    if (!insertQuery_.exec())
     {
         if (error)
         {
-            *error = QStringLiteral("写入 SQLite 日志失败：%1").arg(query.lastError().text());
+            *error = QStringLiteral("写入 SQLite 日志失败：%1").arg(insertQuery_.lastError().text());
         }
         return false;
     }
+    insertQuery_.finish();
     return true;
 }
 

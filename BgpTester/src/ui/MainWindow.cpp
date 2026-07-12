@@ -4,6 +4,7 @@
 #include "persistence/EventStore.hpp"
 #include "ui/Dialogs.hpp"
 #include "ui/EventTableModel.hpp"
+#include "ui/RibTableModels.hpp"
 #include "ui/TopologyScene.hpp"
 
 #include <QAction>
@@ -46,7 +47,6 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
-#include <tuple>
 
 namespace bgptester
 {
@@ -61,16 +61,6 @@ QTableWidgetItem* tableItem(const QString& text, Qt::Alignment alignment = Qt::A
     return item;
 }
 
-QString asPathText(const QVector<quint32>& path)
-{
-    QStringList values;
-    for (const auto asn : path)
-    {
-        values.append(QString::number(asn));
-    }
-    return values.join(u' ');
-}
-
 void configureDataTable(QTableWidget* table)
 {
     table->setAlternatingRowColors(true);
@@ -80,6 +70,17 @@ void configureDataTable(QTableWidget* table)
     table->verticalHeader()->setVisible(false);
     table->horizontalHeader()->setStretchLastSection(true);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+}
+
+void configureDataView(QTableView* table)
+{
+    table->setAlternatingRowColors(true);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->verticalHeader()->setVisible(false);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    table->horizontalHeader()->setStretchLastSection(true);
 }
 
 void setDisplayedShortcut(QAction* action, const QKeySequence& shortcut)
@@ -121,7 +122,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     scene_ = new TopologyScene(this);
     view_ = new TopologyView(scene_, this);
     setCentralWidget(view_);
-    eventStore_ = new EventStore(this);
+    eventStore_ = new EventStore;
+    eventStore_->moveToThread(&eventStoreThread_);
+    eventStoreThread_.setObjectName(QStringLiteral("BmpEventStoreThread"));
+    connect(&eventStoreThread_, &QThread::finished, eventStore_, &QObject::deleteLater);
+    eventStoreThread_.start();
     eventModel_ = new EventTableModel(this);
 
     buildActions();
@@ -136,7 +141,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     connect(scene_, &TopologyScene::editLinkRequested, this, &MainWindow::editLink);
     connect(scene_, &TopologyScene::topologyModified, this, &MainWindow::markDirty);
     connect(scene_, &TopologyScene::selectionContextChanged, this, &MainWindow::sceneSelectionChanged);
-    connect(eventStore_, &EventStore::eventStored, eventModel_, &EventTableModel::appendEvent);
+    connect(eventStore_, &EventStore::eventsStored, this, &MainWindow::enqueueStoredEvents, Qt::QueuedConnection);
     connect(eventStore_, &EventStore::storeError, this, [this](const QString& message) { statusBar()->showMessage(message, 8000); });
     connect(eventStore_, &EventStore::pathsChanged, this,
             [this](const QString&, const QString& database)
@@ -144,14 +149,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
                 logPathLabel_->setText(QStringLiteral("日志：%1").arg(QDir::toNativeSeparators(database)));
                 logPathLabel_->setToolTip(database);
             });
-    connect(eventModel_, &QAbstractItemModel::rowsInserted, this,
-            [this]
-            {
-                if (followEventsCheck_->isChecked())
-                {
-                    eventView_->scrollToBottom();
-                }
-            });
+
+    uiEventDrainTimer_ = new QTimer(this);
+    uiEventDrainTimer_->setSingleShot(true);
+    connect(uiEventDrainTimer_, &QTimer::timeout, this, &MainWindow::drainUiEventQueue);
+
+    ribRefreshTimer_ = new QTimer(this);
+    ribRefreshTimer_->setSingleShot(true);
+    ribRefreshTimer_->setInterval(500);
+    connect(ribRefreshTimer_, &QTimer::timeout, this, &MainWindow::requestSelectedRouterSnapshot);
 
     simulationStatusLabel_ = new QLabel(QStringLiteral("● 已停止"), this);
     simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#6c757d"));
@@ -184,7 +190,12 @@ MainWindow::~MainWindow()
         engineThread_.quit();
         engineThread_.wait();
     }
-    eventStore_->endRun();
+    endEventRun(true);
+    if (eventStoreThread_.isRunning())
+    {
+        eventStoreThread_.quit();
+        eventStoreThread_.wait();
+    }
 }
 
 void MainWindow::buildActions()
@@ -299,22 +310,19 @@ void MainWindow::buildInspectorDock()
     connect(routerCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::selectedRouterChanged);
     layout->addLayout(routerRow);
 
-    auto* tabs = new QTabWidget(container);
-    ribTable_ = new QTableWidget(tabs);
-    ribTable_->setColumnCount(7);
-    ribTable_->setHorizontalHeaderLabels({QStringLiteral("前缀"), QStringLiteral("来源"), QStringLiteral("会话"),
-                                          QStringLiteral("NEXT_HOP"), QStringLiteral("AS_PATH"), QStringLiteral("LOCAL_PREF"),
-                                          QStringLiteral("MED")});
-    configureDataTable(ribTable_);
-    connect(ribTable_, &QTableWidget::itemSelectionChanged, this, &MainWindow::highlightSelectedRoute);
+    inspectorTabs_ = new QTabWidget(container);
+    auto* tabs = inspectorTabs_;
+    ribTable_ = new QTableView(tabs);
+    bestRoutesModel_ = new BestRoutesTableModel(this);
+    ribTable_->setModel(bestRoutesModel_);
+    configureDataView(ribTable_);
+    connect(ribTable_->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] { highlightSelectedRoute(); });
     tabs->addTab(ribTable_, QStringLiteral("最佳路由"));
 
-    allRoutesTable_ = new QTableWidget(tabs);
-    allRoutesTable_->setColumnCount(8);
-    allRoutesTable_->setHorizontalHeaderLabels({QStringLiteral("前缀"), QStringLiteral("RIB"), QStringLiteral("来源"),
-                                                QStringLiteral("最佳"), QStringLiteral("NEXT_HOP"), QStringLiteral("AS_PATH"),
-                                                QStringLiteral("LOCAL_PREF"), QStringLiteral("MED")});
-    configureDataTable(allRoutesTable_);
+    allRoutesTable_ = new QTableView(tabs);
+    allRoutesModel_ = new AllRoutesTableModel(this);
+    allRoutesTable_->setModel(allRoutesModel_);
+    configureDataView(allRoutesTable_);
     tabs->addTab(allRoutesTable_, QStringLiteral("全部路径"));
 
     peerTable_ = new QTableWidget(tabs);
@@ -368,6 +376,16 @@ void MainWindow::buildInspectorDock()
     controlLayout->addStretch();
     tabs->addTab(control, QStringLiteral("运行控制"));
 
+    connect(tabs, &QTabWidget::currentChanged, this,
+            [this]
+            {
+                if (currentRib_.router == routerCombo_->currentText())
+                {
+                    populateRibTables(currentRib_);
+                }
+                scheduleSelectedRouterSnapshot();
+            });
+
     layout->addWidget(tabs, 1);
     dock->setWidget(container);
     addDockWidget(Qt::RightDockWidgetArea, dock);
@@ -401,6 +419,7 @@ void MainWindow::buildEventDock()
     eventProxy_->setSourceModel(eventModel_);
     eventProxy_->setFilterCaseSensitivity(Qt::CaseInsensitive);
     eventProxy_->setFilterKeyColumn(-1);
+    eventProxy_->setFilterRole(Qt::UserRole);
     eventProxy_->setSortRole(Qt::DisplayRole);
     connect(eventFilterEdit_, &QLineEdit::textChanged, eventProxy_, &QSortFilterProxyModel::setFilterFixedString);
     eventView_ = new QTableView(container);
@@ -411,7 +430,12 @@ void MainWindow::buildEventDock()
     eventView_->setSortingEnabled(true);
     eventView_->sortByColumn(EventTableModel::Id, Qt::AscendingOrder);
     eventView_->verticalHeader()->setVisible(false);
-    eventView_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    eventView_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    eventView_->horizontalHeader()->setDefaultSectionSize(120);
+    eventView_->setColumnWidth(EventTableModel::Id, 80);
+    eventView_->setColumnWidth(EventTableModel::Time, 110);
+    eventView_->setColumnWidth(EventTableModel::Prefixes, 260);
+    eventView_->setColumnWidth(EventTableModel::Withdrawn, 260);
     eventView_->horizontalHeader()->setStretchLastSection(false);
     connect(eventView_, &QTableView::doubleClicked, this, &MainWindow::showEventDetails);
     layout->addWidget(eventView_, 1);
@@ -428,11 +452,12 @@ void MainWindow::connectEngine()
     connect(engine_, &SimulationEngine::runningChanged, this, &MainWindow::onRunningChanged);
     connect(engine_, &SimulationEngine::convergenceChanged, this, &MainWindow::onConvergenceChanged);
     connect(engine_, &SimulationEngine::statsChanged, this, &MainWindow::onStatsChanged);
-    connect(engine_, &SimulationEngine::eventGenerated, eventStore_, &EventStore::appendEvent);
+    connect(engine_, &SimulationEngine::eventsGenerated, eventStore_, &EventStore::enqueueEvents, Qt::DirectConnection);
     connect(engine_, &SimulationEngine::routerSnapshotsChanged, this, &MainWindow::onRouterSnapshots);
     connect(engine_, &SimulationEngine::ribSnapshotReady, this, &MainWindow::onRibSnapshot);
     connect(engine_, &SimulationEngine::peersSnapshotReady, this, &MainWindow::onPeerSnapshots);
-    connect(engine_, &SimulationEngine::bestPathChanged, this, &MainWindow::onBestPathChanged);
+    connect(engine_, &SimulationEngine::ribChanged, this, &MainWindow::onRibChanged);
+    connect(engine_, &SimulationEngine::pathReady, this, &MainWindow::onPathReady);
     connect(engine_, &SimulationEngine::routerStateChanged, this, &MainWindow::onRouterRuntimeState);
     connect(engine_, &SimulationEngine::linkStateChanged, this, &MainWindow::onLinkRuntimeState);
     connect(engine_, &SimulationEngine::errorOccurred, this, &MainWindow::onEngineError);
@@ -665,14 +690,14 @@ void MainWindow::startSimulation()
         return;
     }
     QString error;
-    if (!eventStore_->beginRun(topology_.simulation, &error))
+    if (!beginEventRun(&error))
     {
         QMessageBox::critical(this, QStringLiteral("无法创建日志"), error);
         return;
     }
     eventModel_->clear();
+    pendingUiEvents_.clear();
     followEventsCheck_->setChecked(true);
-    bestPaths_.clear();
     runtimeRouters_.clear();
     runtimeLinks_.clear();
     scene_->clearRuntimeState();
@@ -696,7 +721,9 @@ void MainWindow::onRunningChanged(bool running)
     updateEditorActions();
     if (!running)
     {
-        eventStore_->flush();
+        flushEventStore();
+        snapshotRequestPending_ = false;
+        snapshotRefreshNeeded_ = false;
         simulationStatusLabel_->setText(QStringLiteral("● 已停止"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#6c757d"));
     }
@@ -704,6 +731,7 @@ void MainWindow::onRunningChanged(bool running)
     {
         simulationStatusLabel_->setText(QStringLiteral("● 收敛中"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
+        scheduleSelectedRouterSnapshot();
     }
 }
 
@@ -737,17 +765,25 @@ void MainWindow::onRouterSnapshots(QVector<RouterSnapshot> snapshots)
         scene_->setRouterRuntimeState(snapshot.id, snapshot.active);
     }
     refreshRuntimeControls();
-    requestSelectedRouterSnapshot();
 }
 
 void MainWindow::onRibSnapshot(const RibSnapshot& snapshot)
 {
+    snapshotRequestPending_ = false;
     if (snapshot.router != routerCombo_->currentText())
     {
+        if (snapshotRefreshNeeded_)
+        {
+            scheduleSelectedRouterSnapshot();
+        }
         return;
     }
     currentRib_ = snapshot;
     populateRibTables(snapshot);
+    if (snapshotRefreshNeeded_)
+    {
+        scheduleSelectedRouterSnapshot();
+    }
 }
 
 void MainWindow::onPeerSnapshots(const QString& routerId, QVector<PeerSnapshot> snapshots)
@@ -758,12 +794,19 @@ void MainWindow::onPeerSnapshots(const QString& routerId, QVector<PeerSnapshot> 
     }
 }
 
-void MainWindow::onBestPathChanged(const BestPathUpdate& update)
+void MainWindow::onRibChanged(const QString& routerId)
 {
-    bestPaths_.insert(routeKey(update.router, update.prefix), update);
-    if (update.router == routerCombo_->currentText())
+    if (routerId == routerCombo_->currentText())
     {
-        requestSelectedRouterSnapshot();
+        scheduleSelectedRouterSnapshot();
+    }
+}
+
+void MainWindow::onPathReady(const QString& routerId, const QString& prefix, const QStringList& path)
+{
+    if (routerId == routerCombo_->currentText() && prefix == bestRoutesModel_->prefixAt(ribTable_->currentIndex().row()))
+    {
+        scene_->highlightPath(path);
     }
 }
 
@@ -789,7 +832,7 @@ void MainWindow::onEngineError(const QString& message)
     if (simulationStartPending_)
     {
         simulationStartPending_ = false;
-        eventStore_->endRun();
+        endEventRun(true);
         updateEditorActions();
         simulationStatusLabel_->setText(QStringLiteral("● 启动失败"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#b02a37"));
@@ -884,8 +927,14 @@ void MainWindow::highlightSelectedRoute()
         scene_->highlightPath({});
         return;
     }
-    const auto prefix = ribTable_->item(rows.front().row(), 0)->text();
-    scene_->highlightPath(pathFor(routerCombo_->currentText(), prefix));
+    const auto prefix = bestRoutesModel_->prefixAt(rows.front().row());
+    const auto router = routerCombo_->currentText();
+    scene_->highlightPath({});
+    if (router.isEmpty() || prefix.isEmpty())
+    {
+        return;
+    }
+    QMetaObject::invokeMethod(engine_, [engine = engine_, router, prefix] { engine->requestPath(router, prefix); }, Qt::QueuedConnection);
 }
 
 void MainWindow::showEventDetails(const QModelIndex& proxyIndex)
@@ -912,11 +961,66 @@ void MainWindow::showEventDetails(const QModelIndex& proxyIndex)
     dialog->show();
 }
 
+void MainWindow::enqueueStoredEvents(quint64 runSerial, QVector<SimulationEvent> events)
+{
+    if (runSerial != eventRunSerial_ || events.isEmpty())
+    {
+        return;
+    }
+    const auto capacity = EventTableModel::liveCapacity();
+    if (events.size() >= capacity)
+    {
+        events.remove(0, events.size() - capacity);
+        pendingUiEvents_ = std::move(events);
+    }
+    else
+    {
+        const auto overflow = pendingUiEvents_.size() + events.size() - capacity;
+        if (overflow > 0)
+        {
+            pendingUiEvents_.remove(0, overflow);
+        }
+        for (auto& event : events)
+        {
+            pendingUiEvents_.append(std::move(event));
+        }
+    }
+    if (!uiEventDrainTimer_->isActive())
+    {
+        uiEventDrainTimer_->start(0);
+    }
+}
+
+void MainWindow::drainUiEventQueue()
+{
+    constexpr qsizetype eventsPerTurn = 512;
+    const auto count = std::min(eventsPerTurn, pendingUiEvents_.size());
+    if (count <= 0)
+    {
+        return;
+    }
+    QVector<SimulationEvent> batch;
+    batch.reserve(count);
+    for (qsizetype index = 0; index < count; ++index)
+    {
+        batch.append(std::move(pendingUiEvents_[index]));
+    }
+    pendingUiEvents_.remove(0, count);
+    eventModel_->appendEvents(std::move(batch));
+    if (followEventsCheck_->isChecked())
+    {
+        eventView_->scrollToBottom();
+    }
+    if (!pendingUiEvents_.isEmpty())
+    {
+        uiEventDrainTimer_->start(16);
+    }
+}
+
 void MainWindow::setTopology(Topology topology, const QString& path)
 {
     topology_ = std::move(topology);
     topologyPath_ = path;
-    bestPaths_.clear();
     runtimeRouters_.clear();
     runtimeLinks_.clear();
     currentRib_ = {};
@@ -1010,65 +1114,48 @@ void MainWindow::requestSelectedRouterSnapshot()
     const auto id = routerCombo_->currentText();
     if (!simulationRunning_ || id.isEmpty())
     {
+        snapshotRequestPending_ = false;
+        snapshotRefreshNeeded_ = false;
         currentRib_ = {};
         currentRib_.router = id;
         populateRibTables(currentRib_);
         populatePeerTable({});
         return;
     }
+    if (snapshotRequestPending_)
+    {
+        snapshotRefreshNeeded_ = true;
+        return;
+    }
+    snapshotRequestPending_ = true;
+    snapshotRefreshNeeded_ = false;
     QMetaObject::invokeMethod(engine_, [engine = engine_, id] { engine->requestRouterSnapshot(id); }, Qt::QueuedConnection);
+}
+
+void MainWindow::scheduleSelectedRouterSnapshot()
+{
+    if (!simulationRunning_)
+    {
+        return;
+    }
+    snapshotRefreshNeeded_ = true;
+    if (!snapshotRequestPending_ && !ribRefreshTimer_->isActive())
+    {
+        ribRefreshTimer_->start();
+    }
 }
 
 void MainWindow::populateRibTables(const RibSnapshot& snapshot)
 {
-    ribTable_->setRowCount(snapshot.locRib.size());
-    int row = 0;
-    for (auto it = snapshot.locRib.cbegin(); it != snapshot.locRib.cend(); ++it)
+    if (inspectorTabs_->currentIndex() == 0)
     {
-        const auto& route = it.value();
-        ribTable_->setItem(row, 0, tableItem(route.prefix, Qt::AlignLeft));
-        ribTable_->setItem(row, 1, tableItem(route.localOrigin ? QStringLiteral("local") : route.learnedFrom));
-        ribTable_->setItem(row, 2, tableItem(toString(route.sourceSession)));
-        ribTable_->setItem(row, 3, tableItem(route.attributes.nextHop));
-        ribTable_->setItem(row, 4, tableItem(asPathText(route.attributes.asPath), Qt::AlignLeft | Qt::AlignVCenter));
-        ribTable_->setItem(row, 5, tableItem(QString::number(route.attributes.localPref)));
-        ribTable_->setItem(row, 6, tableItem(QString::number(route.attributes.med)));
-        ++row;
+        bestRoutesModel_->setSnapshot(snapshot);
+        allRoutesModel_->setSnapshot({});
     }
-
-    struct PathRow
+    else if (inspectorTabs_->currentIndex() == 1)
     {
-        QString rib;
-        RouteEntry route;
-    };
-    QVector<PathRow> paths;
-    for (const auto& route : snapshot.localRoutes)
-    {
-        paths.append({QStringLiteral("Local"), route});
-    }
-    for (auto peer = snapshot.adjRibIn.cbegin(); peer != snapshot.adjRibIn.cend(); ++peer)
-    {
-        for (const auto& route : peer.value())
-        {
-            paths.append({QStringLiteral("Adj-In/%1").arg(peer.key()), route});
-        }
-    }
-    std::sort(paths.begin(), paths.end(),
-              [](const auto& lhs, const auto& rhs) { return std::tie(lhs.route.prefix, lhs.rib) < std::tie(rhs.route.prefix, rhs.rib); });
-    allRoutesTable_->setRowCount(paths.size());
-    for (int pathRow = 0; pathRow < paths.size(); ++pathRow)
-    {
-        const auto& entry = paths.at(pathRow);
-        const auto best = snapshot.locRib.value(entry.route.prefix);
-        const bool isBest = snapshot.locRib.contains(entry.route.prefix) && best == entry.route;
-        allRoutesTable_->setItem(pathRow, 0, tableItem(entry.route.prefix, Qt::AlignLeft));
-        allRoutesTable_->setItem(pathRow, 1, tableItem(entry.rib));
-        allRoutesTable_->setItem(pathRow, 2, tableItem(entry.route.localOrigin ? QStringLiteral("local") : entry.route.learnedFrom));
-        allRoutesTable_->setItem(pathRow, 3, tableItem(isBest ? QStringLiteral("✓") : QString{}));
-        allRoutesTable_->setItem(pathRow, 4, tableItem(entry.route.attributes.nextHop));
-        allRoutesTable_->setItem(pathRow, 5, tableItem(asPathText(entry.route.attributes.asPath), Qt::AlignLeft | Qt::AlignVCenter));
-        allRoutesTable_->setItem(pathRow, 6, tableItem(QString::number(entry.route.attributes.localPref)));
-        allRoutesTable_->setItem(pathRow, 7, tableItem(QString::number(entry.route.attributes.med)));
+        bestRoutesModel_->setSnapshot({});
+        allRoutesModel_->setSnapshot(snapshot);
     }
 }
 
@@ -1122,37 +1209,50 @@ void MainWindow::refreshRuntimeControls()
     }
 }
 
-QStringList MainWindow::pathFor(const QString& routerId, const QString& prefix) const
+bool MainWindow::beginEventRun(QString* error)
 {
-    QStringList path;
-    QSet<QString> seen;
-    auto current = routerId;
-    while (!current.isEmpty() && !seen.contains(current))
+    bool started = false;
+    quint64 workerRunSerial = 0;
+    QString workerError;
+    const auto settings = topology_.simulation;
+    const auto invoked = QMetaObject::invokeMethod(
+        eventStore_,
+        [&]
+        {
+            started = eventStore_->beginRun(settings, &workerError);
+            workerRunSerial = eventStore_->runSerial();
+        },
+        Qt::BlockingQueuedConnection);
+    if (!invoked)
     {
-        seen.insert(current);
-        path.append(current);
-        std::optional<RouteEntry> route;
-        const auto cached = bestPaths_.constFind(routeKey(current, prefix));
-        if (cached != bestPaths_.cend() && cached->valid)
-        {
-            route = cached->route;
-        }
-        else if (current == currentRib_.router && currentRib_.locRib.contains(prefix))
-        {
-            route = currentRib_.locRib.value(prefix);
-        }
-        if (!route || route->localOrigin || route->learnedFrom.isEmpty() || route->learnedFrom == current)
-        {
-            break;
-        }
-        current = route->learnedFrom;
+        workerError = QStringLiteral("无法调用 BMP 事件持久化线程");
     }
-    return path;
+    if (invoked && started)
+    {
+        eventRunSerial_ = workerRunSerial;
+    }
+    if (error)
+    {
+        *error = workerError;
+    }
+    return invoked && started;
 }
 
-QString MainWindow::routeKey(const QString& routerId, const QString& prefix)
+void MainWindow::endEventRun(bool blocking)
 {
-    return routerId + u'\x1f' + prefix;
+    if (!eventStore_ || !eventStoreThread_.isRunning())
+    {
+        return;
+    }
+    QMetaObject::invokeMethod(eventStore_, &EventStore::endRun, blocking ? Qt::BlockingQueuedConnection : Qt::QueuedConnection);
+}
+
+void MainWindow::flushEventStore()
+{
+    if (eventStore_ && eventStoreThread_.isRunning())
+    {
+        QMetaObject::invokeMethod(eventStore_, &EventStore::flush, Qt::QueuedConnection);
+    }
 }
 
 Topology MainWindow::starterTopology()
@@ -1201,7 +1301,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
     {
         QMetaObject::invokeMethod(engine_, &SimulationEngine::stopSimulation, Qt::BlockingQueuedConnection);
     }
-    eventStore_->endRun();
+    endEventRun(true);
     event->accept();
 }
 

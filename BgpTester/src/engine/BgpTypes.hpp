@@ -3,6 +3,7 @@
 #include "model/Topology.hpp"
 
 #include <QDateTime>
+#include <QHash>
 #include <QMap>
 #include <QMetaType>
 #include <QString>
@@ -71,7 +72,6 @@ struct PathAttributes
 
 struct RouteEntry
 {
-    QString prefix;
     PathAttributes attributes;
     QString learnedFrom;
     SessionType sourceSession = SessionType::Ibgp;
@@ -125,18 +125,9 @@ struct PeerSnapshot
 struct RibSnapshot
 {
     QString router;
-    QMap<QString, RouteEntry> localRoutes;
-    QMap<QString, RouteEntry> locRib;
-    QMap<QString, QMap<QString, RouteEntry>> adjRibIn;
-    QMap<QString, QMap<QString, RouteEntry>> adjRibOut;
-};
-
-struct BestPathUpdate
-{
-    QString router;
-    QString prefix;
-    bool valid = false;
-    std::optional<RouteEntry> route;
+    QHash<QString, RouteEntry> localRoutes;
+    QHash<QString, RouteEntry> locRib;
+    QHash<QString, QHash<QString, RouteEntry>> adjRibIn;
 };
 
 struct SimulationEvent
@@ -177,6 +168,5 @@ Q_DECLARE_METATYPE(bgptester::RouteEntry)
 Q_DECLARE_METATYPE(bgptester::RouterSnapshot)
 Q_DECLARE_METATYPE(bgptester::PeerSnapshot)
 Q_DECLARE_METATYPE(bgptester::RibSnapshot)
-Q_DECLARE_METATYPE(bgptester::BestPathUpdate)
 Q_DECLARE_METATYPE(bgptester::SimulationEvent)
 Q_DECLARE_METATYPE(bgptester::SimulationStats)

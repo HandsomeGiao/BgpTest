@@ -43,9 +43,14 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
 
     void appendEvent(const SimulationEvent& event);
+    void appendEvents(QVector<SimulationEvent> events);
     void setEvents(QVector<SimulationEvent> events);
     void clear();
     const SimulationEvent* eventAt(int row) const;
+    static constexpr qsizetype liveCapacity()
+    {
+        return capacity_;
+    }
 
 private:
     QVector<SimulationEvent> events_;

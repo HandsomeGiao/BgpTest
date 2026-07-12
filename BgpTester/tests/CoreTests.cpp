@@ -10,6 +10,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -220,6 +221,41 @@ void sourceRouterPluginControlsRouteExport()
             "invalid plugin configuration did not prevent simulation start");
 }
 
+void bulkUpdatesAreAggregated()
+{
+    constexpr int prefixCount = 4096;
+    auto topology = twoRouterTopology();
+    auto& prefixes = topology.routers[QStringLiteral("R1")].originatedPrefixes;
+    prefixes.clear();
+    prefixes.reserve(prefixCount);
+    for (int index = 0; index < prefixCount; ++index)
+    {
+        prefixes.append(QStringLiteral("100.64.%1.%2/32").arg(index / 256).arg(index % 256));
+    }
+
+    int updateEvents = 0;
+    int advertisedPrefixes = 0;
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         for (const auto& event : events)
+                         {
+                             if (event.action == QStringLiteral("UPDATE"))
+                             {
+                                 ++updateEvents;
+                                 advertisedPrefixes += event.prefixes.size();
+                             }
+                         }
+                     });
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R2")).locRib.size() == prefixCount && engine.isConverged(); }, 10000),
+            "bulk route set did not converge");
+    require(advertisedPrefixes >= prefixCount, "bulk route events lost advertised prefixes");
+    require(updateEvents <= 16, "bulk routes were emitted as too many individual UPDATE events");
+    engine.stopSimulation();
+}
+
 void eventStoreWritesJsonAndSqlite()
 {
     QTemporaryDir directory(QDir::current().filePath(QStringLiteral("event-store-test-XXXXXX")));
@@ -256,11 +292,124 @@ void eventStoreWritesJsonAndSqlite()
             "SQLite history did not preserve the event");
 }
 
+void eventStoreWorkerQueuePersistsBatches()
+{
+    QTemporaryDir directory(QDir::current().filePath(QStringLiteral("event-store-worker-test-XXXXXX")));
+    require(directory.isValid(), "worker event-store temporary directory is unavailable");
+
+    QThread worker;
+    auto* store = new EventStore;
+    store->moveToThread(&worker);
+    QObject::connect(&worker, &QThread::finished, store, &QObject::deleteLater);
+    QObject receiver;
+    int visibleEvents = 0;
+    QObject::connect(store, &EventStore::eventsStored, &receiver,
+                     [&](quint64, const QVector<SimulationEvent>& events) { visibleEvents += events.size(); });
+    worker.start();
+
+    SimulationSettings settings;
+    settings.name = QStringLiteral("event-worker-test");
+    settings.logDirectory = directory.path();
+    bool started = false;
+    QString error;
+    QString databasePath;
+    QMetaObject::invokeMethod(
+        store,
+        [&]
+        {
+            started = store->beginRun(settings, &error);
+            databasePath = store->databasePath();
+        },
+        Qt::BlockingQueuedConnection);
+    require(started, "event store worker failed to start");
+
+    QVector<SimulationEvent> events;
+    events.reserve(1000);
+    for (int index = 0; index < 1000; ++index)
+    {
+        SimulationEvent event;
+        event.event = QStringLiteral("message_received");
+        event.action = QStringLiteral("UPDATE");
+        event.messageType = QStringLiteral("UPDATE");
+        event.prefixes = {QStringLiteral("198.18.%1.%2/32").arg(index / 256).arg(index % 256)};
+        events.append(std::move(event));
+    }
+    store->enqueueEvents(std::move(events));
+    QMetaObject::invokeMethod(store, &EventStore::flush, Qt::BlockingQueuedConnection);
+    require(waitFor([&] { return visibleEvents == 1000; }, 2000), "GUI-facing stored event batches were not delivered");
+    QMetaObject::invokeMethod(store, &EventStore::endRun, Qt::BlockingQueuedConnection);
+    worker.quit();
+    worker.wait();
+
+    const auto history = EventStore::readDatabase(databasePath, 2000, &error);
+    require(error.isEmpty() && history.size() == 1000, "worker event queue did not persist every event");
+}
+
+int runTopologyStress(const QString& path, int durationMs)
+{
+    QString error;
+    const auto topology = Topology::load(path, &error);
+    if (!topology)
+    {
+        std::cerr << "FAILED: " << error.toStdString() << '\n';
+        return 1;
+    }
+
+    quint64 eventCount = 0;
+    quint64 eventPrefixes = 0;
+    SimulationStats latestStats;
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         eventCount += static_cast<quint64>(events.size());
+                         for (const auto& event : events)
+                         {
+                             eventPrefixes += static_cast<quint64>(event.prefixes.size() + event.withdrawn.size());
+                         }
+                     });
+    QObject::connect(&engine, &SimulationEngine::statsChanged, [&](const SimulationStats& stats) { latestStats = stats; });
+    engine.startSimulation(*topology);
+
+    QElapsedTimer elapsed;
+    elapsed.start();
+    qint64 nextReport = 1000;
+    while (engine.isRunning() && elapsed.elapsed() < durationMs && !engine.isConverged())
+    {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(2);
+        if (elapsed.elapsed() >= nextReport)
+        {
+            std::cout << "stress elapsed_ms=" << elapsed.elapsed() << " messages=" << latestStats.deliveredMessages
+                      << " scheduled=" << latestStats.pendingEvents << " log_events=" << eventCount << " event_prefixes=" << eventPrefixes
+                      << '\n';
+            nextReport += 1000;
+        }
+    }
+    const auto converged = engine.isConverged();
+    const auto snapshots = engine.routerSnapshots();
+    quint64 locRibEntries = 0;
+    for (const auto& snapshot : snapshots)
+    {
+        locRibEntries += static_cast<quint64>(snapshot.bestRouteCount);
+    }
+    std::cout << "stress done elapsed_ms=" << elapsed.elapsed() << " converged=" << converged
+              << " messages=" << latestStats.deliveredMessages << " scheduled=" << latestStats.pendingEvents << " log_events=" << eventCount
+              << " event_prefixes=" << eventPrefixes << " loc_rib_entries=" << locRibEntries << '\n';
+    engine.stopSimulation();
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
+    if (argc >= 3 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--stress"))
+    {
+        const auto durationMs = argc >= 4 ? QString::fromLocal8Bit(argv[3]).toInt() : 10000;
+        return runTopologyStress(QString::fromLocal8Bit(argv[2]), std::max(100, durationMs));
+    }
     try
     {
         topologyRoundTripPreservesDirectionalFields();
@@ -270,7 +419,9 @@ int main(int argc, char** argv)
         routeReflectorPropagatesClientRoute();
         staleMraiAdvertisementDoesNotReappear();
         sourceRouterPluginControlsRouteExport();
+        bulkUpdatesAreAggregated();
         eventStoreWritesJsonAndSqlite();
+        eventStoreWorkerQueuePersistsBatches();
     }
     catch (const std::exception& error)
     {

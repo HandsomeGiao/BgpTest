@@ -18,6 +18,18 @@ QString asPathText(const QVector<quint32>& path)
     return values.join(u' ');
 }
 
+QString summarizedList(const QStringList& values)
+{
+    constexpr qsizetype visibleValues = 8;
+    if (values.size() <= visibleValues)
+    {
+        return values.join(QStringLiteral(", "));
+    }
+    return QStringLiteral("%1, … (+%2)")
+        .arg(QStringList(values.cbegin(), values.cbegin() + visibleValues).join(QStringLiteral(", ")))
+        .arg(values.size() - visibleValues);
+}
+
 } // namespace
 
 EventTableModel::EventTableModel(QObject* parent) : QAbstractTableModel(parent)
@@ -62,7 +74,8 @@ QVariant EventTableModel::data(const QModelIndex& index, int role) const
             return QBrush(QColor(QStringLiteral("#8055a6")));
         }
     }
-    if (role != Qt::DisplayRole)
+    const auto filterRole = role == Qt::UserRole;
+    if (role != Qt::DisplayRole && !filterRole)
     {
         return {};
     }
@@ -91,9 +104,9 @@ QVariant EventTableModel::data(const QModelIndex& index, int role) const
         case Sequence:
             return event.sequence == 0 ? QVariant{} : QVariant::fromValue<qulonglong>(event.sequence);
         case Prefixes:
-            return event.prefixes.join(QStringLiteral(", "));
+            return filterRole ? event.prefixes.join(QStringLiteral(", ")) : summarizedList(event.prefixes);
         case Withdrawn:
-            return event.withdrawn.join(QStringLiteral(", "));
+            return filterRole ? event.withdrawn.join(QStringLiteral(", ")) : summarizedList(event.withdrawn);
         case NextHop:
             return event.nextHop;
         case AsPath:
@@ -125,16 +138,35 @@ QVariant EventTableModel::headerData(int section, Qt::Orientation orientation, i
 
 void EventTableModel::appendEvent(const SimulationEvent& event)
 {
-    if (events_.size() >= capacity_)
+    appendEvents({event});
+}
+
+void EventTableModel::appendEvents(QVector<SimulationEvent> events)
+{
+    if (events.isEmpty())
     {
-        const auto removeCount = events_.size() - capacity_ + 1;
-        beginRemoveRows({}, 0, removeCount - 1);
-        events_.remove(0, removeCount);
+        return;
+    }
+    if (events.size() >= capacity_)
+    {
+        events.remove(0, events.size() - capacity_);
+        setEvents(std::move(events));
+        return;
+    }
+    const auto overflow = events_.size() + events.size() - capacity_;
+    if (overflow > 0)
+    {
+        beginRemoveRows({}, 0, overflow - 1);
+        events_.remove(0, overflow);
         endRemoveRows();
     }
-    const auto row = events_.size();
-    beginInsertRows({}, row, row);
-    events_.append(event);
+    const auto first = events_.size();
+    const auto last = first + events.size() - 1;
+    beginInsertRows({}, first, last);
+    for (auto& event : events)
+    {
+        events_.append(std::move(event));
+    }
     endInsertRows();
 }
 

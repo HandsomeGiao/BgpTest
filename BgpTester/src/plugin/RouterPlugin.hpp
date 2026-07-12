@@ -15,7 +15,7 @@
 namespace bgptester
 {
 
-inline constexpr int RouterPluginApiVersion = 1;
+inline constexpr int RouterPluginApiVersion = 2;
 
 struct RouterPluginMetadata
 {

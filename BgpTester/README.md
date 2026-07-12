@@ -108,7 +108,7 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 - `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
 - `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
 
-插件 ID 在进程内必须唯一，API 版本当前为 `1`。插件缺失、ID 重复、API
+插件 ID 在进程内必须唯一，API 版本当前为 `2`。插件缺失、ID 重复、API
 版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
 
 ### 日志
@@ -119,6 +119,8 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 - `bmp_collector.sqlite`：带常用查询索引的 SQLite 历史库。
 
 窗口底部提供实时事件表、全列过滤、排序和跟随滚动。双击记录可查看完整 JSON；“打开历史”可载入已有 SQLite 日志。
+
+事件持久化运行在独立线程中。仿真线程先把批量事件放入有上限的队列，后台线程批量写入 JSONL 和 SQLite；队列达到上限时会对仿真施加背压，避免以内存无限堆积换取吞吐。GUI 每帧只抽取一批最近事件，实时表最多保留 20000 条，完整历史始终保存在日志文件中。
 
 ## JSON
 

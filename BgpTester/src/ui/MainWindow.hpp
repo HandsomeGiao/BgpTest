@@ -18,6 +18,7 @@ class QSortFilterProxyModel;
 class QTableView;
 class QTableWidget;
 class QTabWidget;
+class QTimer;
 class QToolButton;
 
 namespace bgptester
@@ -25,6 +26,8 @@ namespace bgptester
 
 class EventStore;
 class EventTableModel;
+class AllRoutesTableModel;
+class BestRoutesTableModel;
 class SimulationEngine;
 class TopologyScene;
 class TopologyView;
@@ -64,7 +67,8 @@ private slots:
     void onRouterSnapshots(QVector<bgptester::RouterSnapshot> snapshots);
     void onRibSnapshot(const bgptester::RibSnapshot& snapshot);
     void onPeerSnapshots(const QString& routerId, QVector<bgptester::PeerSnapshot> snapshots);
-    void onBestPathChanged(const bgptester::BestPathUpdate& update);
+    void onRibChanged(const QString& routerId);
+    void onPathReady(const QString& routerId, const QString& prefix, const QStringList& path);
     void onRouterRuntimeState(const QString& routerId, bool enabled);
     void onLinkRuntimeState(const QString& a, const QString& b, bool enabled);
     void onEngineError(const QString& message);
@@ -78,6 +82,8 @@ private slots:
     void withdrawPrefix();
     void highlightSelectedRoute();
     void showEventDetails(const QModelIndex& proxyIndex);
+    void enqueueStoredEvents(quint64 runSerial, QVector<bgptester::SimulationEvent> events);
+    void drainUiEventQueue();
 
 private:
     void buildActions();
@@ -92,11 +98,13 @@ private:
     void updateEditorActions();
     void refreshTopologySelectors();
     void requestSelectedRouterSnapshot();
+    void scheduleSelectedRouterSnapshot();
     void populateRibTables(const RibSnapshot& snapshot);
     void populatePeerTable(const QVector<PeerSnapshot>& snapshots);
     void refreshRuntimeControls();
-    QStringList pathFor(const QString& routerId, const QString& prefix) const;
-    static QString routeKey(const QString& routerId, const QString& prefix);
+    bool beginEventRun(QString* error);
+    void endEventRun(bool blocking = true);
+    void flushEventStore();
     static Topology starterTopology();
 
     Topology topology_;
@@ -112,8 +120,12 @@ private:
     SimulationEngine* engine_ = nullptr;
     QThread engineThread_;
     EventStore* eventStore_ = nullptr;
+    QThread eventStoreThread_;
     EventTableModel* eventModel_ = nullptr;
     QSortFilterProxyModel* eventProxy_ = nullptr;
+    QTimer* uiEventDrainTimer_ = nullptr;
+    QVector<SimulationEvent> pendingUiEvents_;
+    quint64 eventRunSerial_ = 0;
 
     QAction* newAction_ = nullptr;
     QAction* openAction_ = nullptr;
@@ -132,8 +144,11 @@ private:
 
     QComboBox* routerCombo_ = nullptr;
     QComboBox* linkCombo_ = nullptr;
-    QTableWidget* ribTable_ = nullptr;
-    QTableWidget* allRoutesTable_ = nullptr;
+    QTabWidget* inspectorTabs_ = nullptr;
+    QTableView* ribTable_ = nullptr;
+    QTableView* allRoutesTable_ = nullptr;
+    BestRoutesTableModel* bestRoutesModel_ = nullptr;
+    AllRoutesTableModel* allRoutesModel_ = nullptr;
     QTableWidget* peerTable_ = nullptr;
     QLabel* routerStateLabel_ = nullptr;
     QToolButton* routerToggleButton_ = nullptr;
@@ -148,9 +163,11 @@ private:
     QLabel* logPathLabel_ = nullptr;
 
     RibSnapshot currentRib_;
-    QMap<QString, BestPathUpdate> bestPaths_;
     QMap<QString, RouterSnapshot> runtimeRouters_;
     QMap<QString, bool> runtimeLinks_;
+    QTimer* ribRefreshTimer_ = nullptr;
+    bool snapshotRequestPending_ = false;
+    bool snapshotRefreshNeeded_ = false;
 };
 
 } // namespace bgptester

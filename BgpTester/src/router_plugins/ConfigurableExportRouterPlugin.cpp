@@ -40,10 +40,9 @@ public:
         return problems;
     }
 
-    RouteEntry createOriginatedRoute(const QString& prefix) override
+    RouteEntry createOriginatedRoute(const QString&) override
     {
         RouteEntry route;
-        route.prefix = prefix;
         route.attributes.nextHop = context().config.routerId;
         route.attributes.localPref =
             static_cast<quint32>(context().config.pluginSettings.value(QStringLiteral("local_preference")).toInteger(100));
@@ -52,14 +51,13 @@ public:
         return route;
     }
 
-    std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes, const NeighborConfig& fromPeer) override
+    std::optional<RouteEntry> importRoute(const QString&, const PathAttributes& attributes, const NeighborConfig& fromPeer) override
     {
         if (attributes.asPath.contains(context().config.asn))
         {
             return std::nullopt;
         }
         RouteEntry route;
-        route.prefix = prefix;
         route.attributes = attributes;
         route.learnedFrom = fromPeer.id;
         route.sourceSession = fromPeer.sessionType;

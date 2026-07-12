@@ -15,9 +15,48 @@ namespace bgptester
 namespace
 {
 
-bool advertisedRouteEqual(const RouteEntry& lhs, const RouteEntry& rhs)
+QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route)
 {
-    return lhs.prefix == rhs.prefix && lhs.attributes == rhs.attributes;
+    quint64 first = 0x9e3779b97f4a7c15ULL;
+    quint64 second = 0xc2b2ae3d27d4eb4fULL;
+    const auto mix = [](quint64 state, quint64 value)
+    {
+        value += 0x9e3779b97f4a7c15ULL;
+        value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+        value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+        return state ^ ((value ^ (value >> 31U)) + (state << 6U) + (state >> 2U));
+    };
+    const auto add = [&](const auto& value)
+    {
+        first = mix(first, static_cast<quint64>(qHash(value, static_cast<size_t>(first))));
+        second = mix(second, static_cast<quint64>(qHash(value, static_cast<size_t>(second))));
+    };
+
+    add(route.attributes.origin);
+    add(route.attributes.nextHop);
+    add(route.attributes.localPref);
+    add(route.attributes.med);
+    add(route.attributes.originatorId);
+    for (const auto asn : route.attributes.asPath)
+    {
+        add(asn);
+    }
+    for (const auto& cluster : route.attributes.clusterList)
+    {
+        add(cluster);
+    }
+    for (auto it = route.attributes.communities.cbegin(); it != route.attributes.communities.cend(); ++it)
+    {
+        add(it.key());
+        add(it.value());
+    }
+    return {first, second};
+}
+
+bool advertisementTemplateEqual(const RouteEntry& lhs, const RouteEntry& rhs)
+{
+    return lhs.attributes == rhs.attributes && lhs.learnedFrom == rhs.learnedFrom && lhs.sourceSession == rhs.sourceSession &&
+           lhs.localOrigin == rhs.localOrigin;
 }
 
 bool validIpv4Prefix(const QString& prefix)
@@ -40,9 +79,9 @@ SimulationEngine::SimulationEngine(QObject* parent) : QObject(parent)
 {
     qRegisterMetaType<Topology>();
     qRegisterMetaType<SimulationEvent>();
+    qRegisterMetaType<QVector<SimulationEvent>>();
     qRegisterMetaType<SimulationStats>();
     qRegisterMetaType<RibSnapshot>();
-    qRegisterMetaType<BestPathUpdate>();
     qRegisterMetaType<QVector<RouterSnapshot>>();
     qRegisterMetaType<QVector<PeerSnapshot>>();
 
@@ -99,15 +138,6 @@ void SimulationEngine::startSimulation(Topology topology)
     recordTopologyEvent(QStringLiteral("simulation_started"), {{QStringLiteral("name"), topology_.simulation.name},
                                                                {QStringLiteral("routers"), QString::number(routers_.size())},
                                                                {QStringLiteral("links"), QString::number(links_.size())}});
-
-    for (auto routerIt = routers_.cbegin(); routerIt != routers_.cend(); ++routerIt)
-    {
-        for (auto routeIt = routerIt->locRib.cbegin(); routeIt != routerIt->locRib.cend(); ++routeIt)
-        {
-            emit bestPathChanged(
-                BestPathUpdate{.router = routerIt.key(), .prefix = routeIt.key(), .valid = true, .route = routeIt.value()});
-        }
-    }
 
     for (auto it = links_.cbegin(); it != links_.cend(); ++it)
     {
@@ -172,6 +202,7 @@ void SimulationEngine::clearRuntime()
     nextOrder_ = 0;
     nextGeneration_ = 0;
     deliveredMessages_ = 0;
+    routerSnapshotsDirty_ = false;
 }
 
 bool SimulationEngine::buildRuntime(QString* error)
@@ -185,6 +216,8 @@ bool SimulationEngine::buildRuntime(QString* error)
         RouterRuntime runtime;
         runtime.config = it.value();
         runtime.active = true;
+        runtime.localRoutes.reserve(runtime.config.originatedPrefixes.size());
+        runtime.locRib.reserve(runtime.config.originatedPrefixes.size());
         for (const auto& neighbor : topology_.neighborsFor(it.key()))
         {
             PeerRuntime peer;
@@ -216,7 +249,6 @@ bool SimulationEngine::buildRuntime(QString* error)
         for (const auto& prefix : runtime.config.originatedPrefixes)
         {
             auto route = runtime.node->createOriginatedRoute(prefix);
-            route.prefix = prefix;
             runtime.localRoutes.insert(prefix, route);
             runtime.locRib.insert(prefix, route);
         }
@@ -273,14 +305,28 @@ void SimulationEngine::scheduleMessages(const QString& from, const QString& to, 
         message.to = to;
         message.sequence = ++nextSequence_;
     }
-    events_.push(ScheduledEvent{
-        .dueAt = now() + linkDelay(from, to) + std::max(0, extraDelayMs),
-        .order = ++nextOrder_,
-        .kind = ScheduledKind::DeliverMessages,
-        .from = from,
-        .to = to,
-        .messages = std::move(messages),
-    });
+    constexpr qsizetype maxMessagesPerScheduledEvent = 16;
+    const auto dueAt = now() + linkDelay(from, to) + std::max(0, extraDelayMs);
+    qsizetype offset = 0;
+    while (offset < messages.size())
+    {
+        const auto count = std::min(maxMessagesPerScheduledEvent, messages.size() - offset);
+        QVector<BgpMessage> chunk;
+        chunk.reserve(count);
+        for (qsizetype index = 0; index < count; ++index)
+        {
+            chunk.append(std::move(messages[offset + index]));
+        }
+        offset += count;
+        events_.push(ScheduledEvent{
+            .dueAt = dueAt,
+            .order = ++nextOrder_,
+            .kind = ScheduledKind::DeliverMessages,
+            .from = from,
+            .to = to,
+            .messages = std::move(chunk),
+        });
+    }
     markActivity();
     armNextEvent();
 }
@@ -306,8 +352,11 @@ void SimulationEngine::processDueEvents()
         return;
     }
     int processed = 0;
-    constexpr int maxPerTurn = 10000;
-    while (!events_.empty() && events_.top().dueAt <= now() && processed < maxPerTurn)
+    constexpr int maxPerTurn = 512;
+    constexpr qint64 maxTurnMs = 8;
+    QElapsedTimer turnTimer;
+    turnTimer.start();
+    while (!events_.empty() && events_.top().dueAt <= now() && processed < maxPerTurn && turnTimer.elapsed() < maxTurnMs)
     {
         auto event = events_.top();
         events_.pop();
@@ -333,6 +382,8 @@ void SimulationEngine::deliverMessages(const ScheduledEvent& event)
     }
 
     QVector<BgpMessage> updates;
+    QVector<SimulationEvent> recordedEvents;
+    recordedEvents.reserve(event.messages.size());
     for (const auto& message : event.messages)
     {
         if (message.guarded && !generationIsCurrent(message))
@@ -343,7 +394,7 @@ void SimulationEngine::deliverMessages(const ScheduledEvent& event)
         {
             commitOutbound(message);
         }
-        recordMessage(message);
+        recordedEvents.append(messageEvent(message));
         ++deliveredMessages_;
         markActivity();
         switch (message.type)
@@ -362,6 +413,10 @@ void SimulationEngine::deliverMessages(const ScheduledEvent& event)
     if (!updates.isEmpty())
     {
         handleUpdateBatch(event.to, event.from, updates);
+    }
+    if (!recordedEvents.isEmpty())
+    {
+        emit eventsGenerated(std::move(recordedEvents));
     }
 }
 
@@ -385,14 +440,27 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
     }
 
     QVector<BgpMessage> messages;
-    for (const auto& pending : std::as_const(peerIt->pending))
+    constexpr qsizetype maxNlriPerMessage = 512;
+    const auto peerGenerations = routerIt->outboundGenerations.constFind(to);
+    for (auto pendingIt = peerIt->pending.cbegin(); pendingIt != peerIt->pending.cend(); ++pendingIt)
     {
-        const auto current = routerIt->outboundGenerations.value(to).value(pending.prefix);
+        const auto& prefix = pendingIt.key();
+        const auto& pending = pendingIt.value();
+        const auto current = peerGenerations == routerIt->outboundGenerations.cend() ? 0 : peerGenerations->value(prefix);
         if (current != pending.generation || !pending.route.has_value())
         {
             continue;
         }
-        messages.append(makeUpdateMessage(from, to, pending.prefix, pending.route, pending.generation));
+        if (!messages.isEmpty() && messages.last().advertisedRoute &&
+            advertisementTemplateEqual(*messages.last().advertisedRoute, *pending.route) && messages.last().nlri.size() < maxNlriPerMessage)
+        {
+            messages.last().nlri.append(prefix);
+            messages.last().generations.insert(prefix, pending.generation);
+        }
+        else
+        {
+            messages.append(makeUpdateMessage(from, to, prefix, pending.route, pending.generation));
+        }
     }
     peerIt->pending.clear();
     if (messages.isEmpty())
@@ -453,6 +521,7 @@ void SimulationEngine::commitOutbound(const BgpMessage& message)
         return;
     }
     auto& out = routerIt->adjRibOut[message.to];
+    out.reserve(out.size() + message.nlri.size());
     for (const auto& prefix : message.withdrawn)
     {
         out.remove(prefix);
@@ -460,9 +529,24 @@ void SimulationEngine::commitOutbound(const BgpMessage& message)
     for (const auto& prefix : message.nlri)
     {
         RouteEntry route = message.advertisedRoute.value_or(RouteEntry{});
-        route.prefix = prefix;
         route.attributes = message.attributes;
-        out.insert(prefix, route);
+        out.insert(prefix, advertisedRouteFingerprint(route));
+    }
+    auto generationsIt = routerIt->outboundGenerations.find(message.to);
+    if (generationsIt != routerIt->outboundGenerations.end())
+    {
+        for (auto it = message.generations.cbegin(); it != message.generations.cend(); ++it)
+        {
+            const auto current = generationsIt->constFind(it.key());
+            if (current != generationsIt->cend() && current.value() == it.value())
+            {
+                generationsIt->remove(it.key());
+            }
+        }
+        if (generationsIt->isEmpty())
+        {
+            routerIt->outboundGenerations.erase(generationsIt);
+        }
     }
 }
 
@@ -524,11 +608,7 @@ void SimulationEngine::handleOpen(const BgpMessage& message)
     receiverIt->node->peerStateChanged(peerIt->config, peerIt->state);
     if (!wasEstablished)
     {
-        const auto routes = receiverIt->locRib;
-        for (auto routeIt = routes.cbegin(); routeIt != routes.cend(); ++routeIt)
-        {
-            disseminate(message.to, routeIt.key(), routeIt.value());
-        }
+        advertiseTableToPeer(message.to, message.from);
     }
     emit peersSnapshotReady(message.to, peerSnapshots(message.to));
 }
@@ -548,6 +628,12 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
 
     QSet<QString> changed;
     auto& peerRoutes = routerIt->adjRibIn[sender];
+    qsizetype advertisedCount = 0;
+    for (const auto& message : messages)
+    {
+        advertisedCount += message.nlri.size();
+    }
+    peerRoutes.reserve(peerRoutes.size() + advertisedCount);
     for (const auto& message : messages)
     {
         for (const auto& prefix : message.withdrawn)
@@ -568,7 +654,6 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
                 }
                 continue;
             }
-            imported->prefix = prefix;
             const auto old = peerRoutes.constFind(prefix);
             if (old == peerRoutes.cend() || old.value() != *imported)
             {
@@ -602,11 +687,7 @@ void SimulationEngine::neighborDown(const QString& routerId, const QString& peer
     routerIt->node->peerStateChanged(peerIt->config, peerIt->state);
     peerIt->pending.clear();
     peerIt->flushScheduled = false;
-    auto& generations = routerIt->outboundGenerations[peerId];
-    for (auto generationIt = generations.begin(); generationIt != generations.end(); ++generationIt)
-    {
-        generationIt.value() = ++nextGeneration_;
-    }
+    routerIt->outboundGenerations.remove(peerId);
     routerIt->adjRibOut.remove(peerId);
     QSet<QString> affected;
     const auto inbound = routerIt->adjRibIn.take(peerId);
@@ -628,6 +709,7 @@ void SimulationEngine::runDecision(const QString& routerId, const QSet<QString>&
         return;
     }
 
+    routerIt->locRib.reserve(routerIt->locRib.size() + changedPrefixes.size());
     bool anyChange = false;
     for (const auto& prefix : changedPrefixes)
     {
@@ -647,19 +729,39 @@ void SimulationEngine::runDecision(const QString& routerId, const QSet<QString>&
         {
             routerIt->locRib.remove(prefix);
         }
-        emit bestPathChanged(BestPathUpdate{.router = routerId, .prefix = prefix, .valid = selected.has_value(), .route = selected});
         disseminate(routerId, prefix, selected);
     }
     if (anyChange)
     {
-        emit ribSnapshotReady(ribSnapshot(routerId));
-        emit routerSnapshotsChanged(routerSnapshots());
+        emit ribChanged(routerId);
+        routerSnapshotsDirty_ = true;
+    }
+}
+
+void SimulationEngine::advertiseTableToPeer(const QString& routerId, const QString& peerId)
+{
+    auto routerIt = routers_.find(routerId);
+    if (routerIt == routers_.end() || !routerIt->active)
+    {
+        return;
+    }
+    const auto peerIt = routerIt->peers.constFind(peerId);
+    if (peerIt == routerIt->peers.cend() || peerIt->state != PeerState::Established || !peerIt->config.enabled)
+    {
+        return;
+    }
+    routerIt->outboundGenerations[peerId].reserve(routerIt->locRib.size());
+    for (auto routeIt = routerIt->locRib.cbegin(); routeIt != routerIt->locRib.cend(); ++routeIt)
+    {
+        auto outbound = routerIt->node->exportRoute(routeIt.value(), peerIt->config);
+        queueAdvertisement(routerId, peerId, routeIt.key(), outbound);
     }
 }
 
 std::optional<RouteEntry> SimulationEngine::selectBest(const RouterRuntime& router, const QString& prefix) const
 {
     QVector<RouteEntry> candidates;
+    candidates.reserve(router.adjRibIn.size() + 1);
     if (const auto local = router.localRoutes.constFind(prefix); local != router.localRoutes.cend())
     {
         candidates.append(local.value());
@@ -674,10 +776,6 @@ std::optional<RouteEntry> SimulationEngine::selectBest(const RouterRuntime& rout
     const auto old = router.locRib.constFind(prefix);
     const std::optional<RouteEntry> currentBest = old == router.locRib.cend() ? std::nullopt : std::optional<RouteEntry>(old.value());
     auto selected = router.node->selectBestRoute(prefix, candidates, currentBest);
-    if (selected)
-    {
-        selected->prefix = prefix;
-    }
     return selected;
 }
 
@@ -689,11 +787,10 @@ void SimulationEngine::disseminate(const QString& routerId, const QString& prefi
         return;
     }
 
-    const auto peerIds = routerIt->peers.keys();
-    for (const auto& peerId : peerIds)
+    for (auto peerIt = routerIt->peers.begin(); peerIt != routerIt->peers.end(); ++peerIt)
     {
-        auto peerIt = routerIt->peers.find(peerId);
-        if (peerIt == routerIt->peers.end() || peerIt->state != PeerState::Established || !peerIt->config.enabled)
+        const auto peerId = peerIt.key();
+        if (peerIt->state != PeerState::Established || !peerIt->config.enabled)
         {
             continue;
         }
@@ -701,17 +798,13 @@ void SimulationEngine::disseminate(const QString& routerId, const QString& prefi
         if (route)
         {
             outbound = routerIt->node->exportRoute(*route, peerIt->config);
-            if (outbound)
-            {
-                outbound->prefix = prefix;
-            }
         }
         if (outbound)
         {
             if (const auto outboundRoutes = routerIt->adjRibOut.constFind(peerId); outboundRoutes != routerIt->adjRibOut.cend())
             {
                 const auto existing = outboundRoutes->constFind(prefix);
-                if (existing != outboundRoutes->cend() && advertisedRouteEqual(existing.value(), *outbound))
+                if (existing != outboundRoutes->cend() && existing.value() == advertisedRouteFingerprint(*outbound))
                 {
                     continue;
                 }
@@ -740,7 +833,8 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
     if (!route)
     {
         const auto hadPending = peerIt->pending.remove(prefix) > 0;
-        const auto hadDelivered = routerIt->adjRibOut.value(peerId).contains(prefix);
+        const auto outbound = routerIt->adjRibOut.constFind(peerId);
+        const auto hadDelivered = outbound != routerIt->adjRibOut.cend() && outbound->contains(prefix);
         if (!hadDelivered)
         {
             Q_UNUSED(hadPending);
@@ -750,17 +844,12 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         return;
     }
 
-    if (peerIt->config.mraiMs <= 0)
-    {
-        scheduleMessages(routerId, peerId, {makeUpdateMessage(routerId, peerId, prefix, route, generation)});
-        return;
-    }
-
-    peerIt->pending.insert(prefix, PendingUpdate{.prefix = prefix, .route = route, .generation = generation});
+    peerIt->pending.insert(prefix, PendingUpdate{.route = route, .generation = generation});
     if (!peerIt->flushScheduled)
     {
         peerIt->flushScheduled = true;
-        scheduleMraiFlush(routerId, peerId, std::max(now(), peerIt->nextMraiAt));
+        const auto dueAt = peerIt->config.mraiMs <= 0 ? now() : std::max(now(), peerIt->nextMraiAt);
+        scheduleMraiFlush(routerId, peerId, dueAt);
     }
 }
 
@@ -878,9 +967,9 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
             peer.pending.clear();
             peer.flushScheduled = false;
         }
-        for (const auto& prefix : oldPrefixes)
+        if (!oldPrefixes.isEmpty())
         {
-            emit bestPathChanged(BestPathUpdate{.router = routerId, .prefix = prefix, .valid = false, .route = std::nullopt});
+            emit ribChanged(routerId);
         }
     }
     else
@@ -891,7 +980,6 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
         for (const auto& prefix : routerIt->config.originatedPrefixes)
         {
             auto route = routerIt->node->createOriginatedRoute(prefix);
-            route.prefix = prefix;
             routerIt->localRoutes.insert(prefix, route);
             localPrefixes.insert(prefix);
         }
@@ -939,7 +1027,6 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
         return;
     }
     auto route = routerIt->node->createOriginatedRoute(prefix);
-    route.prefix = prefix;
     routerIt->localRoutes.insert(prefix, route);
     markActivity();
     runDecision(routerId, {prefix});
@@ -988,6 +1075,11 @@ void SimulationEngine::updateStatus()
             recordTopologyEvent(QStringLiteral("converged"), {{QStringLiteral("elapsed_ms"), QString::number(now())}});
         }
     }
+    if (routerSnapshotsDirty_)
+    {
+        routerSnapshotsDirty_ = false;
+        emit routerSnapshotsChanged(routerSnapshots());
+    }
     publishStats();
 }
 
@@ -1003,7 +1095,6 @@ RibSnapshot SimulationEngine::ribSnapshot(const QString& routerId) const
     snapshot.localRoutes = routerIt->localRoutes;
     snapshot.locRib = routerIt->locRib;
     snapshot.adjRibIn = routerIt->adjRibIn;
-    snapshot.adjRibOut = routerIt->adjRibOut;
     return snapshot;
 }
 
@@ -1047,23 +1138,6 @@ QVector<RouterSnapshot> SimulationEngine::routerSnapshots() const
     return snapshots;
 }
 
-BestPathUpdate SimulationEngine::bestPath(const QString& routerId, const QString& prefix) const
-{
-    BestPathUpdate update{.router = routerId, .prefix = prefix, .valid = false, .route = std::nullopt};
-    const auto routerIt = routers_.constFind(routerId);
-    if (routerIt == routers_.cend())
-    {
-        return update;
-    }
-    const auto routeIt = routerIt->locRib.constFind(prefix);
-    if (routeIt != routerIt->locRib.cend())
-    {
-        update.valid = true;
-        update.route = routeIt.value();
-    }
-    return update;
-}
-
 void SimulationEngine::requestRouterSnapshot(const QString& routerId)
 {
     emit ribSnapshotReady(ribSnapshot(routerId));
@@ -1072,10 +1146,35 @@ void SimulationEngine::requestRouterSnapshot(const QString& routerId)
 
 void SimulationEngine::requestAllSnapshots()
 {
+    routerSnapshotsDirty_ = false;
     emit routerSnapshotsChanged(routerSnapshots());
 }
 
-void SimulationEngine::recordMessage(const BgpMessage& message)
+void SimulationEngine::requestPath(const QString& routerId, const QString& prefix)
+{
+    QStringList path;
+    QSet<QString> seen;
+    auto current = routerId;
+    while (!current.isEmpty() && !seen.contains(current))
+    {
+        const auto routerIt = routers_.constFind(current);
+        if (routerIt == routers_.cend())
+        {
+            break;
+        }
+        seen.insert(current);
+        path.append(current);
+        const auto routeIt = routerIt->locRib.constFind(prefix);
+        if (routeIt == routerIt->locRib.cend() || routeIt->localOrigin || routeIt->learnedFrom.isEmpty() || routeIt->learnedFrom == current)
+        {
+            break;
+        }
+        current = routeIt->learnedFrom;
+    }
+    emit pathReady(routerId, prefix, path);
+}
+
+SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
 {
     SimulationEvent event;
     event.timestamp = QDateTime::currentDateTime();
@@ -1109,7 +1208,7 @@ void SimulationEngine::recordMessage(const BgpMessage& message)
     {
         event.action = toString(message.type);
     }
-    emit eventGenerated(event);
+    return event;
 }
 
 void SimulationEngine::recordTopologyEvent(const QString& name, QMap<QString, QString> details)
@@ -1122,7 +1221,7 @@ void SimulationEngine::recordTopologyEvent(const QString& name, QMap<QString, QS
     event.router = event.details.value(QStringLiteral("router"));
     event.from = event.details.value(QStringLiteral("a"));
     event.to = event.details.value(QStringLiteral("b"));
-    emit eventGenerated(event);
+    emit eventsGenerated({std::move(event)});
 }
 
 bool SimulationEngine::hasRouteReflectorClients(const RouterRuntime& router) const

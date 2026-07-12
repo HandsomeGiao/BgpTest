@@ -4,6 +4,7 @@
 #include "model/Topology.hpp"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QObject>
 #include <QSet>
 #include <QTimer>
@@ -36,7 +37,6 @@ public:
     RibSnapshot ribSnapshot(const QString& routerId) const;
     QVector<PeerSnapshot> peerSnapshots(const QString& routerId) const;
     QVector<RouterSnapshot> routerSnapshots() const;
-    BestPathUpdate bestPath(const QString& routerId, const QString& prefix) const;
 
 public slots:
     void startSimulation(bgptester::Topology topology);
@@ -47,15 +47,17 @@ public slots:
     void withdrawPrefix(const QString& routerId, const QString& prefix);
     void requestRouterSnapshot(const QString& routerId);
     void requestAllSnapshots();
+    void requestPath(const QString& routerId, const QString& prefix);
 
 signals:
     void runningChanged(bool running);
     void convergenceChanged(bool converged);
-    void eventGenerated(bgptester::SimulationEvent event);
+    void eventsGenerated(QVector<bgptester::SimulationEvent> events);
     void routerSnapshotsChanged(QVector<bgptester::RouterSnapshot> snapshots);
     void ribSnapshotReady(bgptester::RibSnapshot snapshot);
     void peersSnapshotReady(QString routerId, QVector<bgptester::PeerSnapshot> snapshots);
-    void bestPathChanged(bgptester::BestPathUpdate update);
+    void ribChanged(QString routerId);
+    void pathReady(QString routerId, QString prefix, QStringList path);
     void routerStateChanged(QString routerId, bool enabled);
     void linkStateChanged(QString a, QString b, bool enabled);
     void statsChanged(bgptester::SimulationStats stats);
@@ -68,7 +70,6 @@ private slots:
 private:
     struct PendingUpdate
     {
-        QString prefix;
         std::optional<RouteEntry> route;
         quint64 generation = 0;
     };
@@ -88,11 +89,11 @@ private:
         RouterNode* node = nullptr;
         bool active = false;
         QMap<QString, PeerRuntime> peers;
-        QMap<QString, RouteEntry> localRoutes;
-        QMap<QString, QMap<QString, RouteEntry>> adjRibIn;
-        QMap<QString, RouteEntry> locRib;
-        QMap<QString, QMap<QString, RouteEntry>> adjRibOut;
-        QMap<QString, QMap<QString, quint64>> outboundGenerations;
+        QHash<QString, RouteEntry> localRoutes;
+        QHash<QString, QHash<QString, RouteEntry>> adjRibIn;
+        QHash<QString, RouteEntry> locRib;
+        QHash<QString, QHash<QString, QPair<quint64, quint64>>> adjRibOut;
+        QHash<QString, QHash<QString, quint64>> outboundGenerations;
     };
 
     enum class ScheduledKind
@@ -148,11 +149,12 @@ private:
     void runDecision(const QString& routerId, const QSet<QString>& changedPrefixes);
     std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix) const;
     void disseminate(const QString& routerId, const QString& prefix, const std::optional<RouteEntry>& route);
+    void advertiseTableToPeer(const QString& routerId, const QString& peerId);
     void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route);
     BgpMessage makeUpdateMessage(const QString& from, const QString& to, const QString& prefix, const std::optional<RouteEntry>& route,
                                  quint64 generation) const;
 
-    void recordMessage(const BgpMessage& message);
+    SimulationEvent messageEvent(const BgpMessage& message) const;
     void recordTopologyEvent(const QString& name, QMap<QString, QString> details = {});
     bool hasRouteReflectorClients(const RouterRuntime& router) const;
 
@@ -168,6 +170,7 @@ private:
     quint64 nextOrder_ = 0;
     quint64 nextGeneration_ = 0;
     quint64 deliveredMessages_ = 0;
+    bool routerSnapshotsDirty_ = false;
     bool running_ = false;
     bool converged_ = false;
 };
