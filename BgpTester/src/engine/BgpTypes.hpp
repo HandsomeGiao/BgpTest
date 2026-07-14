@@ -56,6 +56,37 @@ inline QString toString(PeerState state)
     return QStringLiteral("Unknown");
 }
 
+// A TFP entity is scoped to one logical BGP router, not to the AS as a
+// whole.  Keeping ASN and Entity ID as separate fields prevents two border
+// routers in the same AS from sharing a version space accidentally.
+struct TfpEntity
+{
+    quint32 asn = 0;
+    QString entityId;
+
+    bool operator==(const TfpEntity&) const = default;
+    bool operator<(const TfpEntity& other) const
+    {
+        if (asn != other.asn)
+        {
+            return asn < other.asn;
+        }
+        return entityId < other.entityId;
+    }
+};
+
+using TfpVersionVector = QMap<TfpEntity, quint64>;
+
+// Unified TFP_VERSION_INFO path attribute.  It is also carried in the
+// PathAttributes member of a withdrawal-only BgpMessage.
+struct TfpVersionInfo
+{
+    TfpVersionVector dependencyVector;
+    TfpVersionVector triggerVector;
+
+    bool operator==(const TfpVersionInfo&) const = default;
+};
+
 struct PathAttributes
 {
     QString origin = QStringLiteral("igp");
@@ -66,6 +97,7 @@ struct PathAttributes
     QString originatorId;
     QStringList clusterList;
     QMap<QString, QString> communities;
+    std::optional<TfpVersionInfo> tfpVersionInfo;
 
     bool operator==(const PathAttributes&) const = default;
 };
@@ -165,6 +197,8 @@ struct SimulationStats
 
 Q_DECLARE_METATYPE(bgptester::PathAttributes)
 Q_DECLARE_METATYPE(bgptester::RouteEntry)
+Q_DECLARE_METATYPE(bgptester::TfpEntity)
+Q_DECLARE_METATYPE(bgptester::TfpVersionInfo)
 Q_DECLARE_METATYPE(bgptester::RouterSnapshot)
 Q_DECLARE_METATYPE(bgptester::PeerSnapshot)
 Q_DECLARE_METATYPE(bgptester::RibSnapshot)

@@ -50,6 +50,26 @@ QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route)
         add(it.key());
         add(it.value());
     }
+    if (route.attributes.tfpVersionInfo)
+    {
+        add(QStringLiteral("tfp-version-info"));
+        add(QStringLiteral("dependency-vector"));
+        for (auto it = route.attributes.tfpVersionInfo->dependencyVector.cbegin();
+             it != route.attributes.tfpVersionInfo->dependencyVector.cend(); ++it)
+        {
+            add(it.key().asn);
+            add(it.key().entityId);
+            add(it.value());
+        }
+        add(QStringLiteral("trigger-vector"));
+        for (auto it = route.attributes.tfpVersionInfo->triggerVector.cbegin(); it != route.attributes.tfpVersionInfo->triggerVector.cend();
+             ++it)
+        {
+            add(it.key().asn);
+            add(it.key().entityId);
+            add(it.value());
+        }
+    }
     return {first, second};
 }
 
@@ -71,6 +91,17 @@ bool validIpv4Prefix(const QString& prefix)
     QHostAddress address;
     return lengthOk && length >= 0 && length <= 32 && address.setAddress(prefix.first(slash)) &&
            address.protocol() == QAbstractSocket::IPv4Protocol;
+}
+
+QString tfpVectorText(const TfpVersionVector& vector)
+{
+    QStringList entries;
+    entries.reserve(vector.size());
+    for (auto it = vector.cbegin(); it != vector.cend(); ++it)
+    {
+        entries.append(QStringLiteral("(%1,%2)=%3").arg(it.key().asn).arg(it.key().entityId).arg(it.value()));
+    }
+    return entries.join(u',');
 }
 
 } // namespace
@@ -480,7 +511,7 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
             }
             else
             {
-                messages.append(makeUpdateMessage(from, to, prefix, pending.route, pending.generation));
+                messages.append(makeUpdateMessage(from, to, prefix, pending.route, {}, pending.generation));
             }
         }
         pendingIt = peerIt->pending.erase(pendingIt);
@@ -527,14 +558,14 @@ void SimulationEngine::flushWithdrawals(const QString& from, const QString& to)
         const auto current = peerGenerations == routerIt->outboundGenerations.cend() ? 0 : peerGenerations->value(prefix);
         if (current == pending.generation)
         {
-            if (!messages.isEmpty())
+            if (!messages.isEmpty() && messages.last().attributes == pending.withdrawalAttributes)
             {
                 messages.last().withdrawn.append(prefix);
                 messages.last().generations.insert(prefix, pending.generation);
             }
             else
             {
-                messages.append(makeUpdateMessage(from, to, prefix, std::nullopt, pending.generation));
+                messages.append(makeUpdateMessage(from, to, prefix, std::nullopt, pending.withdrawalAttributes, pending.generation));
             }
         }
         pendingIt = peerIt->pending.erase(pendingIt);
@@ -731,10 +762,11 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
     {
         for (const auto& prefix : message.withdrawn)
         {
-            if (peerRoutes.remove(prefix) > 0)
-            {
-                changed.insert(prefix);
-            }
+            routerIt->node->importWithdrawal(prefix, message.attributes, peerIt->config);
+            peerRoutes.remove(prefix);
+            // A version trigger can stale a candidate learned from another
+            // peer even if this sender had no Adj-RIB-In entry to remove.
+            changed.insert(prefix);
         }
         for (const auto& prefix : message.nlri)
         {
@@ -847,7 +879,7 @@ void SimulationEngine::advertiseTableToPeer(const QString& routerId, const QStri
     routerIt->outboundGenerations[peerId].reserve(routerIt->locRib.size());
     for (auto routeIt = routerIt->locRib.cbegin(); routeIt != routerIt->locRib.cend(); ++routeIt)
     {
-        auto outbound = routerIt->node->exportRoute(routeIt.value(), peerIt->config);
+        auto outbound = routerIt->node->exportRouteForPrefix(routeIt.key(), routeIt.value(), peerIt->config);
         queueAdvertisement(routerId, peerId, routeIt.key(), outbound);
     }
 }
@@ -891,7 +923,7 @@ void SimulationEngine::disseminate(const QString& routerId, const QString& prefi
         std::optional<RouteEntry> outbound;
         if (route)
         {
-            outbound = routerIt->node->exportRoute(*route, peerIt->config);
+            outbound = routerIt->node->exportRouteForPrefix(prefix, *route, peerIt->config);
         }
         if (outbound)
         {
@@ -908,12 +940,17 @@ void SimulationEngine::disseminate(const QString& routerId, const QString& prefi
                 }
             }
         }
-        queueAdvertisement(routerId, peerId, prefix, outbound);
+        PathAttributes withdrawalAttributes;
+        if (!route)
+        {
+            withdrawalAttributes = routerIt->node->exportWithdrawal(prefix, peerIt->config);
+        }
+        queueAdvertisement(routerId, peerId, prefix, outbound, std::move(withdrawalAttributes));
     }
 }
 
 void SimulationEngine::queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix,
-                                          const std::optional<RouteEntry>& route)
+                                          const std::optional<RouteEntry>& route, PathAttributes withdrawalAttributes)
 {
     auto routerIt = routers_.find(routerId);
     if (routerIt == routers_.end())
@@ -945,7 +982,9 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         }
         const auto generation = ++nextGeneration_;
         routerIt->outboundGenerations[peerId][prefix] = generation;
-        peerIt->pending.insert(prefix, PendingUpdate{.route = std::nullopt, .generation = generation});
+        peerIt->pending.insert(
+            prefix,
+            PendingUpdate{.route = std::nullopt, .withdrawalAttributes = std::move(withdrawalAttributes), .generation = generation});
         if (!peerIt->withdrawalFlushScheduled)
         {
             peerIt->withdrawalFlushScheduled = true;
@@ -956,7 +995,7 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
 
     const auto generation = ++nextGeneration_;
     routerIt->outboundGenerations[peerId][prefix] = generation;
-    peerIt->pending.insert(prefix, PendingUpdate{.route = route, .generation = generation});
+    peerIt->pending.insert(prefix, PendingUpdate{.route = route, .withdrawalAttributes = {}, .generation = generation});
     if (!peerIt->flushScheduled)
     {
         peerIt->flushScheduled = true;
@@ -966,7 +1005,8 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
 }
 
 BgpMessage SimulationEngine::makeUpdateMessage(const QString& from, const QString& to, const QString& prefix,
-                                               const std::optional<RouteEntry>& route, quint64 generation) const
+                                               const std::optional<RouteEntry>& route, const PathAttributes& withdrawalAttributes,
+                                               quint64 generation) const
 {
     BgpMessage message;
     message.type = MessageType::Update;
@@ -983,6 +1023,7 @@ BgpMessage SimulationEngine::makeUpdateMessage(const QString& from, const QStrin
     else
     {
         message.withdrawn.append(prefix);
+        message.attributes = withdrawalAttributes;
     }
     return message;
 }
@@ -1162,10 +1203,12 @@ void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& pr
     }
     routerIt->config.originatedPrefixes.removeAll(prefix);
     topology_.routers[routerId].originatedPrefixes.removeAll(prefix);
-    if (routerIt->localRoutes.remove(prefix) == 0)
+    if (!routerIt->localRoutes.contains(prefix))
     {
         return;
     }
+    routerIt->node->localRouteWithdrawn(prefix);
+    routerIt->localRoutes.remove(prefix);
     markActivity();
     runDecision(routerId, {prefix});
     recordTopologyEvent(QStringLiteral("prefix_withdrawn"), {{QStringLiteral("router"), routerId}, {QStringLiteral("prefix"), prefix}});
@@ -1316,6 +1359,12 @@ SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
         event.asPath = message.attributes.asPath;
         event.localPref = message.attributes.localPref;
         event.med = message.attributes.med;
+        if (message.attributes.tfpVersionInfo)
+        {
+            event.details.insert(QStringLiteral("tfp_dependency_vector"),
+                                 tfpVectorText(message.attributes.tfpVersionInfo->dependencyVector));
+            event.details.insert(QStringLiteral("tfp_trigger_vector"), tfpVectorText(message.attributes.tfpVersionInfo->triggerVector));
+        }
     }
     else
     {

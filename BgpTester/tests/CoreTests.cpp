@@ -1,6 +1,7 @@
 #include "engine/SimulationEngine.hpp"
 #include "persistence/EventStore.hpp"
 #include "plugin/RouterPluginRegistry.hpp"
+#include "router_plugins/TfpVersionRouterPlugin.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -219,6 +220,185 @@ void sourceRouterPluginControlsRouteExport()
     engine.startSimulation(topology);
     require(!engine.isRunning() && startError.contains(QStringLiteral("export_routes")),
             "invalid plugin configuration did not prevent simulation start");
+}
+
+Topology tfpDiamondTopology()
+{
+    Topology topology;
+    topology.simulation.name = QStringLiteral("tfp-version-test");
+    topology.simulation.convergenceQuietMs = 20;
+
+    const auto addRouter = [&](const QString& id, const QString& routerId, quint32 asn, bool originates)
+    {
+        RouterConfig router;
+        router.id = id;
+        router.routerId = routerId;
+        router.clusterId = routerId;
+        router.asn = asn;
+        router.pluginId = TfpVersionRouterPluginId;
+        router.pluginSettings =
+            QJsonObject{{QStringLiteral("entity_id"), routerId}, {QStringLiteral("initial_version"), QStringLiteral("0")}};
+        if (originates)
+        {
+            router.originatedPrefixes.append(QStringLiteral("198.18.0.0/24"));
+        }
+        topology.routers.insert(id, router);
+    };
+
+    addRouter(QStringLiteral("S"), QStringLiteral("10.0.0.1"), 65001, true);
+    // A and B deliberately share an ASN.  Their Entity IDs must still keep
+    // their version spaces independent.
+    addRouter(QStringLiteral("A"), QStringLiteral("10.0.0.2"), 65002, false);
+    addRouter(QStringLiteral("B"), QStringLiteral("10.0.0.3"), 65002, false);
+    addRouter(QStringLiteral("D"), QStringLiteral("10.0.0.4"), 65003, false);
+
+    topology.links.append(LinkConfig{.a = QStringLiteral("S"), .b = QStringLiteral("A"), .delayMs = 1});
+    topology.links.append(LinkConfig{.a = QStringLiteral("S"), .b = QStringLiteral("B"), .delayMs = 1});
+    topology.links.append(LinkConfig{.a = QStringLiteral("A"), .b = QStringLiteral("D"), .delayMs = 5});
+    topology.links.append(LinkConfig{.a = QStringLiteral("B"), .b = QStringLiteral("D"), .delayMs = 500});
+    return topology;
+}
+
+void tfpVersionInfoSurvivesRouteReflection()
+{
+    Topology topology;
+    topology.simulation.name = QStringLiteral("tfp-rr-test");
+    topology.simulation.convergenceQuietMs = 20;
+    for (int index = 1; index <= 3; ++index)
+    {
+        RouterConfig router;
+        router.id = QStringLiteral("R%1").arg(index);
+        router.routerId = QStringLiteral("10.10.0.%1").arg(index);
+        router.clusterId = router.routerId;
+        router.asn = 65100;
+        router.pluginId = TfpVersionRouterPluginId;
+        if (index == 2)
+        {
+            router.originatedPrefixes.append(QStringLiteral("198.19.0.0/24"));
+        }
+        topology.routers.insert(router.id, router);
+    }
+    topology.links.append(LinkConfig{.a = QStringLiteral("R1"), .b = QStringLiteral("R2"), .delayMs = 1, .rrClientFromA = true});
+    topology.links.append(LinkConfig{.a = QStringLiteral("R1"), .b = QStringLiteral("R3"), .delayMs = 1, .rrClientFromA = true});
+
+    SimulationEngine engine;
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.ribSnapshot(QStringLiteral("R3")).locRib.contains(QStringLiteral("198.19.0.0/24")); }, 1500),
+            "TFP route did not survive route reflection");
+    const auto route = engine.ribSnapshot(QStringLiteral("R3")).locRib.value(QStringLiteral("198.19.0.0/24"));
+    require(route.attributes.tfpVersionInfo.has_value(), "route reflector dropped TFP_VERSION_INFO");
+    require(route.attributes.tfpVersionInfo->dependencyVector.contains(TfpEntity{65100, QStringLiteral("10.10.0.2")}) &&
+                route.attributes.tfpVersionInfo->dependencyVector.contains(TfpEntity{65100, QStringLiteral("10.10.0.1")}),
+            "reflected route is missing origin or RR entity dependency");
+    engine.stopSimulation();
+}
+
+void tfpVersionPluginInvalidatesOnlyExplicitOldDependencies()
+{
+    require(RouterPluginRegistry::instance().contains(TfpVersionRouterPluginId), "TFP version router plugin was not registered");
+
+    const auto prefix = QStringLiteral("198.18.0.0/24");
+    const TfpEntity sourceEntity{65001, QStringLiteral("10.0.0.1")};
+    const TfpEntity aEntity{65002, QStringLiteral("10.0.0.2")};
+    const TfpEntity bEntity{65002, QStringLiteral("10.0.0.3")};
+    bool sawVersionedWithdrawalFromA = false;
+    bool sawPolicyWithdrawalFromD = false;
+    bool policyWithdrawalHadTfp = false;
+
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         for (const auto& event : events)
+                         {
+                             if (event.from == QStringLiteral("A") && event.to == QStringLiteral("D") &&
+                                 event.action == QStringLiteral("WITHDRAW") && event.withdrawn.contains(prefix) &&
+                                 event.details.value(QStringLiteral("tfp_trigger_vector")).contains(QStringLiteral("(65001,10.0.0.1)=")))
+                             {
+                                 sawVersionedWithdrawalFromA = true;
+                             }
+                             if (event.from == QStringLiteral("D") && event.to == QStringLiteral("B") &&
+                                 event.action == QStringLiteral("WITHDRAW") && event.withdrawn.contains(prefix))
+                             {
+                                 sawPolicyWithdrawalFromD = true;
+                                 policyWithdrawalHadTfp = event.details.contains(QStringLiteral("tfp_dependency_vector")) ||
+                                                          event.details.contains(QStringLiteral("tfp_trigger_vector"));
+                             }
+                         }
+                     });
+    engine.startSimulation(tfpDiamondTopology());
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("D"));
+                    return rib.adjRibIn.value(QStringLiteral("A")).contains(prefix) &&
+                           rib.adjRibIn.value(QStringLiteral("B")).contains(prefix) && engine.isConverged();
+                },
+                5000),
+            "TFP diamond topology did not converge with both candidate paths");
+
+    const auto initial = engine.ribSnapshot(QStringLiteral("D"));
+    const auto routeFromA = initial.adjRibIn.value(QStringLiteral("A")).value(prefix);
+    const auto routeFromB = initial.adjRibIn.value(QStringLiteral("B")).value(prefix);
+    require(routeFromA.attributes.tfpVersionInfo.has_value() && routeFromB.attributes.tfpVersionInfo.has_value(),
+            "TFP_VERSION_INFO was not propagated on UPDATE");
+    const auto& dependenciesA = routeFromA.attributes.tfpVersionInfo->dependencyVector;
+    const auto& dependenciesB = routeFromB.attributes.tfpVersionInfo->dependencyVector;
+    require(dependenciesA.contains(sourceEntity) && dependenciesA.contains(aEntity), "A path is missing source or A router dependency");
+    require(dependenciesB.contains(sourceEntity) && dependenciesB.contains(bEntity), "B path is missing source or B router dependency");
+    require(!dependenciesA.contains(bEntity) && !dependenciesB.contains(aEntity),
+            "routers in the same AS incorrectly shared one version entity");
+
+    // Advancing only A's router-level version must not stale B's path even
+    // though A and B have the same ASN.
+    engine.setLinkState(QStringLiteral("S"), QStringLiteral("A"), false);
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("D"));
+                    return rib.locRib.contains(prefix) && rib.locRib.value(prefix).learnedFrom == QStringLiteral("B") &&
+                           engine.isConverged();
+                },
+                2000),
+            "A entity version incorrectly invalidated B's independent path");
+    require(sawPolicyWithdrawalFromD && !policyWithdrawalHadTfp,
+            "policy/split-horizon withdrawal incorrectly carried TFP version information");
+
+    engine.setLinkState(QStringLiteral("S"), QStringLiteral("A"), true);
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("D"));
+                    return rib.adjRibIn.value(QStringLiteral("A")).contains(prefix) && engine.isConverged();
+                },
+                2500),
+            "A path did not recover before the targeted withdrawal test");
+
+    sawVersionedWithdrawalFromA = false;
+    engine.withdrawPrefix(QStringLiteral("S"), prefix);
+
+    // A's short path delivers S's newer trigger hundreds of milliseconds
+    // before B's normal withdrawal.  D must reject the still-present B
+    // candidate because it explicitly depends on S's older version.
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("D"));
+                    return !rib.locRib.contains(prefix) && rib.adjRibIn.value(QStringLiteral("B")).contains(prefix);
+                },
+                300),
+            "TFP trigger did not invalidate B's old dependency before B's withdrawal arrived");
+    require(sawVersionedWithdrawalFromA, "withdrawal did not carry a TFP trigger vector");
+
+    require(waitFor(
+                [&]
+                {
+                    const auto rib = engine.ribSnapshot(QStringLiteral("D"));
+                    return !rib.adjRibIn.value(QStringLiteral("B")).contains(prefix) && engine.isConverged();
+                },
+                2000),
+            "TFP topology did not finish normal withdrawal convergence");
+    engine.stopSimulation();
 }
 
 void bulkUpdatesAreAggregated()
@@ -557,6 +737,8 @@ int main(int argc, char** argv)
         routeReflectorPropagatesClientRoute();
         staleMraiAdvertisementDoesNotReappear();
         sourceRouterPluginControlsRouteExport();
+        tfpVersionInfoSurvivesRouteReflection();
+        tfpVersionPluginInvalidatesOnlyExplicitOldDependencies();
         bulkUpdatesAreAggregated();
         bulkWithdrawalsAreAggregated();
         transientWithdrawalIsSupersededBeforeFlush();

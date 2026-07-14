@@ -71,6 +71,7 @@ private:
     struct PendingUpdate
     {
         std::optional<RouteEntry> route;
+        PathAttributes withdrawalAttributes;
         quint64 generation = 0;
     };
 
@@ -154,9 +155,10 @@ private:
     std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix) const;
     void disseminate(const QString& routerId, const QString& prefix, const std::optional<RouteEntry>& route);
     void advertiseTableToPeer(const QString& routerId, const QString& peerId);
-    void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route);
+    void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route,
+                            PathAttributes withdrawalAttributes = {});
     BgpMessage makeUpdateMessage(const QString& from, const QString& to, const QString& prefix, const std::optional<RouteEntry>& route,
-                                 quint64 generation) const;
+                                 const PathAttributes& withdrawalAttributes, quint64 generation) const;
 
     SimulationEvent messageEvent(const BgpMessage& message) const;
     void recordTopologyEvent(const QString& name, QMap<QString, QString> details = {});

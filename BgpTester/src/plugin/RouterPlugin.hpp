@@ -15,7 +15,7 @@
 namespace bgptester
 {
 
-inline constexpr int RouterPluginApiVersion = 2;
+inline constexpr int RouterPluginApiVersion = 3;
 
 struct RouterPluginMetadata
 {
@@ -77,11 +77,40 @@ public:
     virtual std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes,
                                                   const NeighborConfig& fromPeer) = 0;
 
+    // Called before a route from this peer is removed from Adj-RIB-In.  The
+    // default keeps API-v3 source plugins that do not use withdrawal
+    // attributes equivalent to ordinary BGP behavior.
+    virtual void importWithdrawal(const QString&, const PathAttributes&, const NeighborConfig&)
+    {
+    }
+
+    // Notification for a locally originated route being removed.  Stateful
+    // plugins can advance per-prefix control-plane state before decision and
+    // dissemination run.
+    virtual void localRouteWithdrawn(const QString&)
+    {
+    }
+
     virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
                                                       const std::optional<RouteEntry>& currentBest) = 0;
 
     // Returning std::nullopt filters (or withdraws) the route for this peer.
     virtual std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) = 0;
+
+    // Prefix-aware export hook.  Existing plugins only need exportRoute();
+    // plugins with per-prefix attributes can override this method.
+    virtual std::optional<RouteEntry> exportRouteForPrefix(const QString&, const RouteEntry& route, const NeighborConfig& toPeer)
+    {
+        return exportRoute(route, toPeer);
+    }
+
+    // Attributes for a withdrawal caused by the local selected route becoming
+    // unavailable.  This is deliberately not called for an export-policy
+    // filter while a selected route still exists.
+    virtual PathAttributes exportWithdrawal(const QString&, const NeighborConfig&)
+    {
+        return {};
+    }
 
 private:
     RouterNodeContext context_;

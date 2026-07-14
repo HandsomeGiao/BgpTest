@@ -82,6 +82,7 @@ ctest --test-dir build --output-on-failure
 
 - 本地起源路由的创建；
 - UPDATE 入站接受、拒绝与属性修改；
+- 带属性 WITHDRAW 的入站处理、真实状态撤销属性和按前缀出口属性；
 - 候选路由的最佳路径选择；
 - 面向每个邻居的出口过滤与属性变换；
 - 仿真启动/停止及 Peer 状态通知。
@@ -111,8 +112,37 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 - `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
 - `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
 
-插件 ID 在进程内必须唯一，API 版本当前为 `2`。插件缺失、ID 重复、API
+插件 ID 在进程内必须唯一，API 版本当前为 `3`。插件缺失、ID 重复、API
 版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
+
+### TFP 路径版本插件
+
+内置源码插件 `org.bgptester.router.tfp-version` 实现路由器级实体版本机制：
+
+- `TFP_VERSION_INFO` 作为显式路径属性保存 `DependencyVector` 与
+  `TriggerVector`，UPDATE 和真实路径撤销均可携带；
+- 每个前缀按 `(ASN, EntityID)` 独立维护最大已知版本，只排除显式依赖较旧
+  版本的候选路径；缺少版本信息的普通 BGP 路径不会被当作版本 `0`；
+- EBGP、IBGP 与 Route Reflector 继续使用标准插件的传播/选路规则；
+- 仅由出口过滤或 split-horizon 产生的策略撤销不携带版本信息；
+- 64 位本地版本在同一次仿真及节点关闭/恢复期间保持单调，
+  `initial_version` 可为十进制字符串，用来衔接外部持久化版本。
+
+插件配置示例：
+
+```json
+"plugin": {
+  "id": "org.bgptester.router.tfp-version",
+  "settings": {
+    "entity_id": "border-router-1",
+    "initial_version": "1000"
+  }
+}
+```
+
+`entity_id` 为空时使用 Router ID。消息事件详情会记录
+`tfp_dependency_vector` 与 `tfp_trigger_vector`，便于在实时日志、JSONL 和
+SQLite 历史中检查传播过程。
 
 ### 日志
 
