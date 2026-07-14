@@ -333,6 +333,11 @@ TopologyScene::TopologyScene(QObject* parent) : QGraphicsScene(parent)
     connect(this, &QGraphicsScene::selectionChanged, this, &TopologyScene::updateSelectionContext);
 }
 
+TopologyScene::~TopologyScene()
+{
+    disconnect(this, &QGraphicsScene::selectionChanged, this, &TopologyScene::updateSelectionContext);
+}
+
 void TopologyScene::setTopology(Topology* topology)
 {
     topology_ = topology;
@@ -425,6 +430,20 @@ void TopologyScene::setEditable(bool editable)
     {
         item->setFlag(QGraphicsItem::ItemIsMovable, editable_);
     }
+}
+
+QStringList TopologyScene::selectedRouterIds() const
+{
+    QStringList routerIds;
+    for (auto* item : selectedItems())
+    {
+        if (item->type() == RouterGraphicsItem::Type)
+        {
+            routerIds.append(static_cast<RouterGraphicsItem*>(item)->routerId());
+        }
+    }
+    routerIds.sort(Qt::CaseSensitive);
+    return routerIds;
 }
 
 bool TopologyScene::deleteSelection()

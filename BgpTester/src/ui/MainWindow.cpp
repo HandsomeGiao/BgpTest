@@ -689,19 +689,58 @@ void MainWindow::editSimulationSettings()
 
 void MainWindow::editTopologyBatchProperties()
 {
-    if (topology_.links.isEmpty())
+    const auto selectedRouterIds = scene_->selectedRouterIds();
+    const auto selectedRoutersOnly = selectedRouterIds.size() > 1;
+    const auto targetRouterIds = selectedRoutersOnly ? selectedRouterIds : topology_.routers.keys();
+
+    QVector<RouterConfig> targetRouters;
+    targetRouters.reserve(targetRouterIds.size());
+    for (const auto& routerId : targetRouterIds)
     {
-        QMessageBox::information(this, QStringLiteral("没有链路"), QStringLiteral("当前拓扑没有可批量配置的链路。"));
+        const auto router = topology_.routers.constFind(routerId);
+        if (router != topology_.routers.cend())
+        {
+            targetRouters.append(router.value());
+        }
+    }
+
+    if (topology_.links.isEmpty() && targetRouters.isEmpty())
+    {
+        QMessageBox::information(this, QStringLiteral("没有可配置对象"), QStringLiteral("当前拓扑没有可批量配置的路由器或链路。"));
         return;
     }
 
-    TopologyBatchEditDialog dialog(topology_.links, this);
+    const auto routerScope =
+        selectedRoutersOnly ? TopologyBatchEditDialog::RouterScope::Selection : TopologyBatchEditDialog::RouterScope::All;
+    TopologyBatchEditDialog dialog(topology_.links, targetRouters, routerScope, this);
     if (dialog.exec() != QDialog::Accepted)
     {
         return;
     }
 
+    auto changedRouters = 0;
     auto changedLinks = 0;
+    QStringList appliedOperations;
+
+    const auto pluginId = dialog.routerPluginId();
+    if (!pluginId.isEmpty())
+    {
+        const auto defaultSettings = dialog.routerPluginDefaultSettings();
+        for (const auto& routerId : targetRouterIds)
+        {
+            auto router = topology_.routers.find(routerId);
+            if (router != topology_.routers.end() && router->pluginId != pluginId)
+            {
+                router->pluginId = pluginId;
+                router->pluginSettings = defaultSettings;
+                ++changedRouters;
+            }
+        }
+        const auto targetDescription = selectedRoutersOnly ? QStringLiteral("选中的 %1 台路由器").arg(targetRouters.size())
+                                                           : QStringLiteral("全部 %1 台路由器").arg(targetRouters.size());
+        appliedOperations.append(QStringLiteral("已将%1的种类设置为 %2").arg(targetDescription, pluginId));
+    }
+
     if (dialog.delayMode() == TopologyBatchEditDialog::DelayMode::Fixed)
     {
         const auto delayMs = dialog.fixedDelayMs();
@@ -713,12 +752,9 @@ void MainWindow::editTopologyBatchProperties()
                 ++changedLinks;
             }
         }
-        statusBar()->showMessage(QStringLiteral("已将全部 %1 条链路的延迟设置为 %2 ms")
-                                     .arg(topology_.links.size())
-                                     .arg(delayMs),
-                                 4000);
+        appliedOperations.append(QStringLiteral("已将全部 %1 条链路的延迟设置为 %2 ms").arg(topology_.links.size()).arg(delayMs));
     }
-    else
+    else if (dialog.delayMode() == TopologyBatchEditDialog::DelayMode::RandomRange)
     {
         const auto minimumDelayMs = dialog.minimumDelayMs();
         const auto maximumDelayMs = dialog.maximumDelayMs();
@@ -732,14 +768,16 @@ void MainWindow::editTopologyBatchProperties()
                 ++changedLinks;
             }
         }
-        statusBar()->showMessage(QStringLiteral("已将全部 %1 条链路的延迟随机设置在 %2–%3 ms 范围内")
+        appliedOperations.append(QStringLiteral("已将全部 %1 条链路的延迟随机设置在 %2–%3 ms 范围内")
                                      .arg(topology_.links.size())
                                      .arg(minimumDelayMs)
-                                     .arg(maximumDelayMs),
-                                 4000);
+                                     .arg(maximumDelayMs));
     }
 
-    if (changedLinks > 0)
+    statusBar()->showMessage(
+        appliedOperations.isEmpty() ? QStringLiteral("未选择要修改的批量配置项") : appliedOperations.join(QStringLiteral("；")), 5000);
+
+    if (changedRouters > 0 || changedLinks > 0)
     {
         scene_->rebuild();
         refreshTopologySelectors();

@@ -27,6 +27,7 @@ public:
     Q_ENUM(Mode)
 
     explicit TopologyScene(QObject* parent = nullptr);
+    ~TopologyScene() override;
 
     void setTopology(Topology* topology);
     void rebuild();
@@ -40,6 +41,7 @@ public:
     {
         return editable_;
     }
+    QStringList selectedRouterIds() const;
     bool deleteSelection();
 
     void setRouterRuntimeState(const QString& routerId, bool active);

@@ -1,8 +1,11 @@
 #include "model/Topology.hpp"
+#include "ui/Dialogs.hpp"
 #include "ui/TopologyScene.hpp"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QGraphicsItem>
+#include <QLabel>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -110,6 +113,55 @@ void routerDragFinishesWithoutReentrantSceneResize(QApplication& application)
     require(modifiedSpy.count() == 1, "clicking without moving must not mark topology modified again");
 }
 
+void selectedRouterIdsTrackMultiSelection()
+{
+    auto topology = draggableTopology();
+    TopologyScene scene;
+    scene.setTopology(&topology);
+
+    auto* r1 = routerItemAt(scene, topology.routers.value(QStringLiteral("R1")).position);
+    auto* r3 = routerItemAt(scene, topology.routers.value(QStringLiteral("R3")).position);
+    require(r1 && r3, "could not find router items for selection test");
+    require(scene.selectedRouterIds().isEmpty(), "a new scene unexpectedly contains selected routers");
+
+    r3->setSelected(true);
+    r1->setSelected(true);
+    const QStringList expected{QStringLiteral("R1"), QStringLiteral("R3")};
+    require(scene.selectedRouterIds() == expected, "selected router IDs do not reflect the multi-selection");
+
+    for (auto* item : scene.items())
+    {
+        if (item->type() == QGraphicsItem::UserType + 2)
+        {
+            item->setSelected(true);
+            break;
+        }
+    }
+    require(scene.selectedRouterIds() == expected, "selected links must not be returned as selected routers");
+}
+
+void batchDialogOffersRouterKindsWithoutChangingAnythingByDefault()
+{
+    const auto topology = draggableTopology();
+    QVector<RouterConfig> routers{topology.routers.value(QStringLiteral("R1")), topology.routers.value(QStringLiteral("R2"))};
+    TopologyBatchEditDialog dialog(topology.links, routers, TopologyBatchEditDialog::RouterScope::Selection);
+
+    auto* pluginCombo = dialog.findChild<QComboBox*>(QStringLiteral("batchRouterPluginCombo"));
+    auto* summaryLabel = dialog.findChild<QLabel*>(QStringLiteral("batchTopologySummaryLabel"));
+    require(pluginCombo, "batch router kind combo was not created");
+    require(summaryLabel && summaryLabel->text().contains(QStringLiteral("选中的 2 台路由器")),
+            "batch dialog does not describe the selected-router scope");
+    require(dialog.routerPluginId().isEmpty(), "batch dialog must preserve router kinds until a kind is selected");
+    require(dialog.delayMode() == TopologyBatchEditDialog::DelayMode::Unchanged,
+            "batch dialog must preserve link delays until a delay mode is selected");
+
+    const auto standardIndex = pluginCombo->findData(StandardRouterPluginId);
+    require(standardIndex >= 0, "standard BGP router kind is missing from the batch dialog");
+    pluginCombo->setCurrentIndex(standardIndex);
+    require(dialog.routerPluginId() == StandardRouterPluginId, "batch dialog did not return the selected router kind");
+    require(dialog.routerPluginDefaultSettings().isEmpty(), "standard BGP router defaults unexpectedly contain settings");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -118,6 +170,8 @@ int main(int argc, char** argv)
     try
     {
         routerDragFinishesWithoutReentrantSceneResize(application);
+        selectedRouterIdsTrackMultiSelection();
+        batchDialogOffersRouterKindsWithoutChangingAnythingByDefault();
     }
     catch (const std::exception& error)
     {

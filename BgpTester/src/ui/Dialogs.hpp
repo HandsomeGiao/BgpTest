@@ -65,26 +65,39 @@ class TopologyBatchEditDialog final : public QDialog
 public:
     enum class DelayMode
     {
+        Unchanged,
         Fixed,
         RandomRange,
     };
 
-    explicit TopologyBatchEditDialog(const QVector<LinkConfig>& links, QWidget* parent = nullptr);
+    enum class RouterScope
+    {
+        All,
+        Selection,
+    };
+
+    explicit TopologyBatchEditDialog(const QVector<LinkConfig>& links, const QVector<RouterConfig>& routers, RouterScope routerScope,
+                                     QWidget* parent = nullptr);
 
     DelayMode delayMode() const;
     int fixedDelayMs() const;
     int minimumDelayMs() const;
     int maximumDelayMs() const;
+    QString routerPluginId() const;
+    QJsonObject routerPluginDefaultSettings() const;
 
 public slots:
     void accept() override;
 
 private:
+    QRadioButton* unchangedDelayRadio_ = nullptr;
     QRadioButton* fixedDelayRadio_ = nullptr;
     QSpinBox* fixedDelaySpin_ = nullptr;
     QRadioButton* randomDelayRadio_ = nullptr;
     QSpinBox* minimumDelaySpin_ = nullptr;
     QSpinBox* maximumDelaySpin_ = nullptr;
+    QComboBox* routerPluginCombo_ = nullptr;
+    QLabel* routerPluginDescriptionLabel_ = nullptr;
 };
 
 class SimulationSettingsDialog final : public QDialog

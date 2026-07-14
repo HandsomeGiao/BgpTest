@@ -215,7 +215,9 @@ LinkConfig LinkDialog::link() const
     return result;
 }
 
-TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& links, QWidget* parent) : QDialog(parent)
+TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& links, const QVector<RouterConfig>& routers,
+                                                 RouterScope routerScope, QWidget* parent)
+    : QDialog(parent)
 {
     constexpr auto maximumDelayMs = 24 * 60 * 60 * 1000;
 
@@ -223,15 +225,82 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
     setMinimumWidth(480);
 
     auto* layout = new QVBoxLayout(this);
-    auto* summaryLabel = new QLabel(QStringLiteral("将配置应用到当前拓扑的全部 %1 条链路。").arg(links.size()), this);
+    const auto routerTarget = routerScope == RouterScope::Selection ? QStringLiteral("选中的 %1 台路由器").arg(routers.size())
+                                                                    : QStringLiteral("当前拓扑的全部 %1 台路由器").arg(routers.size());
+    auto* summaryLabel = new QLabel(
+        QStringLiteral("路由器种类可应用到%1；链路延迟可应用到当前拓扑的全部 %2 条链路。").arg(routerTarget).arg(links.size()), this);
+    summaryLabel->setObjectName(QStringLiteral("batchTopologySummaryLabel"));
     summaryLabel->setWordWrap(true);
     layout->addWidget(summaryLabel);
+
+    auto* routerGroup = new QGroupBox(QStringLiteral("BGP 路由器种类"), this);
+    auto* routerLayout = new QVBoxLayout(routerGroup);
+    routerPluginCombo_ = new QComboBox(routerGroup);
+    routerPluginCombo_->setObjectName(QStringLiteral("batchRouterPluginCombo"));
+
+    QString currentPluginId;
+    auto commonPlugin = !routers.isEmpty();
+    for (const auto& router : routers)
+    {
+        if (currentPluginId.isEmpty())
+        {
+            currentPluginId = router.pluginId;
+        }
+        else if (currentPluginId != router.pluginId)
+        {
+            commonPlugin = false;
+            break;
+        }
+    }
+
+    QString unchangedText = QStringLiteral("保持各路由器现有种类");
+    if (commonPlugin)
+    {
+        const auto metadata = RouterPluginRegistry::instance().metadata(currentPluginId);
+        const auto currentName = metadata ? metadata->displayName : currentPluginId;
+        unchangedText = QStringLiteral("保持现有种类（%1）").arg(currentName);
+    }
+    routerPluginCombo_->addItem(unchangedText, QString{});
+    for (const auto& plugin : RouterPluginRegistry::instance().plugins())
+    {
+        routerPluginCombo_->addItem(QStringLiteral("%1  (%2)").arg(plugin.metadata.displayName, plugin.metadata.id), plugin.metadata.id);
+    }
+    routerPluginCombo_->setEnabled(!routers.isEmpty());
+
+    routerPluginDescriptionLabel_ = new QLabel(routerGroup);
+    routerPluginDescriptionLabel_->setWordWrap(true);
+    routerPluginDescriptionLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    const auto updateRouterPluginDescription = [this]
+    {
+        const auto pluginId = routerPluginId();
+        if (pluginId.isEmpty())
+        {
+            routerPluginDescriptionLabel_->setText(QStringLiteral("不修改目标路由器现有的种类和插件配置。"));
+            return;
+        }
+        const auto metadata = RouterPluginRegistry::instance().metadata(pluginId);
+        routerPluginDescriptionLabel_->setText(metadata ? metadata->description : QStringLiteral("该路由器种类当前不可用。"));
+    };
+    updateRouterPluginDescription();
+    connect(routerPluginCombo_, &QComboBox::currentIndexChanged, this,
+            [updateRouterPluginDescription](int) { updateRouterPluginDescription(); });
+
+    routerLayout->addWidget(routerPluginCombo_);
+    routerLayout->addWidget(routerPluginDescriptionLabel_);
+    auto* routerNoteLabel =
+        new QLabel(QStringLiteral("更换种类时使用新种类的默认插件配置；种类未变化的路由器保留现有插件配置。"), routerGroup);
+    routerNoteLabel->setWordWrap(true);
+    routerLayout->addWidget(routerNoteLabel);
+    layout->addWidget(routerGroup);
 
     auto* delayGroup = new QGroupBox(QStringLiteral("链路延迟"), this);
     auto* delayLayout = new QVBoxLayout(delayGroup);
 
+    unchangedDelayRadio_ = new QRadioButton(QStringLiteral("保持现有值"), delayGroup);
+    unchangedDelayRadio_->setChecked(true);
+    delayLayout->addWidget(unchangedDelayRadio_);
+
     fixedDelayRadio_ = new QRadioButton(QStringLiteral("固定值"), delayGroup);
-    fixedDelayRadio_->setChecked(true);
     fixedDelaySpin_ = new QSpinBox(delayGroup);
     fixedDelaySpin_->setRange(0, maximumDelayMs);
     fixedDelaySpin_->setSuffix(QStringLiteral(" ms"));
@@ -278,6 +347,7 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
     connect(fixedDelayRadio_, &QRadioButton::toggled, this, [updateInputState](bool) { updateInputState(); });
     updateInputState();
 
+    delayGroup->setEnabled(!links.isEmpty());
     layout->addWidget(delayGroup);
     auto* noteLabel = new QLabel(QStringLiteral("随机模式会为每条链路独立生成一个整数毫秒值。"), this);
     noteLabel->setWordWrap(true);
@@ -292,7 +362,11 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
 
 TopologyBatchEditDialog::DelayMode TopologyBatchEditDialog::delayMode() const
 {
-    return fixedDelayRadio_->isChecked() ? DelayMode::Fixed : DelayMode::RandomRange;
+    if (fixedDelayRadio_->isChecked())
+    {
+        return DelayMode::Fixed;
+    }
+    return randomDelayRadio_->isChecked() ? DelayMode::RandomRange : DelayMode::Unchanged;
 }
 
 int TopologyBatchEditDialog::fixedDelayMs() const
@@ -308,6 +382,17 @@ int TopologyBatchEditDialog::minimumDelayMs() const
 int TopologyBatchEditDialog::maximumDelayMs() const
 {
     return maximumDelaySpin_->value();
+}
+
+QString TopologyBatchEditDialog::routerPluginId() const
+{
+    return routerPluginCombo_->currentData().toString();
+}
+
+QJsonObject TopologyBatchEditDialog::routerPluginDefaultSettings() const
+{
+    const auto metadata = RouterPluginRegistry::instance().metadata(routerPluginId());
+    return metadata ? metadata->defaultSettings : QJsonObject{};
 }
 
 void TopologyBatchEditDialog::accept()

@@ -107,7 +107,11 @@ if(BUILD_TESTING)
 
     add_executable(BgpTesterUiTests
         tests/UiTests.cpp
+        src/ui/Dialogs.cpp
         src/ui/TopologyScene.cpp
+    )
+    target_sources(BgpTesterUiTests PRIVATE
+        $<TARGET_OBJECTS:bgptester_router_plugins>
     )
     target_link_libraries(BgpTesterUiTests
         PRIVATE
