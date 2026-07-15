@@ -103,6 +103,11 @@ private:
     void scheduleSelectedRouterSnapshot();
     void populateRibTables(const RibSnapshot& snapshot);
     void populatePeerTable(const QVector<PeerSnapshot>& snapshots);
+    void appendConvergenceEvents(const QVector<SimulationEvent>& events);
+    void appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext, const QDateTime& completedAt,
+                                 qint64 durationMs);
+    void rebuildConvergenceHistory(const QVector<SimulationEvent>& events);
+    void clearConvergenceHistory(const QString& stateText);
     void refreshRuntimeControls();
     bool beginEventRun(QString* error);
     void endEventRun(bool blocking = true);
@@ -163,6 +168,9 @@ private:
     QLineEdit* eventFilterEdit_ = nullptr;
     QCheckBox* followEventsCheck_ = nullptr;
     QLabel* eventCountLabel_ = nullptr;
+    QTableWidget* convergenceTable_ = nullptr;
+    QLabel* convergenceStateLabel_ = nullptr;
+    QLabel* convergenceCountLabel_ = nullptr;
     QLabel* simulationStatusLabel_ = nullptr;
     QLabel* statsLabel_ = nullptr;
     QLabel* logPathLabel_ = nullptr;

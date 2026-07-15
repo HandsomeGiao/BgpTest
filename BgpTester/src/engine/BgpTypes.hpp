@@ -191,6 +191,9 @@ struct SimulationStats
     qsizetype pendingEvents = 0;
     quint64 deliveredMessages = 0;
     qint64 elapsedMs = 0;
+    qint64 convergenceElapsedMs = 0;
+    QString convergenceTriggerEvent;
+    QString convergenceTriggerContext;
 };
 
 } // namespace bgptester

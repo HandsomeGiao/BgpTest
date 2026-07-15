@@ -108,6 +108,9 @@ if(BUILD_TESTING)
     add_executable(BgpTesterUiTests
         tests/UiTests.cpp
         src/ui/Dialogs.cpp
+        src/ui/EventTableModel.cpp
+        src/ui/MainWindow.cpp
+        src/ui/RibTableModels.cpp
         src/ui/TopologyScene.cpp
     )
     target_sources(BgpTesterUiTests PRIVATE

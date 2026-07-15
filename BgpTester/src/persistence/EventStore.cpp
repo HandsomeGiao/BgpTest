@@ -616,6 +616,15 @@ SimulationEvent EventStore::eventFromQuery(const QSqlQuery& query)
     {
         event.med = query.value(16).toUInt();
     }
+    const auto rawDocument = QJsonDocument::fromJson(query.value(17).toByteArray());
+    if (rawDocument.isObject())
+    {
+        const auto details = rawDocument.object().value(QStringLiteral("details")).toObject();
+        for (auto it = details.constBegin(); it != details.constEnd(); ++it)
+        {
+            event.details.insert(it.key(), it.value().toVariant().toString());
+        }
+    }
     return event;
 }
 

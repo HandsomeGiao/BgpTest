@@ -32,8 +32,8 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMetaObject>
-#include <QPushButton>
 #include <QProgressDialog>
+#include <QPushButton>
 #include <QRandomGenerator>
 #include <QSettings>
 #include <QSortFilterProxyModel>
@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <optional>
 
 namespace bgptester
 {
@@ -122,6 +123,111 @@ void showShortcutOnToolbarButton(QToolBar* toolbar, QAction* action)
 
     button->setToolButtonStyle(Qt::ToolButtonTextOnly);
     button->setText(toolbarText);
+}
+
+std::optional<qint64> nonNegativeDetail(const SimulationEvent& event, const QString& key)
+{
+    bool ok = false;
+    const auto value = event.details.value(key).toLongLong(&ok);
+    return ok && value >= 0 ? std::optional<qint64>{value} : std::nullopt;
+}
+
+std::optional<quint64> positiveDetail(const SimulationEvent& event, const QString& key)
+{
+    bool ok = false;
+    const auto value = event.details.value(key).toULongLong(&ok);
+    return ok && value > 0 ? std::optional<quint64>{value} : std::nullopt;
+}
+
+QString durationText(qint64 durationMs)
+{
+    if (durationMs < 1000)
+    {
+        return QStringLiteral("%1 ms").arg(durationMs);
+    }
+    if (durationMs < 60000)
+    {
+        return QStringLiteral("%1 s").arg(durationMs / 1000.0, 0, 'f', 3);
+    }
+    const auto minutes = durationMs / 60000;
+    const auto remainingMs = durationMs % 60000;
+    return QStringLiteral("%1 min %2 s").arg(minutes).arg(remainingMs / 1000.0, 0, 'f', 3);
+}
+
+QString convergenceEventName(const QString& event)
+{
+    if (event == QStringLiteral("simulation_started"))
+    {
+        return QStringLiteral("仿真启动");
+    }
+    if (event == QStringLiteral("link_up"))
+    {
+        return QStringLiteral("链路恢复");
+    }
+    if (event == QStringLiteral("link_down"))
+    {
+        return QStringLiteral("链路断开");
+    }
+    if (event == QStringLiteral("router_up"))
+    {
+        return QStringLiteral("节点恢复");
+    }
+    if (event == QStringLiteral("router_down"))
+    {
+        return QStringLiteral("节点关闭");
+    }
+    if (event == QStringLiteral("prefix_advertised"))
+    {
+        return QStringLiteral("前缀发布");
+    }
+    if (event == QStringLiteral("prefix_withdrawn"))
+    {
+        return QStringLiteral("前缀撤销");
+    }
+    if (event == QStringLiteral("message_received"))
+    {
+        return QStringLiteral("BGP 报文");
+    }
+    if (event == QStringLiteral("routing_activity"))
+    {
+        return QStringLiteral("路由活动");
+    }
+    return event.isEmpty() ? QStringLiteral("未知事件") : event;
+}
+
+QString convergenceEventContext(const SimulationEvent& event)
+{
+    if (event.event == QStringLiteral("simulation_started"))
+    {
+        return event.details.value(QStringLiteral("name"));
+    }
+    if (event.event == QStringLiteral("link_up") || event.event == QStringLiteral("link_down"))
+    {
+        const auto a = event.details.value(QStringLiteral("a"), event.from);
+        const auto b = event.details.value(QStringLiteral("b"), event.to);
+        return a.isEmpty() || b.isEmpty() ? QString{} : QStringLiteral("%1 ↔ %2").arg(a, b);
+    }
+    if (event.event == QStringLiteral("prefix_advertised") || event.event == QStringLiteral("prefix_withdrawn"))
+    {
+        const auto router = event.details.value(QStringLiteral("router"), event.router);
+        const auto prefix = event.details.value(QStringLiteral("prefix"));
+        return router.isEmpty() || prefix.isEmpty() ? router : QStringLiteral("%1 · %2").arg(router, prefix);
+    }
+    if (event.event == QStringLiteral("router_up") || event.event == QStringLiteral("router_down"))
+    {
+        return event.details.value(QStringLiteral("router"), event.router);
+    }
+    if (!event.from.isEmpty() && !event.to.isEmpty())
+    {
+        return QStringLiteral("%1 → %2").arg(event.from, event.to);
+    }
+    return event.router;
+}
+
+QString convergenceTriggerText(const QString& event, const QString& context)
+{
+    const auto name = convergenceEventName(event);
+    return context.isEmpty() ? name : QStringLiteral("%1：%2").arg(name, context);
 }
 
 } // namespace
@@ -412,22 +518,25 @@ void MainWindow::buildInspectorDock()
 
 void MainWindow::buildEventDock()
 {
-    auto* dock = new QDockWidget(QStringLiteral("BMP 事件"), this);
+    auto* dock = new QDockWidget(QStringLiteral("BMP 监控器"), this);
     dock->setObjectName(QStringLiteral("eventDock"));
     dock->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
-    auto* container = new QWidget(dock);
-    auto* layout = new QVBoxLayout(container);
+    auto* monitorTabs = new QTabWidget(dock);
+    monitorTabs->setObjectName(QStringLiteral("bmpMonitorTabs"));
+
+    auto* eventPage = new QWidget(monitorTabs);
+    auto* layout = new QVBoxLayout(eventPage);
     layout->setContentsMargins(5, 5, 5, 5);
     auto* filterRow = new QHBoxLayout;
-    eventFilterEdit_ = new QLineEdit(container);
+    eventFilterEdit_ = new QLineEdit(eventPage);
     eventFilterEdit_->setClearButtonEnabled(true);
     eventFilterEdit_->setPlaceholderText(QStringLiteral("过滤所有列：路由器、动作、ASN、前缀…"));
-    eventCountLabel_ = new QLabel(QStringLiteral("显示 0 / 共 0 条"), container);
+    eventCountLabel_ = new QLabel(QStringLiteral("显示 0 / 共 0 条"), eventPage);
     eventCountLabel_->setMinimumWidth(125);
-    followEventsCheck_ = new QCheckBox(QStringLiteral("跟随实时"), container);
+    followEventsCheck_ = new QCheckBox(QStringLiteral("跟随实时"), eventPage);
     followEventsCheck_->setChecked(true);
-    auto* clearButton = new QPushButton(QStringLiteral("清空表格"), container);
-    auto* historyButton = new QPushButton(QStringLiteral("打开历史…"), container);
+    auto* clearButton = new QPushButton(QStringLiteral("清空表格"), eventPage);
+    auto* historyButton = new QPushButton(QStringLiteral("打开历史…"), eventPage);
     connect(clearButton, &QPushButton::clicked, eventModel_, &EventTableModel::clear);
     connect(historyButton, &QPushButton::clicked, this, &MainWindow::openHistory);
     filterRow->addWidget(eventFilterEdit_, 1);
@@ -445,15 +554,12 @@ void MainWindow::buildEventDock()
     eventProxy_->setSortRole(Qt::DisplayRole);
     connect(eventFilterEdit_, &QLineEdit::textChanged, eventProxy_, &QSortFilterProxyModel::setFilterFixedString);
     const auto updateEventCount = [this]
-    {
-        eventCountLabel_->setText(
-            QStringLiteral("显示 %1 / 共 %2 条").arg(eventProxy_->rowCount()).arg(eventModel_->rowCount()));
-    };
+    { eventCountLabel_->setText(QStringLiteral("显示 %1 / 共 %2 条").arg(eventProxy_->rowCount()).arg(eventModel_->rowCount())); };
     connect(eventProxy_, &QAbstractItemModel::rowsInserted, this, updateEventCount);
     connect(eventProxy_, &QAbstractItemModel::rowsRemoved, this, updateEventCount);
     connect(eventProxy_, &QAbstractItemModel::modelReset, this, updateEventCount);
     connect(eventProxy_, &QAbstractItemModel::layoutChanged, this, updateEventCount);
-    eventView_ = new QTableView(container);
+    eventView_ = new QTableView(eventPage);
     eventView_->setModel(eventProxy_);
     eventView_->setAlternatingRowColors(true);
     eventView_->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -470,7 +576,46 @@ void MainWindow::buildEventDock()
     eventView_->horizontalHeader()->setStretchLastSection(false);
     connect(eventView_, &QTableView::doubleClicked, this, &MainWindow::showEventDetails);
     layout->addWidget(eventView_, 1);
-    dock->setWidget(container);
+    monitorTabs->addTab(eventPage, QStringLiteral("事件日志"));
+
+    auto* convergencePage = new QWidget(monitorTabs);
+    auto* convergenceLayout = new QVBoxLayout(convergencePage);
+    convergenceLayout->setContentsMargins(5, 5, 5, 5);
+    auto* convergenceSummary = new QHBoxLayout;
+    convergenceStateLabel_ = new QLabel(QStringLiteral("当前：尚未开始"), convergencePage);
+    convergenceStateLabel_->setObjectName(QStringLiteral("convergenceStateLabel"));
+    convergenceCountLabel_ = new QLabel(QStringLiteral("已记录 0 次"), convergencePage);
+    auto* clearConvergenceButton = new QPushButton(QStringLiteral("清空记录"), convergencePage);
+    connect(clearConvergenceButton, &QPushButton::clicked, this,
+            [this]
+            {
+                const auto stateText = simulationRunning_
+                                           ? (simulationConverged_ ? QStringLiteral("当前：已收敛") : QStringLiteral("当前：收敛中"))
+                                           : QStringLiteral("当前：尚未开始");
+                clearConvergenceHistory(stateText);
+            });
+    convergenceSummary->addWidget(convergenceStateLabel_, 1);
+    convergenceSummary->addWidget(convergenceCountLabel_);
+    convergenceSummary->addWidget(clearConvergenceButton);
+    convergenceLayout->addLayout(convergenceSummary);
+
+    convergenceTable_ = new QTableWidget(0, 5, convergencePage);
+    convergenceTable_->setObjectName(QStringLiteral("convergenceHistoryTable"));
+    convergenceTable_->setHorizontalHeaderLabels({QStringLiteral("轮次"), QStringLiteral("触发事件"), QStringLiteral("开始时间"),
+                                                  QStringLiteral("完成时间"), QStringLiteral("持续时间")});
+    configureDataTable(convergenceTable_);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    convergenceLayout->addWidget(convergenceTable_, 1);
+    auto* convergenceNote = new QLabel(QStringLiteral("持续时间包含配置的收敛静默窗口。"), convergencePage);
+    convergenceNote->setStyleSheet(QStringLiteral("color:#6c757d"));
+    convergenceLayout->addWidget(convergenceNote);
+    monitorTabs->addTab(convergencePage, QStringLiteral("收敛时间"));
+
+    dock->setWidget(monitorTabs);
     addDockWidget(Qt::BottomDockWidgetArea, dock);
     viewMenu_->addAction(dock->toggleViewAction());
     resizeDocks({dock}, {280}, Qt::Vertical);
@@ -633,14 +778,13 @@ void MainWindow::openHistory()
     auto* loadThread = QThread::create(
         [state, path]
         {
-            state->events = EventStore::readDatabase(
-                path, 0, &state->error,
-                [state](qsizetype loaded, qsizetype total)
-                {
-                    state->loadedRows.store(loaded, std::memory_order_relaxed);
-                    state->totalRows.store(total, std::memory_order_relaxed);
-                    return !state->cancelRequested.load(std::memory_order_relaxed);
-                });
+            state->events = EventStore::readDatabase(path, 0, &state->error,
+                                                     [state](qsizetype loaded, qsizetype total)
+                                                     {
+                                                         state->loadedRows.store(loaded, std::memory_order_relaxed);
+                                                         state->totalRows.store(total, std::memory_order_relaxed);
+                                                         return !state->cancelRequested.load(std::memory_order_relaxed);
+                                                     });
         });
     connect(loadThread, &QThread::finished, this,
             [this, state, path, progressDialog]
@@ -667,6 +811,7 @@ void MainWindow::openHistory()
                 const auto eventCount = state->events.size();
                 progressDialog->setLabelText(QStringLiteral("正在更新日志表格…"));
                 eventProxy_->sort(-1);
+                rebuildConvergenceHistory(state->events);
                 eventModel_->setEvents(std::move(state->events));
                 followEventsCheck_->setChecked(false);
                 logPathLabel_->setText(QStringLiteral("历史：%1").arg(QDir::toNativeSeparators(path)));
@@ -903,6 +1048,7 @@ void MainWindow::startSimulation()
         return;
     }
     eventModel_->clear();
+    clearConvergenceHistory(QStringLiteral("当前：等待启动"));
     pendingUiEvents_.clear();
     followEventsCheck_->setChecked(true);
     runtimeRouters_.clear();
@@ -933,11 +1079,13 @@ void MainWindow::onRunningChanged(bool running)
         snapshotRefreshNeeded_ = false;
         simulationStatusLabel_->setText(QStringLiteral("● 已停止"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#6c757d"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：已停止"));
     }
     else
     {
         simulationStatusLabel_->setText(QStringLiteral("● 收敛中"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：收敛中 · 已用时 0 ms"));
         scheduleSelectedRouterSnapshot();
     }
 }
@@ -949,11 +1097,13 @@ void MainWindow::onConvergenceChanged(bool converged)
     {
         simulationStatusLabel_->setText(QStringLiteral("● 已收敛"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#16835d"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：已收敛"));
     }
     else if (simulationRunning_)
     {
         simulationStatusLabel_->setText(QStringLiteral("● 收敛中"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：收敛中 · 已用时 0 ms"));
     }
 }
 
@@ -961,6 +1111,12 @@ void MainWindow::onStatsChanged(const SimulationStats& stats)
 {
     statsLabel_->setText(
         QStringLiteral("消息 %1 · 待处理 %2 · %3 ms").arg(stats.deliveredMessages).arg(stats.pendingEvents).arg(stats.elapsedMs));
+    if (stats.running && !stats.converged)
+    {
+        convergenceStateLabel_->setText(QStringLiteral("当前：收敛中 · 触发：%1 · 已用时 %2")
+                                            .arg(convergenceTriggerText(stats.convergenceTriggerEvent, stats.convergenceTriggerContext),
+                                                 durationText(stats.convergenceElapsedMs)));
+    }
 }
 
 void MainWindow::onRouterSnapshots(QVector<RouterSnapshot> snapshots)
@@ -1174,6 +1330,7 @@ void MainWindow::enqueueStoredEvents(quint64 runSerial, QVector<SimulationEvent>
     {
         return;
     }
+    appendConvergenceEvents(events);
     const auto capacity = EventTableModel::liveCapacity();
     if (events.size() >= capacity)
     {
@@ -1196,6 +1353,105 @@ void MainWindow::enqueueStoredEvents(quint64 runSerial, QVector<SimulationEvent>
     {
         uiEventDrainTimer_->start(0);
     }
+}
+
+void MainWindow::appendConvergenceEvents(const QVector<SimulationEvent>& events)
+{
+    for (const auto& event : events)
+    {
+        if (event.event != QStringLiteral("converged"))
+        {
+            continue;
+        }
+        const auto durationMs = nonNegativeDetail(event, QStringLiteral("duration_ms"));
+        if (!durationMs)
+        {
+            continue;
+        }
+        const auto sequence =
+            positiveDetail(event, QStringLiteral("convergence_sequence")).value_or(static_cast<quint64>(convergenceTable_->rowCount() + 1));
+        appendConvergenceRecord(sequence, event.details.value(QStringLiteral("trigger_event")),
+                                event.details.value(QStringLiteral("trigger_context")), event.timestamp, *durationMs);
+    }
+}
+
+void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext,
+                                         const QDateTime& completedAt, qint64 durationMs)
+{
+    if (!completedAt.isValid())
+    {
+        return;
+    }
+    const auto row = convergenceTable_->rowCount();
+    convergenceTable_->insertRow(row);
+    convergenceTable_->setItem(row, 0, tableItem(QString::number(sequence)));
+    auto* triggerItem = tableItem(convergenceTriggerText(triggerEvent, triggerContext), Qt::AlignLeft | Qt::AlignVCenter);
+    triggerItem->setToolTip(QStringLiteral("事件名称：%1").arg(triggerEvent.isEmpty() ? QStringLiteral("未知") : triggerEvent));
+    convergenceTable_->setItem(row, 1, triggerItem);
+    convergenceTable_->setItem(row, 2, tableItem(completedAt.addMSecs(-durationMs).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
+    convergenceTable_->setItem(row, 3, tableItem(completedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
+    auto* durationItem = tableItem(durationText(durationMs));
+    durationItem->setData(Qt::UserRole, durationMs);
+    durationItem->setToolTip(QStringLiteral("%1 ms（包含收敛静默窗口）").arg(durationMs));
+    convergenceTable_->setItem(row, 4, durationItem);
+    convergenceCountLabel_->setText(QStringLiteral("已记录 %1 次").arg(convergenceTable_->rowCount()));
+    convergenceStateLabel_->setText(QStringLiteral("当前：已收敛 · 触发：%1 · 最近 %2")
+                                        .arg(convergenceTriggerText(triggerEvent, triggerContext), durationText(durationMs)));
+    convergenceTable_->scrollToBottom();
+}
+
+void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& events)
+{
+    clearConvergenceHistory(QStringLiteral("当前：正在读取历史记录"));
+    QDateTime inferredStart;
+    QString inferredTriggerEvent;
+    QString inferredTriggerContext;
+    quint64 fallbackSequence = 0;
+    for (const auto& event : events)
+    {
+        if (event.event == QStringLiteral("simulation_started"))
+        {
+            inferredStart = event.timestamp;
+            inferredTriggerEvent = event.event;
+            inferredTriggerContext = convergenceEventContext(event);
+            continue;
+        }
+        if (event.event == QStringLiteral("converged"))
+        {
+            auto durationMs = nonNegativeDetail(event, QStringLiteral("duration_ms"));
+            if (!durationMs && inferredStart.isValid() && event.timestamp.isValid())
+            {
+                durationMs = std::max<qint64>(0, inferredStart.msecsTo(event.timestamp));
+            }
+            if (durationMs)
+            {
+                const auto sequence = positiveDetail(event, QStringLiteral("convergence_sequence")).value_or(fallbackSequence + 1);
+                fallbackSequence = std::max(fallbackSequence, sequence);
+                const auto triggerEvent = event.details.value(QStringLiteral("trigger_event"), inferredTriggerEvent);
+                const auto triggerContext = event.details.value(QStringLiteral("trigger_context"),
+                                                                triggerEvent == inferredTriggerEvent ? inferredTriggerContext : QString{});
+                appendConvergenceRecord(sequence, triggerEvent, triggerContext, event.timestamp, *durationMs);
+            }
+            inferredStart = {};
+            inferredTriggerEvent.clear();
+            inferredTriggerContext.clear();
+            continue;
+        }
+        if (!inferredStart.isValid() && event.event != QStringLiteral("simulation_stopped"))
+        {
+            inferredStart = event.timestamp;
+            inferredTriggerEvent = event.event;
+            inferredTriggerContext = convergenceEventContext(event);
+        }
+    }
+    convergenceStateLabel_->setText(QStringLiteral("当前：已载入历史记录"));
+}
+
+void MainWindow::clearConvergenceHistory(const QString& stateText)
+{
+    convergenceTable_->setRowCount(0);
+    convergenceCountLabel_->setText(QStringLiteral("已记录 0 次"));
+    convergenceStateLabel_->setText(stateText);
 }
 
 void MainWindow::drainUiEventQueue()
@@ -1269,9 +1525,8 @@ void MainWindow::updateWindowTitle()
 void MainWindow::updateEditorActions()
 {
     const auto editable = !simulationRunning_;
-    for (auto* action :
-         {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
-          addLinkAction_, deleteAction_})
+    for (auto* action : {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
+                         addLinkAction_, deleteAction_})
     {
         action->setEnabled(editable);
     }

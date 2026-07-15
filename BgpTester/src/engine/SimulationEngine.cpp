@@ -156,6 +156,10 @@ void SimulationEngine::startSimulation(Topology topology)
     }
     clock_.start();
     lastActivityAt_ = 0;
+    convergenceStartedAt_ = 0;
+    convergenceSequence_ = 0;
+    convergenceTriggerEvent_ = QStringLiteral("simulation_started");
+    convergenceTriggerContext_ = topology_.simulation.name;
     running_ = true;
     converged_ = false;
     for (auto& router : routers_)
@@ -235,6 +239,8 @@ void SimulationEngine::clearRuntime()
     nextGeneration_ = 0;
     deliveredMessages_ = 0;
     routerSnapshotsDirty_ = false;
+    convergenceTriggerEvent_.clear();
+    convergenceTriggerContext_.clear();
 }
 
 bool SimulationEngine::buildRuntime(QString* error)
@@ -304,24 +310,37 @@ void SimulationEngine::armNextEvent()
     eventTimer_->start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
 }
 
-void SimulationEngine::markActivity()
+void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, const QString& convergenceTriggerContext)
 {
-    lastActivityAt_ = now();
+    const auto activityAt = now();
+    lastActivityAt_ = activityAt;
     if (converged_)
     {
         converged_ = false;
+        convergenceStartedAt_ = activityAt;
+        convergenceTriggerEvent_ = convergenceTriggerEvent.isEmpty() ? QStringLiteral("routing_activity") : convergenceTriggerEvent;
+        convergenceTriggerContext_ = convergenceTriggerContext;
         emit convergenceChanged(false);
+    }
+    else if (convergenceTriggerEvent_.isEmpty() && !convergenceTriggerEvent.isEmpty())
+    {
+        convergenceTriggerEvent_ = convergenceTriggerEvent;
+        convergenceTriggerContext_ = convergenceTriggerContext;
     }
 }
 
 void SimulationEngine::publishStats()
 {
+    const auto elapsedMs = now();
     emit statsChanged(SimulationStats{
         .running = running_,
         .converged = converged_,
         .pendingEvents = static_cast<qsizetype>(events_.size()),
         .deliveredMessages = deliveredMessages_,
-        .elapsedMs = now(),
+        .elapsedMs = elapsedMs,
+        .convergenceElapsedMs = running_ && !converged_ ? std::max<qint64>(0, elapsedMs - convergenceStartedAt_) : 0,
+        .convergenceTriggerEvent = convergenceTriggerEvent_,
+        .convergenceTriggerContext = convergenceTriggerContext_,
     });
 }
 
@@ -1064,7 +1083,8 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
             peer->config.enabled = enabled;
         }
     }
-    markActivity();
+    const auto triggerEvent = enabled ? QStringLiteral("link_up") : QStringLiteral("link_down");
+    markActivity(triggerEvent, QStringLiteral("%1 ↔ %2").arg(a, b));
     if (enabled)
     {
         sendOpen(a, b);
@@ -1075,8 +1095,7 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
         neighborDown(a, b);
         neighborDown(b, a);
     }
-    recordTopologyEvent(enabled ? QStringLiteral("link_up") : QStringLiteral("link_down"),
-                        {{QStringLiteral("a"), a}, {QStringLiteral("b"), b}});
+    recordTopologyEvent(triggerEvent, {{QStringLiteral("a"), a}, {QStringLiteral("b"), b}});
     emit linkStateChanged(a, b, enabled);
     requestAllSnapshots();
 }
@@ -1098,7 +1117,8 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
     {
         return;
     }
-    markActivity();
+    const auto triggerEvent = enabled ? QStringLiteral("router_up") : QStringLiteral("router_down");
+    markActivity(triggerEvent, routerId);
     if (!enabled)
     {
         routerIt->active = false;
@@ -1147,7 +1167,7 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
             }
         }
     }
-    recordTopologyEvent(enabled ? QStringLiteral("router_up") : QStringLiteral("router_down"), {{QStringLiteral("router"), routerId}});
+    recordTopologyEvent(triggerEvent, {{QStringLiteral("router"), routerId}});
     emit routerStateChanged(routerId, enabled);
     requestAllSnapshots();
 }
@@ -1182,7 +1202,7 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
     }
     auto route = routerIt->node->createOriginatedRoute(prefix);
     routerIt->localRoutes.insert(prefix, route);
-    markActivity();
+    markActivity(QStringLiteral("prefix_advertised"), QStringLiteral("%1 · %2").arg(routerId, prefix));
     runDecision(routerId, {prefix});
     recordTopologyEvent(QStringLiteral("prefix_advertised"), {{QStringLiteral("router"), routerId}, {QStringLiteral("prefix"), prefix}});
 }
@@ -1209,7 +1229,7 @@ void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& pr
     }
     routerIt->node->localRouteWithdrawn(prefix);
     routerIt->localRoutes.remove(prefix);
-    markActivity();
+    markActivity(QStringLiteral("prefix_withdrawn"), QStringLiteral("%1 · %2").arg(routerId, prefix));
     runDecision(routerId, {prefix});
     recordTopologyEvent(QStringLiteral("prefix_withdrawn"), {{QStringLiteral("router"), routerId}, {QStringLiteral("prefix"), prefix}});
 }
@@ -1228,7 +1248,16 @@ void SimulationEngine::updateStatus()
         emit convergenceChanged(converged_);
         if (converged_)
         {
-            recordTopologyEvent(QStringLiteral("converged"), {{QStringLiteral("elapsed_ms"), QString::number(now())}});
+            const auto completedAt = now();
+            const auto durationMs = std::max<qint64>(0, completedAt - convergenceStartedAt_);
+            recordTopologyEvent(QStringLiteral("converged"),
+                                {{QStringLiteral("elapsed_ms"), QString::number(completedAt)},
+                                 {QStringLiteral("convergence_sequence"), QString::number(++convergenceSequence_)},
+                                 {QStringLiteral("started_at_ms"), QString::number(convergenceStartedAt_)},
+                                 {QStringLiteral("completed_at_ms"), QString::number(completedAt)},
+                                 {QStringLiteral("duration_ms"), QString::number(durationMs)},
+                                 {QStringLiteral("trigger_event"), convergenceTriggerEvent_},
+                                 {QStringLiteral("trigger_context"), convergenceTriggerContext_}});
         }
     }
     if (routerSnapshotsDirty_)

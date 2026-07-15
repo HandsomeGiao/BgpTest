@@ -187,6 +187,54 @@ void staleMraiAdvertisementDoesNotReappear()
     engine.stopSimulation();
 }
 
+void convergenceHistoryCapturesEveryCycle()
+{
+    auto topology = twoRouterTopology();
+    QVector<SimulationEvent> convergences;
+    SimulationEngine engine;
+    QObject::connect(&engine, &SimulationEngine::eventsGenerated,
+                     [&](const QVector<SimulationEvent>& events)
+                     {
+                         for (const auto& event : events)
+                         {
+                             if (event.event == QStringLiteral("converged"))
+                             {
+                                 convergences.append(event);
+                             }
+                         }
+                     });
+
+    engine.startSimulation(topology);
+    require(waitFor([&] { return engine.isConverged() && convergences.size() == 1; }, 1500), "initial convergence was not recorded");
+    engine.setLinkState(QStringLiteral("R1"), QStringLiteral("R2"), false);
+    require(waitFor([&] { return engine.isConverged() && convergences.size() == 2; }, 1500), "reconvergence was not recorded");
+
+    qint64 previousCompletion = -1;
+    const QStringList expectedTriggers{QStringLiteral("simulation_started"), QStringLiteral("link_down")};
+    for (qsizetype index = 0; index < convergences.size(); ++index)
+    {
+        const auto& event = convergences.at(index);
+        bool sequenceOk = false;
+        bool startOk = false;
+        bool completionOk = false;
+        bool durationOk = false;
+        const auto sequence = event.details.value(QStringLiteral("convergence_sequence")).toULongLong(&sequenceOk);
+        const auto startedAt = event.details.value(QStringLiteral("started_at_ms")).toLongLong(&startOk);
+        const auto completedAt = event.details.value(QStringLiteral("completed_at_ms")).toLongLong(&completionOk);
+        const auto duration = event.details.value(QStringLiteral("duration_ms")).toLongLong(&durationOk);
+        require(sequenceOk && sequence == static_cast<quint64>(index + 1), "convergence sequence is incorrect");
+        require(startOk && completionOk && durationOk && duration == completedAt - startedAt,
+                "convergence duration fields are inconsistent");
+        require(duration >= topology.simulation.convergenceQuietMs, "convergence duration omitted the quiet window");
+        require(startedAt >= previousCompletion, "convergence cycles overlap unexpectedly");
+        require(event.details.value(QStringLiteral("trigger_event")) == expectedTriggers.at(index),
+                "convergence trigger event is incorrect");
+        require(!event.details.value(QStringLiteral("trigger_context")).isEmpty(), "convergence trigger context is missing");
+        previousCompletion = completedAt;
+    }
+    engine.stopSimulation();
+}
+
 void sourceRouterPluginControlsRouteExport()
 {
     require(RouterPluginRegistry::instance().contains(QStringLiteral("org.bgptester.example.configurable-export")),
@@ -581,6 +629,7 @@ void eventStoreWritesJsonAndSqlite()
     event.prefixes = {QStringLiteral("203.0.113.0/24")};
     event.fromAs = 65001;
     event.toAs = 65002;
+    event.details.insert(QStringLiteral("duration_ms"), QStringLiteral("37"));
     store.appendEvent(event);
     store.flush();
     const auto databasePath = store.databasePath();
@@ -592,6 +641,8 @@ void eventStoreWritesJsonAndSqlite()
     require(error.isEmpty(), "SQLite history query failed");
     require(history.size() == 1 && history.front().prefixes == QStringList{QStringLiteral("203.0.113.0/24")},
             "SQLite history did not preserve the event");
+    require(history.front().details.value(QStringLiteral("duration_ms")) == QStringLiteral("37"),
+            "SQLite history did not restore event details");
 }
 
 void eventStoreWorkerQueuePersistsBatches()
@@ -736,6 +787,7 @@ int main(int argc, char** argv)
         ebgpRoutesPropagateAndWithdraw();
         routeReflectorPropagatesClientRoute();
         staleMraiAdvertisementDoesNotReappear();
+        convergenceHistoryCapturesEveryCycle();
         sourceRouterPluginControlsRouteExport();
         tfpVersionInfoSurvivesRouteReflection();
         tfpVersionPluginInvalidatesOnlyExplicitOldDependencies();

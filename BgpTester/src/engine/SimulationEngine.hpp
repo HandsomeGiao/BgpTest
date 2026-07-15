@@ -131,7 +131,7 @@ private:
     void clearRuntime();
     bool buildRuntime(QString* error);
     void armNextEvent();
-    void markActivity();
+    void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
     void publishStats();
 
     void scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs = 0);
@@ -172,6 +172,10 @@ private:
     QTimer* eventTimer_ = nullptr;
     QTimer* statusTimer_ = nullptr;
     qint64 lastActivityAt_ = 0;
+    qint64 convergenceStartedAt_ = 0;
+    quint64 convergenceSequence_ = 0;
+    QString convergenceTriggerEvent_;
+    QString convergenceTriggerContext_;
     quint64 nextSequence_ = 0;
     quint64 nextOrder_ = 0;
     quint64 nextGeneration_ = 0;

@@ -1,5 +1,6 @@
 #include "model/Topology.hpp"
 #include "ui/Dialogs.hpp"
+#include "ui/MainWindow.hpp"
 #include "ui/TopologyScene.hpp"
 
 #include <QApplication>
@@ -7,6 +8,8 @@
 #include <QGraphicsItem>
 #include <QLabel>
 #include <QSignalSpy>
+#include <QTabWidget>
+#include <QTableWidget>
 #include <QTest>
 
 #include <iostream>
@@ -162,6 +165,21 @@ void batchDialogOffersRouterKindsWithoutChangingAnythingByDefault()
     require(dialog.routerPluginDefaultSettings().isEmpty(), "standard BGP router defaults unexpectedly contain settings");
 }
 
+void bmpMonitorContainsConvergenceHistoryPanel()
+{
+    MainWindow window;
+    auto* tabs = window.findChild<QTabWidget*>(QStringLiteral("bmpMonitorTabs"));
+    auto* table = window.findChild<QTableWidget*>(QStringLiteral("convergenceHistoryTable"));
+    auto* stateLabel = window.findChild<QLabel*>(QStringLiteral("convergenceStateLabel"));
+
+    require(tabs && tabs->count() == 2 && tabs->tabText(1) == QStringLiteral("收敛时间"),
+            "BMP monitor does not expose the convergence history tab");
+    require(table && table->columnCount() == 5 && table->rowCount() == 0 &&
+                table->horizontalHeaderItem(1)->text() == QStringLiteral("触发事件"),
+            "convergence history table does not expose its trigger-event column");
+    require(stateLabel && stateLabel->text().contains(QStringLiteral("尚未开始")), "convergence monitor does not show its initial state");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -172,6 +190,7 @@ int main(int argc, char** argv)
         routerDragFinishesWithoutReentrantSceneResize(application);
         selectedRouterIdsTrackMultiSelection();
         batchDialogOffersRouterKindsWithoutChangingAnythingByDefault();
+        bmpMonitorContainsConvergenceHistoryPanel();
     }
     catch (const std::exception& error)
     {
