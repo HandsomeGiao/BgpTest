@@ -45,13 +45,14 @@ class LinkDialog final : public QDialog
     Q_OBJECT
 
 public:
-    explicit LinkDialog(const LinkConfig& link, QWidget* parent = nullptr);
+    LinkDialog(const LinkConfig& link, bool externalSession, QWidget* parent = nullptr);
     LinkConfig link() const;
 
 private:
     LinkConfig original_;
     QCheckBox* enabledCheck_ = nullptr;
     QSpinBox* delaySpin_ = nullptr;
+    QComboBox* relationshipCombo_ = nullptr;
     QCheckBox* rrFromACheck_ = nullptr;
     QCheckBox* rrFromBCheck_ = nullptr;
     QSpinBox* mraiFromASpin_ = nullptr;

@@ -294,6 +294,20 @@ protected:
         }
 
         QStringList annotations;
+        switch (config_.businessRelationship)
+        {
+            case LinkBusinessRelationship::PeerToPeer:
+                annotations.append(QStringLiteral("Peer"));
+                break;
+            case LinkBusinessRelationship::AProviderOfB:
+                annotations.append(QStringLiteral("%1 P→C %2").arg(config_.a, config_.b));
+                break;
+            case LinkBusinessRelationship::BProviderOfA:
+                annotations.append(QStringLiteral("%1 P→C %2").arg(config_.b, config_.a));
+                break;
+            case LinkBusinessRelationship::Unspecified:
+                break;
+        }
         if (config_.delayMs > 0)
         {
             annotations.append(QStringLiteral("%1 ms").arg(config_.delayMs));

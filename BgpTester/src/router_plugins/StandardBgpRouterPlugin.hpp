@@ -14,6 +14,8 @@ public:
 
     RouteEntry createOriginatedRoute(const QString& prefix) override;
     std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes, const NeighborConfig& fromPeer) override;
+    std::optional<RouteEntry> importAdvertisedRoute(const QString& prefix, const RouteEntry& advertisedRoute,
+                                                    const NeighborConfig& fromPeer) override;
     std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
                                               const std::optional<RouteEntry>& currentBest) override;
     std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) override;

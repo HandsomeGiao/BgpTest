@@ -98,6 +98,38 @@ QStringList readStringArray(const QJsonValue& value)
     return result;
 }
 
+NeighborRelationship neighborRelationshipFor(const LinkConfig& link, bool fromA)
+{
+    switch (link.businessRelationship)
+    {
+        case LinkBusinessRelationship::Unspecified:
+            return NeighborRelationship::Unspecified;
+        case LinkBusinessRelationship::PeerToPeer:
+            return NeighborRelationship::Peer;
+        case LinkBusinessRelationship::AProviderOfB:
+            return fromA ? NeighborRelationship::Customer : NeighborRelationship::Provider;
+        case LinkBusinessRelationship::BProviderOfA:
+            return fromA ? NeighborRelationship::Provider : NeighborRelationship::Customer;
+    }
+    return NeighborRelationship::Unspecified;
+}
+
+LinkBusinessRelationship linkRelationshipForNeighbor(NeighborRelationship relationship, bool localIsA)
+{
+    switch (relationship)
+    {
+        case NeighborRelationship::Unspecified:
+            return LinkBusinessRelationship::Unspecified;
+        case NeighborRelationship::Peer:
+            return LinkBusinessRelationship::PeerToPeer;
+        case NeighborRelationship::Provider:
+            return localIsA ? LinkBusinessRelationship::BProviderOfA : LinkBusinessRelationship::AProviderOfB;
+        case NeighborRelationship::Customer:
+            return localIsA ? LinkBusinessRelationship::AProviderOfB : LinkBusinessRelationship::BProviderOfA;
+    }
+    return LinkBusinessRelationship::Unspecified;
+}
+
 } // namespace
 
 QString toString(SessionType type)
@@ -114,6 +146,82 @@ std::optional<SessionType> sessionTypeFromString(const QString& value)
     if (value.compare(QStringLiteral("ebgp"), Qt::CaseInsensitive) == 0)
     {
         return SessionType::Ebgp;
+    }
+    return std::nullopt;
+}
+
+QString toString(LinkBusinessRelationship relationship)
+{
+    switch (relationship)
+    {
+        case LinkBusinessRelationship::Unspecified:
+            return QStringLiteral("unspecified");
+        case LinkBusinessRelationship::PeerToPeer:
+            return QStringLiteral("peer");
+        case LinkBusinessRelationship::AProviderOfB:
+            return QStringLiteral("a_provider");
+        case LinkBusinessRelationship::BProviderOfA:
+            return QStringLiteral("b_provider");
+    }
+    return QStringLiteral("unspecified");
+}
+
+std::optional<LinkBusinessRelationship> linkBusinessRelationshipFromString(const QString& value)
+{
+    const auto normalized = value.trimmed();
+    if (normalized.compare(QStringLiteral("unspecified"), Qt::CaseInsensitive) == 0)
+    {
+        return LinkBusinessRelationship::Unspecified;
+    }
+    if (normalized.compare(QStringLiteral("peer"), Qt::CaseInsensitive) == 0)
+    {
+        return LinkBusinessRelationship::PeerToPeer;
+    }
+    if (normalized.compare(QStringLiteral("a_provider"), Qt::CaseInsensitive) == 0)
+    {
+        return LinkBusinessRelationship::AProviderOfB;
+    }
+    if (normalized.compare(QStringLiteral("b_provider"), Qt::CaseInsensitive) == 0)
+    {
+        return LinkBusinessRelationship::BProviderOfA;
+    }
+    return std::nullopt;
+}
+
+QString toString(NeighborRelationship relationship)
+{
+    switch (relationship)
+    {
+        case NeighborRelationship::Unspecified:
+            return QStringLiteral("unspecified");
+        case NeighborRelationship::Peer:
+            return QStringLiteral("peer");
+        case NeighborRelationship::Provider:
+            return QStringLiteral("provider");
+        case NeighborRelationship::Customer:
+            return QStringLiteral("customer");
+    }
+    return QStringLiteral("unspecified");
+}
+
+std::optional<NeighborRelationship> neighborRelationshipFromString(const QString& value)
+{
+    const auto normalized = value.trimmed();
+    if (normalized.compare(QStringLiteral("unspecified"), Qt::CaseInsensitive) == 0)
+    {
+        return NeighborRelationship::Unspecified;
+    }
+    if (normalized.compare(QStringLiteral("peer"), Qt::CaseInsensitive) == 0)
+    {
+        return NeighborRelationship::Peer;
+    }
+    if (normalized.compare(QStringLiteral("provider"), Qt::CaseInsensitive) == 0)
+    {
+        return NeighborRelationship::Provider;
+    }
+    if (normalized.compare(QStringLiteral("customer"), Qt::CaseInsensitive) == 0)
+    {
+        return NeighborRelationship::Customer;
     }
     return std::nullopt;
 }
@@ -149,6 +257,7 @@ QJsonObject Topology::toJson() const
             {QStringLiteral("rr_client"), link.rrClientFromA},
             {QStringLiteral("mrai_ms"), link.mraiMsFromA},
             {QStringLiteral("enabled"), link.enabled},
+            {QStringLiteral("relationship"), toString(neighborRelationshipFor(link, true))},
         });
         neighborArrays[link.b].append(QJsonObject{
             {QStringLiteral("id"), link.a},
@@ -157,6 +266,7 @@ QJsonObject Topology::toJson() const
             {QStringLiteral("rr_client"), link.rrClientFromB},
             {QStringLiteral("mrai_ms"), link.mraiMsFromB},
             {QStringLiteral("enabled"), link.enabled},
+            {QStringLiteral("relationship"), toString(neighborRelationshipFor(link, false))},
         });
     }
 
@@ -190,6 +300,7 @@ QJsonObject Topology::toJson() const
             {QStringLiteral("rr_client_from_b"), link.rrClientFromB},
             {QStringLiteral("mrai_ms_from_a"), link.mraiMsFromA},
             {QStringLiteral("mrai_ms_from_b"), link.mraiMsFromB},
+            {QStringLiteral("relationship"), toString(link.businessRelationship)},
         });
     }
 
@@ -275,6 +386,7 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
     }
 
     const auto linkValues = object.value(QStringLiteral("links")).toArray();
+    QSet<QString> linksWithExplicitRelationship;
     for (const auto& value : linkValues)
     {
         if (!value.isObject())
@@ -295,11 +407,37 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
         link.rrClientFromB = entry.value(QStringLiteral("rr_client_from_b")).toBool(false);
         link.mraiMsFromA = jsonNonNegativeInt(entry, QStringLiteral("mrai_ms_from_a"), 0);
         link.mraiMsFromB = jsonNonNegativeInt(entry, QStringLiteral("mrai_ms_from_b"), 0);
+        const auto relationshipValue = entry.value(QStringLiteral("relationship"));
+        if (!relationshipValue.isUndefined() && !relationshipValue.isNull())
+        {
+            if (!relationshipValue.isString())
+            {
+                if (error)
+                {
+                    *error = QStringLiteral("链路 %1 - %2 的 relationship 必须是字符串").arg(link.a, link.b);
+                }
+                return std::nullopt;
+            }
+            const auto relationship = linkBusinessRelationshipFromString(relationshipValue.toString().trimmed());
+            if (!relationship)
+            {
+                if (error)
+                {
+                    *error = QStringLiteral("链路 %1 - %2 的 relationship 无效：%3")
+                                 .arg(link.a, link.b, relationshipValue.toString());
+                }
+                return std::nullopt;
+            }
+            link.businessRelationship = *relationship;
+            linksWithExplicitRelationship.insert(edgeKey(link.a, link.b));
+        }
         topology.links.append(link);
     }
 
-    // Old topology files kept directional MRAI/RR values in neighbor entries.
+    // Old topology files kept directional MRAI/RR values in neighbor entries;
+    // relationship is accepted there as a compatibility format as well.
     // Also synthesize a link when a valid neighbor pair has no links entry.
+    QMap<QString, LinkBusinessRelationship> legacyRelationships;
     for (const auto& routerObject : originalRouters)
     {
         const auto routerId = routerObject.value(QStringLiteral("id")).toString();
@@ -324,6 +462,55 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
             const auto rr = neighborObject.value(QStringLiteral("rr_client")).toBool(false);
             const auto mrai = jsonNonNegativeInt(neighborObject, QStringLiteral("mrai_ms"), 0);
             const auto enabled = neighborObject.value(QStringLiteral("enabled")).toBool(true);
+            const auto relationshipValue = neighborObject.value(QStringLiteral("relationship"));
+            if (!relationshipValue.isUndefined() && !relationshipValue.isNull())
+            {
+                if (!relationshipValue.isString())
+                {
+                    if (error)
+                    {
+                        *error = QStringLiteral("邻居 %1 → %2 的 relationship 必须是字符串").arg(routerId, peerId);
+                    }
+                    return std::nullopt;
+                }
+                const auto relationship = neighborRelationshipFromString(relationshipValue.toString().trimmed());
+                if (!relationship)
+                {
+                    if (error)
+                    {
+                        *error = QStringLiteral("邻居 %1 → %2 的 relationship 无效：%3")
+                                     .arg(routerId, peerId, relationshipValue.toString());
+                    }
+                    return std::nullopt;
+                }
+                const auto edge = edgeKey(routerId, peerId);
+                const auto linkRelationship = linkRelationshipForNeighbor(*relationship, link->a == routerId);
+                if (linksWithExplicitRelationship.contains(edge))
+                {
+                    if (link->businessRelationship != linkRelationship)
+                    {
+                        if (error)
+                        {
+                            *error = QStringLiteral("链路 %1 - %2 与邻居条目的 relationship 不一致").arg(link->a, link->b);
+                        }
+                        return std::nullopt;
+                    }
+                }
+                else
+                {
+                    const auto previous = legacyRelationships.constFind(edge);
+                    if (previous != legacyRelationships.cend() && previous.value() != linkRelationship)
+                    {
+                        if (error)
+                        {
+                            *error = QStringLiteral("链路 %1 - %2 的双向邻居 relationship 不一致").arg(link->a, link->b);
+                        }
+                        return std::nullopt;
+                    }
+                    legacyRelationships.insert(edge, linkRelationship);
+                    link->businessRelationship = linkRelationship;
+                }
+            }
             link->enabled = link->enabled && enabled;
             if (link->a == routerId)
             {
@@ -479,6 +666,11 @@ QStringList Topology::validate() const
         {
             problems.append(QStringLiteral("链路端点不存在：%1 - %2").arg(link.a, link.b));
         }
+        else if (routers.value(link.a).asn == routers.value(link.b).asn &&
+                 link.businessRelationship != LinkBusinessRelationship::Unspecified)
+        {
+            problems.append(QStringLiteral("同一 AS 内的链路不能设置商业关系：%1 - %2").arg(link.a, link.b));
+        }
         const auto key = edgeKey(link.a, link.b);
         if (edges.contains(key))
         {
@@ -530,6 +722,7 @@ QVector<NeighborConfig> Topology::neighborsFor(const QString& routerId) const
             .rrClient = fromA ? link.rrClientFromA : link.rrClientFromB,
             .enabled = link.enabled,
             .mraiMs = fromA ? link.mraiMsFromA : link.mraiMsFromB,
+            .relationship = neighborRelationshipFor(link, fromA),
         });
     }
     std::sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) { return lhs.id < rhs.id; });

@@ -15,7 +15,7 @@
 namespace bgptester
 {
 
-inline constexpr int RouterPluginApiVersion = 3;
+inline constexpr int RouterPluginApiVersion = 4;
 
 struct RouterPluginMetadata
 {
@@ -77,9 +77,18 @@ public:
     virtual std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes,
                                                   const NeighborConfig& fromPeer) = 0;
 
+    // The full advertised route carries simulator-internal metadata that is
+    // not encoded as a BGP path attribute. Attributes-only plugins retain
+    // their existing behavior unless they opt into this hook.
+    virtual std::optional<RouteEntry> importAdvertisedRoute(const QString& prefix, const RouteEntry& advertisedRoute,
+                                                            const NeighborConfig& fromPeer)
+    {
+        return importRoute(prefix, advertisedRoute.attributes, fromPeer);
+    }
+
     // Called before a route from this peer is removed from Adj-RIB-In.  The
-    // default keeps API-v3 source plugins that do not use withdrawal
-    // attributes equivalent to ordinary BGP behavior.
+    // default keeps source plugins that do not use withdrawal attributes
+    // equivalent to ordinary BGP behavior.
     virtual void importWithdrawal(const QString&, const PathAttributes&, const NeighborConfig&)
     {
     }

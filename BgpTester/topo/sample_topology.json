@@ -68,6 +68,7 @@
     },
     {
       "a": "EDGE", "b": "ISP", "enabled": true, "delay_ms": 20,
+      "relationship": "b_provider",
       "rr_client_from_a": false, "rr_client_from_b": false,
       "mrai_ms_from_a": 250, "mrai_ms_from_b": 250
     }

@@ -131,6 +131,22 @@ QTableWidgetItem* tableItem(const QString& text, Qt::Alignment alignment = Qt::A
     return item;
 }
 
+QString relationshipDisplayName(NeighborRelationship relationship)
+{
+    switch (relationship)
+    {
+        case NeighborRelationship::Peer:
+            return QStringLiteral("Peer");
+        case NeighborRelationship::Provider:
+            return QStringLiteral("Provider");
+        case NeighborRelationship::Customer:
+            return QStringLiteral("Customer");
+        case NeighborRelationship::Unspecified:
+            return QStringLiteral("未指定");
+    }
+    return QStringLiteral("未指定");
+}
+
 void configureDataTable(QTableWidget* table)
 {
     table->setAlternatingRowColors(true);
@@ -506,9 +522,10 @@ void MainWindow::buildInspectorDock()
     tabs->addTab(allRoutesTable_, QStringLiteral("全部路径"));
 
     peerTable_ = new QTableWidget(tabs);
-    peerTable_->setColumnCount(6);
+    peerTable_->setColumnCount(7);
     peerTable_->setHorizontalHeaderLabels({QStringLiteral("邻居"), QStringLiteral("Remote AS"), QStringLiteral("会话"),
-                                           QStringLiteral("状态"), QStringLiteral("RR Client"), QStringLiteral("MRAI")});
+                                           QStringLiteral("商业关系"), QStringLiteral("状态"), QStringLiteral("RR Client"),
+                                           QStringLiteral("MRAI")});
     configureDataTable(peerTable_);
     tabs->addTab(peerTable_, QStringLiteral("邻居"));
 
@@ -1144,6 +1161,20 @@ void MainWindow::editRouter(const QString& routerId)
         }
     }
     topology_.routers.insert(updated.id, updated);
+    for (auto& link : topology_.links)
+    {
+        if (link.businessRelationship == LinkBusinessRelationship::Unspecified ||
+            (link.a != updated.id && link.b != updated.id))
+        {
+            continue;
+        }
+        const auto a = topology_.routers.constFind(link.a);
+        const auto b = topology_.routers.constFind(link.b);
+        if (a != topology_.routers.cend() && b != topology_.routers.cend() && a->asn == b->asn)
+        {
+            link.businessRelationship = LinkBusinessRelationship::Unspecified;
+        }
+    }
     scene_->rebuild();
     refreshTopologySelectors();
     routerCombo_->setCurrentText(updated.id);
@@ -1158,7 +1189,7 @@ void MainWindow::createLink(const QString& a, const QString& b)
         return;
     }
     LinkConfig config{.a = a, .b = b};
-    LinkDialog dialog(config, this);
+    LinkDialog dialog(config, topology_.routers.value(a).asn != topology_.routers.value(b).asn, this);
     if (dialog.exec() != QDialog::Accepted)
     {
         return;
@@ -1176,7 +1207,7 @@ void MainWindow::editLink(const QString& a, const QString& b)
     {
         return;
     }
-    LinkDialog dialog(*link, this);
+    LinkDialog dialog(*link, topology_.routers.value(a).asn != topology_.routers.value(b).asn, this);
     if (dialog.exec() == QDialog::Accepted)
     {
         *link = dialog.link();
@@ -1795,9 +1826,10 @@ void MainWindow::populatePeerTable(const QVector<PeerSnapshot>& snapshots)
         peerTable_->setItem(row, 0, tableItem(peer.id));
         peerTable_->setItem(row, 1, tableItem(QString::number(peer.remoteAsn)));
         peerTable_->setItem(row, 2, tableItem(toString(peer.sessionType)));
-        peerTable_->setItem(row, 3, tableItem(toString(peer.state)));
-        peerTable_->setItem(row, 4, tableItem(peer.rrClient ? QStringLiteral("是") : QStringLiteral("否")));
-        peerTable_->setItem(row, 5, tableItem(QStringLiteral("%1 ms").arg(peer.mraiMs)));
+        peerTable_->setItem(row, 3, tableItem(relationshipDisplayName(peer.relationship)));
+        peerTable_->setItem(row, 4, tableItem(toString(peer.state)));
+        peerTable_->setItem(row, 5, tableItem(peer.rrClient ? QStringLiteral("是") : QStringLiteral("否")));
+        peerTable_->setItem(row, 6, tableItem(QStringLiteral("%1 ms").arg(peer.mraiMs)));
     }
 }
 

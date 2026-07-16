@@ -44,7 +44,7 @@ ctest --test-dir build --output-on-failure
 ### 编辑拓扑
 
 - `R` 或工具栏“添加路由器”：在画布空白位置单击，填写节点 ID、Router ID、ASN、Cluster ID 与起源前缀。
-- `Q` 或“添加链路”：依次单击两台路由器，设置链路延迟、两个方向的 MRAI 与 RR Client 关系。
+- `Q` 或“添加链路”：依次单击两台路由器，设置链路延迟、两个方向的 MRAI、RR Client，以及未指定、Peer 或方向性 provider-customer 商业关系。
 - `V` 返回选择模式；拖动路由器可调整布局，右键/中键拖动画布，滚轮缩放。
 - 双击路由器或链路可编辑；Delete 删除所选对象。
 - “编辑 → 批量配置拓扑…”可批量选择 BGP 路由器种类，为目标路由器的全部出站邻居设置固定 MRAI，或为每台路由器独立生成指定闭区间内的随机 MRAI；还可将所有链路延迟设为固定值或逐链路随机值。画布中同时选中至少两台路由器时，路由器种类和 MRAI 只应用到所选节点；否则应用到全部路由器。链路延迟始终应用到全部链路。
@@ -69,6 +69,8 @@ ctest --test-dir build --output-on-failure
 - Adj-RIB-In、Loc-RIB、Adj-RIB-Out；
 - EBGP AS_PATH prepend 与 NEXT_HOP 转换；
 - IBGP split-horizon 和基础 Route Reflector client/non-client 传播；
+- 标准与 TFP 路由器对已配置商业关系的 eBGP 路由采用 customer（LOCAL_PREF 200）> peer（100）> provider（50）的偏好；当路由来源和出站邻居均已分类时执行 valley-free 出口策略：向 customer 发布全部路由，向 peer/provider 只发布本地起源或从 customer 学到的路由。入站来源或出站邻居为“未指定”时保持原有普通 eBGP 传播行为，便于兼容旧拓扑；
+- 为避免商业关系产生的 LOCAL_PREF 跨 AS 泄漏，标准与 TFP 路由器向 eBGP 邻居发送时将其归一为 100，接收端再按自己的已配置邻居关系重新设置；
 - 选路顺序：本地起源、LOCAL_PREF、AS_PATH 长度、MED、EBGP 优先、旧路稳定性、确定性 tie-break；
 - 每邻居 MRAI；参考 FRR 的 Adj-RIB-Out 待发送队列聚合 withdrawal，同一前缀的新状态覆盖旧状态；
 - 同一轮中路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；
@@ -162,8 +164,9 @@ SQLite 历史中检查传播过程。
 - `rr_client_from_a`：A 把 B 配置为 RR Client；
 - `mrai_ms_from_a`：A 向 B 发送 UPDATE 的 MRAI；
 - `rr_client_from_b` / `mrai_ms_from_b`：反方向。
+- `relationship`：eBGP 商业关系，可取 `unspecified`、`peer`、`a_provider` 或 `b_provider`；`a_provider` 表示 A 是 B 的 provider，`b_provider` 表示 B 是 A 的 provider。
 
-保存时会同时生成每台路由器的 `neighbors` 数组，便于人工阅读。加载旧拓扑时也会读取其中的方向性 MRAI/RR 字段。
+保存时会同时生成每台路由器的 `neighbors` 数组，便于人工阅读。其中 `neighbors[].relationship` 使用本地路由器视角，可取 `unspecified`、`peer`、`provider` 或 `customer`。加载旧拓扑时也会读取其中的方向性 MRAI/RR 字段；缺少商业关系字段的旧拓扑按 `unspecified` 处理，以保留原有普通 eBGP 行为。
 
 每台路由器可使用独立插件；旧拓扑未提供 `plugin` 时自动使用内置标准
 BGP 插件：

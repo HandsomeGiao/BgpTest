@@ -28,6 +28,15 @@ enum class PeerState
     Established
 };
 
+enum class RouteSource
+{
+    Unspecified,
+    Local,
+    Customer,
+    Peer,
+    Provider
+};
+
 inline QString toString(MessageType type)
 {
     switch (type)
@@ -108,6 +117,7 @@ struct RouteEntry
     QString learnedFrom;
     SessionType sourceSession = SessionType::Ibgp;
     bool localOrigin = false;
+    RouteSource source = RouteSource::Unspecified;
 
     bool operator==(const RouteEntry&) const = default;
 };
@@ -152,6 +162,7 @@ struct PeerSnapshot
     bool enabled = true;
     int mraiMs = 0;
     PeerState state = PeerState::Idle;
+    NeighborRelationship relationship = NeighborRelationship::Unspecified;
 };
 
 struct RibSnapshot

@@ -24,6 +24,29 @@ enum class SessionType
 QString toString(SessionType type);
 std::optional<SessionType> sessionTypeFromString(const QString& value);
 
+enum class LinkBusinessRelationship
+{
+    Unspecified,
+    PeerToPeer,
+    AProviderOfB,
+    BProviderOfA
+};
+
+QString toString(LinkBusinessRelationship relationship);
+std::optional<LinkBusinessRelationship> linkBusinessRelationshipFromString(const QString& value);
+
+// The relationship of the remote neighbor to the local router.
+enum class NeighborRelationship
+{
+    Unspecified,
+    Peer,
+    Provider,
+    Customer
+};
+
+QString toString(NeighborRelationship relationship);
+std::optional<NeighborRelationship> neighborRelationshipFromString(const QString& value);
+
 struct SimulationSettings
 {
     QString name = QStringLiteral("bgp-lab");
@@ -55,6 +78,7 @@ struct LinkConfig
     bool rrClientFromB = false;
     int mraiMsFromA = 0;
     int mraiMsFromB = 0;
+    LinkBusinessRelationship businessRelationship = LinkBusinessRelationship::Unspecified;
 
     bool operator==(const LinkConfig&) const = default;
 };
@@ -67,6 +91,7 @@ struct NeighborConfig
     bool rrClient = false;
     bool enabled = true;
     int mraiMs = 0;
+    NeighborRelationship relationship = NeighborRelationship::Unspecified;
 
     bool operator==(const NeighborConfig&) const = default;
 };

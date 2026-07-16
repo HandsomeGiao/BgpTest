@@ -167,7 +167,7 @@ void RouterDialog::accept()
     QDialog::accept();
 }
 
-LinkDialog::LinkDialog(const LinkConfig& link, QWidget* parent) : QDialog(parent), original_(link)
+LinkDialog::LinkDialog(const LinkConfig& link, bool externalSession, QWidget* parent) : QDialog(parent), original_(link)
 {
     setWindowTitle(QStringLiteral("链路属性：%1 ↔ %2").arg(link.a, link.b));
     setMinimumWidth(450);
@@ -179,6 +179,24 @@ LinkDialog::LinkDialog(const LinkConfig& link, QWidget* parent) : QDialog(parent
     delaySpin_->setRange(0, 24 * 60 * 60 * 1000);
     delaySpin_->setSuffix(QStringLiteral(" ms"));
     delaySpin_->setValue(link.delayMs);
+    relationshipCombo_ = new QComboBox(this);
+    relationshipCombo_->addItem(QStringLiteral("未指定"), static_cast<int>(LinkBusinessRelationship::Unspecified));
+    relationshipCombo_->addItem(QStringLiteral("Peer"), static_cast<int>(LinkBusinessRelationship::PeerToPeer));
+    relationshipCombo_->addItem(QStringLiteral("%1 Provider / %2 Customer").arg(link.a, link.b),
+                                static_cast<int>(LinkBusinessRelationship::AProviderOfB));
+    relationshipCombo_->addItem(QStringLiteral("%1 Provider / %2 Customer").arg(link.b, link.a),
+                                static_cast<int>(LinkBusinessRelationship::BProviderOfA));
+    auto relationshipIndex = relationshipCombo_->findData(static_cast<int>(link.businessRelationship));
+    if (relationshipIndex < 0)
+    {
+        relationshipIndex = 0;
+    }
+    relationshipCombo_->setCurrentIndex(externalSession ? relationshipIndex : 0);
+    relationshipCombo_->setEnabled(externalSession);
+    if (!externalSession)
+    {
+        relationshipCombo_->setToolTip(QStringLiteral("同一 ASN 的 iBGP 链路不使用商业关系。"));
+    }
     rrFromACheck_ = new QCheckBox(QStringLiteral("%1 将 %2 视为 RR Client").arg(link.a, link.b), this);
     rrFromACheck_->setChecked(link.rrClientFromA);
     rrFromBCheck_ = new QCheckBox(QStringLiteral("%1 将 %2 视为 RR Client").arg(link.b, link.a), this);
@@ -193,6 +211,7 @@ LinkDialog::LinkDialog(const LinkConfig& link, QWidget* parent) : QDialog(parent
     mraiFromBSpin_->setValue(link.mraiMsFromB);
     form->addRow(QStringLiteral("状态"), enabledCheck_);
     form->addRow(QStringLiteral("链路延迟"), delaySpin_);
+    form->addRow(QStringLiteral("商业关系"), relationshipCombo_);
     form->addRow(QStringLiteral("%1 → %2 MRAI").arg(link.a, link.b), mraiFromASpin_);
     form->addRow(QStringLiteral("%1 → %2 MRAI").arg(link.b, link.a), mraiFromBSpin_);
     form->addRow(QStringLiteral("路由反射"), rrFromACheck_);
@@ -209,6 +228,9 @@ LinkConfig LinkDialog::link() const
     auto result = original_;
     result.enabled = enabledCheck_->isChecked();
     result.delayMs = delaySpin_->value();
+    result.businessRelationship = relationshipCombo_->isEnabled()
+                                      ? static_cast<LinkBusinessRelationship>(relationshipCombo_->currentData().toInt())
+                                      : LinkBusinessRelationship::Unspecified;
     result.rrClientFromA = rrFromACheck_->isChecked();
     result.rrClientFromB = rrFromBCheck_->isChecked();
     result.mraiMsFromA = mraiFromASpin_->value();

@@ -36,6 +36,7 @@ QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route)
     add(route.attributes.nextHop);
     add(route.attributes.localPref);
     add(route.attributes.med);
+    add(static_cast<int>(route.source));
     add(route.attributes.originatorId);
     for (const auto asn : route.attributes.asPath)
     {
@@ -76,7 +77,7 @@ QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route)
 bool advertisementTemplateEqual(const RouteEntry& lhs, const RouteEntry& rhs)
 {
     return lhs.attributes == rhs.attributes && lhs.learnedFrom == rhs.learnedFrom && lhs.sourceSession == rhs.sourceSession &&
-           lhs.localOrigin == rhs.localOrigin;
+           lhs.localOrigin == rhs.localOrigin && lhs.source == rhs.source;
 }
 
 bool validIpv4Prefix(const QString& prefix)
@@ -787,9 +788,11 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
             // peer even if this sender had no Adj-RIB-In entry to remove.
             changed.insert(prefix);
         }
+        RouteEntry advertisedRoute = message.advertisedRoute.value_or(RouteEntry{});
+        advertisedRoute.attributes = message.attributes;
         for (const auto& prefix : message.nlri)
         {
-            auto imported = routerIt->node->importRoute(prefix, message.attributes, peerIt->config);
+            auto imported = routerIt->node->importAdvertisedRoute(prefix, advertisedRoute, peerIt->config);
             if (!imported)
             {
                 if (peerRoutes.remove(prefix) > 0)
@@ -1301,6 +1304,7 @@ QVector<PeerSnapshot> SimulationEngine::peerSnapshots(const QString& routerId) c
             .enabled = it->config.enabled,
             .mraiMs = it->config.mraiMs,
             .state = it->state,
+            .relationship = it->config.relationship,
         });
     }
     return snapshots;

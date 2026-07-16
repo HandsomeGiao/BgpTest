@@ -11,6 +11,11 @@ namespace bgptester
 namespace
 {
 
+constexpr quint32 ProviderLocalPreference = 50;
+constexpr quint32 DefaultLocalPreference = 100;
+constexpr quint32 PeerLocalPreference = DefaultLocalPreference;
+constexpr quint32 CustomerLocalPreference = 200;
+
 bool primaryBetter(const RouteEntry& lhs, const RouteEntry& rhs)
 {
     if (lhs.localOrigin != rhs.localOrigin)
@@ -48,6 +53,36 @@ bool deterministicBetter(const RouteEntry& lhs, const RouteEntry& rhs)
     return std::tie(lhs.attributes.nextHop, lhs.learnedFrom) < std::tie(rhs.attributes.nextHop, rhs.learnedFrom);
 }
 
+RouteSource routeSourceFor(NeighborRelationship relationship)
+{
+    switch (relationship)
+    {
+        case NeighborRelationship::Unspecified:
+            return RouteSource::Unspecified;
+        case NeighborRelationship::Peer:
+            return RouteSource::Peer;
+        case NeighborRelationship::Provider:
+            return RouteSource::Provider;
+        case NeighborRelationship::Customer:
+            return RouteSource::Customer;
+    }
+    return RouteSource::Unspecified;
+}
+
+bool businessExportAllowed(RouteSource source, NeighborRelationship destination)
+{
+    switch (destination)
+    {
+        case NeighborRelationship::Unspecified:
+        case NeighborRelationship::Customer:
+            return true;
+        case NeighborRelationship::Peer:
+        case NeighborRelationship::Provider:
+            return source != RouteSource::Peer && source != RouteSource::Provider;
+    }
+    return true;
+}
+
 } // namespace
 
 StandardBgpRouterNode::StandardBgpRouterNode(RouterNodeContext context, QObject* parent) : RouterNode(std::move(context), parent)
@@ -60,6 +95,7 @@ RouteEntry StandardBgpRouterNode::createOriginatedRoute(const QString&)
     route.attributes.nextHop = context().config.routerId;
     route.learnedFrom = context().config.id;
     route.localOrigin = true;
+    route.source = RouteSource::Local;
     return route;
 }
 
@@ -86,6 +122,41 @@ std::optional<RouteEntry> StandardBgpRouterNode::importRoute(const QString&, con
     route.sourceSession = fromPeer.sessionType;
     route.localOrigin = false;
     return route;
+}
+
+std::optional<RouteEntry> StandardBgpRouterNode::importAdvertisedRoute(const QString& prefix, const RouteEntry& advertisedRoute,
+                                                                       const NeighborConfig& fromPeer)
+{
+    // Keep this call virtual so derived standard-router plugins can continue
+    // observing and extending the attributes-only import path.
+    auto imported = importRoute(prefix, advertisedRoute.attributes, fromPeer);
+    if (!imported)
+    {
+        return std::nullopt;
+    }
+
+    if (fromPeer.sessionType == SessionType::Ibgp)
+    {
+        imported->source = advertisedRoute.source;
+        return imported;
+    }
+
+    imported->source = routeSourceFor(fromPeer.relationship);
+    switch (fromPeer.relationship)
+    {
+        case NeighborRelationship::Customer:
+            imported->attributes.localPref = CustomerLocalPreference;
+            break;
+        case NeighborRelationship::Peer:
+            imported->attributes.localPref = PeerLocalPreference;
+            break;
+        case NeighborRelationship::Provider:
+            imported->attributes.localPref = ProviderLocalPreference;
+            break;
+        case NeighborRelationship::Unspecified:
+            break;
+    }
+    return imported;
 }
 
 std::optional<RouteEntry> StandardBgpRouterNode::selectBestRoute(const QString&, const QVector<RouteEntry>& candidates,
@@ -136,6 +207,10 @@ std::optional<RouteEntry> StandardBgpRouterNode::exportRoute(const RouteEntry& r
         const auto learnedFromClient = learnedPeer != context().neighbors.cend() && learnedPeer->rrClient;
         allowed = learnedFromClient || toPeer.rrClient;
     }
+    if (allowed && toPeer.sessionType == SessionType::Ebgp)
+    {
+        allowed = businessExportAllowed(route.source, toPeer.relationship);
+    }
     if (!allowed)
     {
         return std::nullopt;
@@ -149,8 +224,10 @@ std::optional<RouteEntry> StandardBgpRouterNode::exportRoute(const RouteEntry& r
     {
         result.attributes.asPath.prepend(context().config.asn);
         result.attributes.nextHop = context().config.routerId;
+        result.attributes.localPref = DefaultLocalPreference;
         result.attributes.originatorId.clear();
         result.attributes.clusterList.clear();
+        result.source = RouteSource::Unspecified;
         return result;
     }
 
@@ -184,8 +261,8 @@ RouterPluginMetadata StandardBgpRouterPlugin::metadata() const
     return RouterPluginMetadata{
         .id = StandardRouterPluginId,
         .displayName = QStringLiteral("标准 BGP 路由器"),
-        .version = QStringLiteral("1.0.0"),
-        .description = QStringLiteral("内置 RFC 风格 BGP 节点，支持 EBGP、IBGP、路由反射与 MRAI。"),
+        .version = QStringLiteral("1.1.0"),
+        .description = QStringLiteral("内置 RFC 风格 BGP 节点，支持 EBGP、IBGP、路由反射、MRAI 与商业关系策略。"),
         .apiVersion = RouterPluginApiVersion,
         .defaultSettings = {},
     };
