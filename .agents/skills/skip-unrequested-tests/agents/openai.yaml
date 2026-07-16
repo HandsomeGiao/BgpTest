@@ -1,0 +1,4 @@
+interface:
+  display_name: "跳过未要求的测试"
+  short_description: "除非用户明确要求，否则在代码修改任务中跳过所有代码、逻辑与界面测试"
+  default_prompt: "使用 $skip-unrequested-tests 修改代码；只有在我明确要求时才运行测试。"
