@@ -26,12 +26,15 @@
 #include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QJsonDocument>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QMouseEvent>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QRandomGenerator>
@@ -65,6 +68,59 @@ struct HistoryLoadState
     std::atomic<qint64> loadedRows{0};
     std::atomic<qint64> totalRows{0};
     std::atomic_bool cancelRequested{false};
+};
+
+class PersistentCheckableMenu final : public QMenu
+{
+public:
+    using QMenu::QMenu;
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        auto* action = actionAt(event->position().toPoint());
+        if (action && action->isEnabled() && action->isCheckable())
+        {
+            pressedCheckableAction_ = action;
+            setActiveAction(action);
+            event->accept();
+            return;
+        }
+        pressedCheckableAction_ = nullptr;
+        QMenu::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        auto* action = actionAt(event->position().toPoint());
+        if (pressedCheckableAction_)
+        {
+            if (action == pressedCheckableAction_ && action->isEnabled())
+            {
+                action->setChecked(!action->isChecked());
+            }
+            pressedCheckableAction_ = nullptr;
+            event->accept();
+            return;
+        }
+        QMenu::mouseReleaseEvent(event);
+    }
+
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        auto* action = activeAction();
+        if (action && action->isEnabled() && action->isCheckable() &&
+            (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter))
+        {
+            action->setChecked(!action->isChecked());
+            event->accept();
+            return;
+        }
+        QMenu::keyPressEvent(event);
+    }
+
+private:
+    QAction* pressedCheckableAction_ = nullptr;
 };
 
 QTableWidgetItem* tableItem(const QString& text, Qt::Alignment alignment = Qt::AlignCenter)
@@ -535,6 +591,12 @@ void MainWindow::buildEventDock()
     eventCountLabel_->setMinimumWidth(125);
     followEventsCheck_ = new QCheckBox(QStringLiteral("跟随实时"), eventPage);
     followEventsCheck_->setChecked(true);
+    auto* columnsButton = new QToolButton(eventPage);
+    columnsButton->setObjectName(QStringLiteral("eventColumnsButton"));
+    columnsButton->setText(QStringLiteral("显示列"));
+    columnsButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    columnsButton->setPopupMode(QToolButton::InstantPopup);
+    columnsButton->setToolTip(QStringLiteral("选择 BMP 事件日志中显示的列"));
     auto* clearButton = new QPushButton(QStringLiteral("清空表格"), eventPage);
     auto* historyButton = new QPushButton(QStringLiteral("打开历史…"), eventPage);
     connect(clearButton, &QPushButton::clicked, eventModel_, &EventTableModel::clear);
@@ -542,6 +604,7 @@ void MainWindow::buildEventDock()
     filterRow->addWidget(eventFilterEdit_, 1);
     filterRow->addWidget(eventCountLabel_);
     filterRow->addWidget(followEventsCheck_);
+    filterRow->addWidget(columnsButton);
     filterRow->addWidget(clearButton);
     filterRow->addWidget(historyButton);
     layout->addLayout(filterRow);
@@ -574,6 +637,46 @@ void MainWindow::buildEventDock()
     eventView_->setColumnWidth(EventTableModel::Prefixes, 260);
     eventView_->setColumnWidth(EventTableModel::Withdrawn, 260);
     eventView_->horizontalHeader()->setStretchLastSection(false);
+
+    auto* columnsMenu = new PersistentCheckableMenu(columnsButton);
+    columnsMenu->setObjectName(QStringLiteral("eventColumnsMenu"));
+    columnsButton->setMenu(columnsMenu);
+    const auto hiddenColumns = QSettings().value(QStringLiteral("bmp/eventTableHiddenColumns")).toStringList();
+    for (auto column = 0; column < eventModel_->columnCount(); ++column)
+    {
+        const auto title = eventModel_->headerData(column, Qt::Horizontal, Qt::DisplayRole).toString();
+        auto* action = columnsMenu->addAction(title);
+        action->setObjectName(QStringLiteral("eventColumnAction%1").arg(column));
+        action->setCheckable(true);
+        const auto visible = !hiddenColumns.contains(QString::number(column));
+        action->setChecked(visible);
+        eventView_->setColumnHidden(column, !visible);
+        connect(action, &QAction::toggled, this,
+                [this, column](bool checked)
+                {
+                    eventView_->setColumnHidden(column, !checked);
+                    saveEventColumnVisibility();
+                });
+    }
+    columnsMenu->addSeparator();
+    auto* showAllColumnsAction = columnsMenu->addAction(QStringLiteral("显示全部列"));
+    connect(showAllColumnsAction, &QAction::triggered, this,
+            [this, columnsMenu]
+            {
+                for (auto* action : columnsMenu->actions())
+                {
+                    if (action->isCheckable())
+                    {
+                        action->setChecked(true);
+                    }
+                }
+                saveEventColumnVisibility();
+            });
+    auto* eventHeader = eventView_->horizontalHeader();
+    eventHeader->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(eventHeader, &QWidget::customContextMenuRequested, this,
+            [eventHeader, columnsMenu](const QPoint& position) { columnsMenu->exec(eventHeader->mapToGlobal(position)); });
+
     connect(eventView_, &QTableView::doubleClicked, this, &MainWindow::showEventDetails);
     layout->addWidget(eventView_, 1);
     monitorTabs->addTab(eventPage, QStringLiteral("事件日志"));
@@ -619,6 +722,23 @@ void MainWindow::buildEventDock()
     addDockWidget(Qt::BottomDockWidgetArea, dock);
     viewMenu_->addAction(dock->toggleViewAction());
     resizeDocks({dock}, {280}, Qt::Vertical);
+}
+
+void MainWindow::saveEventColumnVisibility() const
+{
+    if (!eventView_ || !eventModel_)
+    {
+        return;
+    }
+    QStringList hiddenColumns;
+    for (auto column = 0; column < eventModel_->columnCount(); ++column)
+    {
+        if (eventView_->isColumnHidden(column))
+        {
+            hiddenColumns.append(QString::number(column));
+        }
+    }
+    QSettings().setValue(QStringLiteral("bmp/eventTableHiddenColumns"), hiddenColumns);
 }
 
 void MainWindow::connectEngine()
@@ -865,7 +985,10 @@ void MainWindow::editTopologyBatchProperties()
 
     auto changedRouters = 0;
     auto changedLinks = 0;
+    auto changedMraiDirections = 0;
     QStringList appliedOperations;
+    const auto targetDescription = selectedRoutersOnly ? QStringLiteral("选中的 %1 台路由器").arg(targetRouters.size())
+                                                       : QStringLiteral("全部 %1 台路由器").arg(targetRouters.size());
 
     const auto pluginId = dialog.routerPluginId();
     if (!pluginId.isEmpty())
@@ -881,9 +1004,50 @@ void MainWindow::editTopologyBatchProperties()
                 ++changedRouters;
             }
         }
-        const auto targetDescription = selectedRoutersOnly ? QStringLiteral("选中的 %1 台路由器").arg(targetRouters.size())
-                                                           : QStringLiteral("全部 %1 台路由器").arg(targetRouters.size());
         appliedOperations.append(QStringLiteral("已将%1的种类设置为 %2").arg(targetDescription, pluginId));
+    }
+
+    QMap<QString, int> mraiByRouter;
+    if (dialog.mraiMode() == TopologyBatchEditDialog::MraiMode::Fixed)
+    {
+        const auto mraiMs = dialog.fixedMraiMs();
+        for (const auto& routerId : targetRouterIds)
+        {
+            mraiByRouter.insert(routerId, mraiMs);
+        }
+        appliedOperations.append(QStringLiteral("已将%1的出站 MRAI 设置为 %2 ms").arg(targetDescription).arg(mraiMs));
+    }
+    else if (dialog.mraiMode() == TopologyBatchEditDialog::MraiMode::RandomRange)
+    {
+        const auto minimumMraiMs = dialog.minimumMraiMs();
+        const auto maximumMraiMs = dialog.maximumMraiMs();
+        const auto valueCount = static_cast<quint32>(maximumMraiMs - minimumMraiMs + 1);
+        for (const auto& routerId : targetRouterIds)
+        {
+            mraiByRouter.insert(routerId, minimumMraiMs + static_cast<int>(QRandomGenerator::global()->bounded(valueCount)));
+        }
+        appliedOperations.append(QStringLiteral("已将%1的出站 MRAI 按路由器随机设置在 %2–%3 ms 范围内")
+                                     .arg(targetDescription)
+                                     .arg(minimumMraiMs)
+                                     .arg(maximumMraiMs));
+    }
+    if (!mraiByRouter.isEmpty())
+    {
+        for (auto& link : topology_.links)
+        {
+            const auto fromA = mraiByRouter.constFind(link.a);
+            if (fromA != mraiByRouter.cend() && link.mraiMsFromA != fromA.value())
+            {
+                link.mraiMsFromA = fromA.value();
+                ++changedMraiDirections;
+            }
+            const auto fromB = mraiByRouter.constFind(link.b);
+            if (fromB != mraiByRouter.cend() && link.mraiMsFromB != fromB.value())
+            {
+                link.mraiMsFromB = fromB.value();
+                ++changedMraiDirections;
+            }
+        }
     }
 
     if (dialog.delayMode() == TopologyBatchEditDialog::DelayMode::Fixed)
@@ -922,7 +1086,7 @@ void MainWindow::editTopologyBatchProperties()
     statusBar()->showMessage(
         appliedOperations.isEmpty() ? QStringLiteral("未选择要修改的批量配置项") : appliedOperations.join(QStringLiteral("；")), 5000);
 
-    if (changedRouters > 0 || changedLinks > 0)
+    if (changedRouters > 0 || changedLinks > 0 || changedMraiDirections > 0)
     {
         scene_->rebuild();
         refreshTopologySelectors();

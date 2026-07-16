@@ -1,0 +1,310 @@
+{
+    "links": [
+        {
+            "a": "R1",
+            "b": "R2",
+            "delay_ms": 63,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R3",
+            "b": "R2",
+            "delay_ms": 87,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R1",
+            "b": "R3",
+            "delay_ms": 65,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R2",
+            "b": "R4",
+            "delay_ms": 95,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R5",
+            "b": "R2",
+            "delay_ms": 94,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R6",
+            "b": "R5",
+            "delay_ms": 92,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R6",
+            "b": "R4",
+            "delay_ms": 75,
+            "enabled": true,
+            "mrai_ms_from_a": 3000,
+            "mrai_ms_from_b": 3000,
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        }
+    ],
+    "routers": [
+        {
+            "asn": 1,
+            "cluster_id": "10.0.0.1",
+            "id": "R1",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R2",
+                    "mrai_ms": 3000,
+                    "remote_asn": 2,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R3",
+                    "mrai_ms": 3000,
+                    "remote_asn": 3,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+                "10.1.0.0/24"
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": 631.3966229268124,
+                "y": 244.22246991899266
+            },
+            "router_id": "10.0.0.1"
+        },
+        {
+            "asn": 2,
+            "cluster_id": "10.0.0.2",
+            "id": "R2",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R1",
+                    "mrai_ms": 3000,
+                    "remote_asn": 1,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R3",
+                    "mrai_ms": 3000,
+                    "remote_asn": 3,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R4",
+                    "mrai_ms": 3000,
+                    "remote_asn": 4,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R5",
+                    "mrai_ms": 3000,
+                    "remote_asn": 5,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": 226.87156113674516,
+                "y": 241.87533714345625
+            },
+            "router_id": "10.0.0.2"
+        },
+        {
+            "asn": 3,
+            "cluster_id": "10.0.0.3",
+            "id": "R3",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R2",
+                    "mrai_ms": 3000,
+                    "remote_asn": 2,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R1",
+                    "mrai_ms": 3000,
+                    "remote_asn": 1,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": 467.94651601904445,
+                "y": 45.2709297134505
+            },
+            "router_id": "10.0.0.3"
+        },
+        {
+            "asn": 4,
+            "cluster_id": "10.0.0.4",
+            "id": "R4",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R2",
+                    "mrai_ms": 3000,
+                    "remote_asn": 2,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R6",
+                    "mrai_ms": 3000,
+                    "remote_asn": 6,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": -147.73841339030054,
+                "y": 319.5755313826535
+            },
+            "router_id": "10.0.0.4"
+        },
+        {
+            "asn": 5,
+            "cluster_id": "10.0.0.5",
+            "id": "R5",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R2",
+                    "mrai_ms": 3000,
+                    "remote_asn": 2,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R6",
+                    "mrai_ms": 3000,
+                    "remote_asn": 6,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": -155.3148937185403,
+                "y": 48.12574171560402
+            },
+            "router_id": "10.0.0.5"
+        },
+        {
+            "asn": 6,
+            "cluster_id": "10.0.0.6",
+            "id": "R6",
+            "neighbors": [
+                {
+                    "enabled": true,
+                    "id": "R5",
+                    "mrai_ms": 3000,
+                    "remote_asn": 5,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                },
+                {
+                    "enabled": true,
+                    "id": "R4",
+                    "mrai_ms": 3000,
+                    "remote_asn": 4,
+                    "rr_client": false,
+                    "session_type": "ebgp"
+                }
+            ],
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.standard-bgp",
+                "settings": {
+                }
+            },
+            "position": {
+                "x": -445.1411984092405,
+                "y": 211.4762006934762
+            },
+            "router_id": "10.0.0.6"
+        }
+    ],
+    "simulation": {
+        "convergence_quiet_ms": 1000,
+        "log_dir": "tmp",
+        "name": "quick-lab",
+        "router_class": "BgpRouter",
+        "worker_threads": 0
+    }
+}

@@ -76,6 +76,13 @@ public:
         Selection,
     };
 
+    enum class MraiMode
+    {
+        Unchanged,
+        Fixed,
+        RandomRange,
+    };
+
     explicit TopologyBatchEditDialog(const QVector<LinkConfig>& links, const QVector<RouterConfig>& routers, RouterScope routerScope,
                                      QWidget* parent = nullptr);
 
@@ -83,6 +90,10 @@ public:
     int fixedDelayMs() const;
     int minimumDelayMs() const;
     int maximumDelayMs() const;
+    MraiMode mraiMode() const;
+    int fixedMraiMs() const;
+    int minimumMraiMs() const;
+    int maximumMraiMs() const;
     QString routerPluginId() const;
     QJsonObject routerPluginDefaultSettings() const;
 
@@ -98,6 +109,12 @@ private:
     QSpinBox* maximumDelaySpin_ = nullptr;
     QComboBox* routerPluginCombo_ = nullptr;
     QLabel* routerPluginDescriptionLabel_ = nullptr;
+    QRadioButton* unchangedMraiRadio_ = nullptr;
+    QRadioButton* fixedMraiRadio_ = nullptr;
+    QSpinBox* fixedMraiSpin_ = nullptr;
+    QRadioButton* randomMraiRadio_ = nullptr;
+    QSpinBox* minimumMraiSpin_ = nullptr;
+    QSpinBox* maximumMraiSpin_ = nullptr;
 };
 
 class SimulationSettingsDialog final : public QDialog

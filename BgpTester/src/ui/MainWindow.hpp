@@ -92,6 +92,7 @@ private:
     void buildMenusAndToolbar();
     void buildInspectorDock();
     void buildEventDock();
+    void saveEventColumnVisibility() const;
     void connectEngine();
     void setTopology(Topology topology, const QString& path = {});
     void setDirty(bool dirty);

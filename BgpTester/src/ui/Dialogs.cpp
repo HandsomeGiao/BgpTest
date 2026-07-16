@@ -17,6 +17,7 @@
 #include <QRadioButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QSet>
 #include <QSpinBox>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -219,7 +220,7 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
                                                  RouterScope routerScope, QWidget* parent)
     : QDialog(parent)
 {
-    constexpr auto maximumDelayMs = 24 * 60 * 60 * 1000;
+    constexpr auto maximumIntervalMs = 24 * 60 * 60 * 1000;
 
     setWindowTitle(QStringLiteral("批量配置拓扑"));
     setMinimumWidth(480);
@@ -228,7 +229,8 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
     const auto routerTarget = routerScope == RouterScope::Selection ? QStringLiteral("选中的 %1 台路由器").arg(routers.size())
                                                                     : QStringLiteral("当前拓扑的全部 %1 台路由器").arg(routers.size());
     auto* summaryLabel = new QLabel(
-        QStringLiteral("路由器种类可应用到%1；链路延迟可应用到当前拓扑的全部 %2 条链路。").arg(routerTarget).arg(links.size()), this);
+        QStringLiteral("路由器种类和出站 MRAI 可应用到%1；链路延迟可应用到当前拓扑的全部 %2 条链路。").arg(routerTarget).arg(links.size()),
+        this);
     summaryLabel->setObjectName(QStringLiteral("batchTopologySummaryLabel"));
     summaryLabel->setWordWrap(true);
     layout->addWidget(summaryLabel);
@@ -293,6 +295,86 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
     routerLayout->addWidget(routerNoteLabel);
     layout->addWidget(routerGroup);
 
+    auto* mraiGroup = new QGroupBox(QStringLiteral("路由器出站 MRAI"), this);
+    auto* mraiLayout = new QVBoxLayout(mraiGroup);
+
+    unchangedMraiRadio_ = new QRadioButton(QStringLiteral("保持现有值"), mraiGroup);
+    unchangedMraiRadio_->setChecked(true);
+    mraiLayout->addWidget(unchangedMraiRadio_);
+
+    fixedMraiRadio_ = new QRadioButton(QStringLiteral("固定值"), mraiGroup);
+    fixedMraiSpin_ = new QSpinBox(mraiGroup);
+    fixedMraiSpin_->setRange(0, maximumIntervalMs);
+    fixedMraiSpin_->setSuffix(QStringLiteral(" ms"));
+    auto* fixedMraiRow = new QHBoxLayout;
+    fixedMraiRow->addWidget(fixedMraiRadio_);
+    fixedMraiRow->addWidget(fixedMraiSpin_, 1);
+    mraiLayout->addLayout(fixedMraiRow);
+
+    randomMraiRadio_ = new QRadioButton(QStringLiteral("随机范围（包含上下限）"), mraiGroup);
+    minimumMraiSpin_ = new QSpinBox(mraiGroup);
+    minimumMraiSpin_->setRange(0, maximumIntervalMs);
+    minimumMraiSpin_->setSuffix(QStringLiteral(" ms"));
+    maximumMraiSpin_ = new QSpinBox(mraiGroup);
+    maximumMraiSpin_->setRange(0, maximumIntervalMs);
+    maximumMraiSpin_->setSuffix(QStringLiteral(" ms"));
+    auto* randomMraiRow = new QHBoxLayout;
+    randomMraiRow->addWidget(randomMraiRadio_);
+    randomMraiRow->addWidget(new QLabel(QStringLiteral("最小"), mraiGroup));
+    randomMraiRow->addWidget(minimumMraiSpin_, 1);
+    randomMraiRow->addWidget(new QLabel(QStringLiteral("最大"), mraiGroup));
+    randomMraiRow->addWidget(maximumMraiSpin_, 1);
+    mraiLayout->addLayout(randomMraiRow);
+
+    QSet<QString> targetRouterIds;
+    targetRouterIds.reserve(routers.size());
+    for (const auto& router : routers)
+    {
+        targetRouterIds.insert(router.id);
+    }
+    QVector<int> currentMraiValues;
+    for (const auto& link : links)
+    {
+        if (targetRouterIds.contains(link.a))
+        {
+            currentMraiValues.append(link.mraiMsFromA);
+        }
+        if (targetRouterIds.contains(link.b))
+        {
+            currentMraiValues.append(link.mraiMsFromB);
+        }
+    }
+    if (!currentMraiValues.isEmpty())
+    {
+        auto minimum = currentMraiValues.front();
+        auto maximum = minimum;
+        for (const auto value : currentMraiValues)
+        {
+            minimum = std::min(minimum, value);
+            maximum = std::max(maximum, value);
+        }
+        fixedMraiSpin_->setValue(minimum == maximum ? minimum : 0);
+        minimumMraiSpin_->setValue(minimum);
+        maximumMraiSpin_->setValue(maximum);
+    }
+
+    const auto updateMraiInputState = [this]
+    {
+        fixedMraiSpin_->setEnabled(fixedMraiRadio_->isChecked());
+        minimumMraiSpin_->setEnabled(randomMraiRadio_->isChecked());
+        maximumMraiSpin_->setEnabled(randomMraiRadio_->isChecked());
+    };
+    connect(fixedMraiRadio_, &QRadioButton::toggled, this, [updateMraiInputState](bool) { updateMraiInputState(); });
+    connect(randomMraiRadio_, &QRadioButton::toggled, this, [updateMraiInputState](bool) { updateMraiInputState(); });
+    updateMraiInputState();
+
+    mraiGroup->setEnabled(!currentMraiValues.isEmpty());
+    auto* mraiNoteLabel =
+        new QLabel(QStringLiteral("固定值应用到目标路由器的全部出站邻居；随机模式为每台目标路由器独立生成一个值。"), mraiGroup);
+    mraiNoteLabel->setWordWrap(true);
+    mraiLayout->addWidget(mraiNoteLabel);
+    layout->addWidget(mraiGroup);
+
     auto* delayGroup = new QGroupBox(QStringLiteral("链路延迟"), this);
     auto* delayLayout = new QVBoxLayout(delayGroup);
 
@@ -302,7 +384,7 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
 
     fixedDelayRadio_ = new QRadioButton(QStringLiteral("固定值"), delayGroup);
     fixedDelaySpin_ = new QSpinBox(delayGroup);
-    fixedDelaySpin_->setRange(0, maximumDelayMs);
+    fixedDelaySpin_->setRange(0, maximumIntervalMs);
     fixedDelaySpin_->setSuffix(QStringLiteral(" ms"));
     auto* fixedRow = new QHBoxLayout;
     fixedRow->addWidget(fixedDelayRadio_);
@@ -311,10 +393,10 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
 
     randomDelayRadio_ = new QRadioButton(QStringLiteral("随机范围（包含上下限）"), delayGroup);
     minimumDelaySpin_ = new QSpinBox(delayGroup);
-    minimumDelaySpin_->setRange(0, maximumDelayMs);
+    minimumDelaySpin_->setRange(0, maximumIntervalMs);
     minimumDelaySpin_->setSuffix(QStringLiteral(" ms"));
     maximumDelaySpin_ = new QSpinBox(delayGroup);
-    maximumDelaySpin_->setRange(0, maximumDelayMs);
+    maximumDelaySpin_->setRange(0, maximumIntervalMs);
     maximumDelaySpin_->setSuffix(QStringLiteral(" ms"));
     auto* randomRow = new QHBoxLayout;
     randomRow->addWidget(randomDelayRadio_);
@@ -345,6 +427,7 @@ TopologyBatchEditDialog::TopologyBatchEditDialog(const QVector<LinkConfig>& link
         maximumDelaySpin_->setEnabled(randomDelayRadio_->isChecked());
     };
     connect(fixedDelayRadio_, &QRadioButton::toggled, this, [updateInputState](bool) { updateInputState(); });
+    connect(randomDelayRadio_, &QRadioButton::toggled, this, [updateInputState](bool) { updateInputState(); });
     updateInputState();
 
     delayGroup->setEnabled(!links.isEmpty());
@@ -384,6 +467,30 @@ int TopologyBatchEditDialog::maximumDelayMs() const
     return maximumDelaySpin_->value();
 }
 
+TopologyBatchEditDialog::MraiMode TopologyBatchEditDialog::mraiMode() const
+{
+    if (fixedMraiRadio_->isChecked())
+    {
+        return MraiMode::Fixed;
+    }
+    return randomMraiRadio_->isChecked() ? MraiMode::RandomRange : MraiMode::Unchanged;
+}
+
+int TopologyBatchEditDialog::fixedMraiMs() const
+{
+    return fixedMraiSpin_->value();
+}
+
+int TopologyBatchEditDialog::minimumMraiMs() const
+{
+    return minimumMraiSpin_->value();
+}
+
+int TopologyBatchEditDialog::maximumMraiMs() const
+{
+    return maximumMraiSpin_->value();
+}
+
 QString TopologyBatchEditDialog::routerPluginId() const
 {
     return routerPluginCombo_->currentData().toString();
@@ -397,6 +504,11 @@ QJsonObject TopologyBatchEditDialog::routerPluginDefaultSettings() const
 
 void TopologyBatchEditDialog::accept()
 {
+    if (mraiMode() == MraiMode::RandomRange && minimumMraiMs() > maximumMraiMs())
+    {
+        QMessageBox::warning(this, QStringLiteral("输入无效"), QStringLiteral("随机 MRAI 的最小值不能大于最大值。"));
+        return;
+    }
     if (delayMode() == DelayMode::RandomRange && minimumDelayMs() > maximumDelayMs())
     {
         QMessageBox::warning(this, QStringLiteral("输入无效"), QStringLiteral("随机延迟的最小值不能大于最大值。"));
