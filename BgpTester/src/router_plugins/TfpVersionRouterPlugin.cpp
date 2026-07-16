@@ -75,19 +75,18 @@ struct PrefixVersionState
     TfpVersionVector maxVersions;
 };
 
-class TfpVersionRouterNode final : public RouterNode
+class TfpVersionRouterNode final : public StandardBgpRouterNode
 {
 public:
     explicit TfpVersionRouterNode(RouterNodeContext context, QObject* parent = nullptr)
-        : RouterNode(std::move(context), parent), localEntity_{this->context().config.asn, configuredEntityId(this->context())},
-          initialVersion_(versionFromJson(this->context().config.pluginSettings.value(QStringLiteral("initial_version"))).value_or(0)),
-          standard_(this->context())
+        : StandardBgpRouterNode(std::move(context), parent), localEntity_{this->context().config.asn, configuredEntityId(this->context())},
+          initialVersion_(versionFromJson(this->context().config.pluginSettings.value(QStringLiteral("initial_version"))).value_or(0))
     {
     }
 
     QStringList validateConfiguration() const override
     {
-        auto problems = standard_.validateConfiguration();
+        auto problems = StandardBgpRouterNode::validateConfiguration();
         const auto settings = context().config.pluginSettings;
         const auto entityValue = settings.value(QStringLiteral("entity_id"));
         if (!entityValue.isUndefined() && !entityValue.isString())
@@ -102,29 +101,9 @@ public:
         return problems;
     }
 
-    void simulationStarted() override
-    {
-        standard_.simulationStarted();
-    }
-
-    void simulationStopped() override
-    {
-        standard_.simulationStopped();
-    }
-
-    void routerStateChanged(bool active) override
-    {
-        standard_.routerStateChanged(active);
-    }
-
-    void peerStateChanged(const NeighborConfig& peer, PeerState state) override
-    {
-        standard_.peerStateChanged(peer, state);
-    }
-
     RouteEntry createOriginatedRoute(const QString& prefix) override
     {
-        auto route = standard_.createOriginatedRoute(prefix);
+        auto route = StandardBgpRouterNode::createOriginatedRoute(prefix);
         auto& state = stateFor(prefix);
         advanceLocalVersion(state);
         state.advancedForPendingDecision = true;
@@ -133,7 +112,7 @@ public:
 
     std::optional<RouteEntry> importRoute(const QString& prefix, const PathAttributes& attributes, const NeighborConfig& fromPeer) override
     {
-        auto imported = standard_.importRoute(prefix, attributes, fromPeer);
+        auto imported = StandardBgpRouterNode::importRoute(prefix, attributes, fromPeer);
         if (imported)
         {
             observeVersionInfo(prefix, attributes);
@@ -141,13 +120,15 @@ public:
         return imported;
     }
 
-    void importWithdrawal(const QString& prefix, const PathAttributes& attributes, const NeighborConfig&) override
+    void importWithdrawal(const QString& prefix, const PathAttributes& attributes, const NeighborConfig& fromPeer) override
     {
+        StandardBgpRouterNode::importWithdrawal(prefix, attributes, fromPeer);
         observeVersionInfo(prefix, attributes);
     }
 
     void localRouteWithdrawn(const QString& prefix) override
     {
+        StandardBgpRouterNode::localRouteWithdrawn(prefix);
         auto& state = stateFor(prefix);
         advanceLocalVersion(state);
         state.advancedForPendingDecision = true;
@@ -167,7 +148,7 @@ public:
             }
         }
 
-        auto selected = standard_.selectBestRoute(prefix, eligible, currentBest);
+        auto selected = StandardBgpRouterNode::selectBestRoute(prefix, eligible, currentBest);
         auto& mutableState = stateFor(prefix);
         if (selected != currentBest)
         {
@@ -180,14 +161,9 @@ public:
         return selected;
     }
 
-    std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) override
-    {
-        return standard_.exportRoute(route, toPeer);
-    }
-
     std::optional<RouteEntry> exportRouteForPrefix(const QString& prefix, const RouteEntry& route, const NeighborConfig& toPeer) override
     {
-        auto exported = standard_.exportRoute(route, toPeer);
+        auto exported = StandardBgpRouterNode::exportRouteForPrefix(prefix, route, toPeer);
         if (!exported)
         {
             return std::nullopt;
@@ -203,13 +179,13 @@ public:
         return exported;
     }
 
-    PathAttributes exportWithdrawal(const QString& prefix, const NeighborConfig&) override
+    PathAttributes exportWithdrawal(const QString& prefix, const NeighborConfig& toPeer) override
     {
+        auto attributes = StandardBgpRouterNode::exportWithdrawal(prefix, toPeer);
         auto& state = stateFor(prefix);
         ensureLocalVersion(state);
-        PathAttributes attributes;
-        TfpVersionInfo info;
-        info.triggerVector = state.maxVersions;
+        auto info = attributes.tfpVersionInfo.value_or(TfpVersionInfo{});
+        mergeVersions(info.triggerVector, state.maxVersions);
         info.triggerVector.insert(localEntity_, state.localVersion);
         attributes.tfpVersionInfo = std::move(info);
         return attributes;
@@ -280,7 +256,6 @@ private:
 
     TfpEntity localEntity_;
     quint64 initialVersion_ = 0;
-    StandardBgpRouterNode standard_;
     QHash<QString, PrefixVersionState> states_;
 };
 

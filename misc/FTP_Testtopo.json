@@ -98,8 +98,10 @@
                 "10.1.0.0/24"
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {
@@ -149,8 +151,10 @@
             "originated_prefixes": [
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {
@@ -184,8 +188,10 @@
             "originated_prefixes": [
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {
@@ -219,8 +225,10 @@
             "originated_prefixes": [
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {
@@ -254,8 +262,10 @@
             "originated_prefixes": [
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {
@@ -289,8 +299,10 @@
             "originated_prefixes": [
             ],
             "plugin": {
-                "id": "org.bgptester.router.standard-bgp",
+                "id": "org.bgptester.router.tfp-version",
                 "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
                 }
             },
             "position": {

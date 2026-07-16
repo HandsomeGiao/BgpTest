@@ -5,7 +5,9 @@
 namespace bgptester
 {
 
-class StandardBgpRouterNode final : public RouterNode
+// Baseline BGP policy shared by the standard router and routers that extend
+// standard BGP behavior with additional path attributes or decision logic.
+class StandardBgpRouterNode : public RouterNode
 {
 public:
     explicit StandardBgpRouterNode(RouterNodeContext context, QObject* parent = nullptr);

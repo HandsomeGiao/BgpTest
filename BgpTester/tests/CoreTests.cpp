@@ -1,6 +1,7 @@
 #include "engine/SimulationEngine.hpp"
 #include "persistence/EventStore.hpp"
 #include "plugin/RouterPluginRegistry.hpp"
+#include "router_plugins/StandardBgpRouterPlugin.hpp"
 #include "router_plugins/TfpVersionRouterPlugin.hpp"
 
 #include <QCoreApplication>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 
 namespace
@@ -268,6 +270,18 @@ void sourceRouterPluginControlsRouteExport()
     engine.startSimulation(topology);
     require(!engine.isRunning() && startError.contains(QStringLiteral("export_routes")),
             "invalid plugin configuration did not prevent simulation start");
+}
+
+void tfpVersionRouterExtendsStandardBgpRouter()
+{
+    auto topology = twoRouterTopology();
+    auto& config = topology.routers[QStringLiteral("R1")];
+    config.pluginId = TfpVersionRouterPluginId;
+
+    QString error;
+    std::unique_ptr<RouterNode> node(RouterPluginRegistry::instance().createRouterNode(config, topology, nullptr, &error));
+    require(node != nullptr && error.isEmpty(), "TFP version router node could not be created");
+    require(dynamic_cast<StandardBgpRouterNode*>(node.get()) != nullptr, "TFP version router node does not extend StandardBgpRouterNode");
 }
 
 Topology tfpDiamondTopology()
@@ -789,6 +803,7 @@ int main(int argc, char** argv)
         staleMraiAdvertisementDoesNotReappear();
         convergenceHistoryCapturesEveryCycle();
         sourceRouterPluginControlsRouteExport();
+        tfpVersionRouterExtendsStandardBgpRouter();
         tfpVersionInfoSurvivesRouteReflection();
         tfpVersionPluginInvalidatesOnlyExplicitOldDependencies();
         bulkUpdatesAreAggregated();
