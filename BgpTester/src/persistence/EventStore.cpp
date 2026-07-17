@@ -1,8 +1,8 @@
 #include "persistence/EventStore.hpp"
+#include "persistence/SimulationEventCodec.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QMetaObject>
 #include <QMutexLocker>
@@ -13,11 +13,55 @@
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 
 namespace bgptester
 {
 namespace
 {
+
+// raw_json is the canonical SimulationEvent representation. These columns
+// are indexed/query projections and a compatibility fallback for legacy or
+// incomplete raw_json values. Keep the enum and SELECT/INSERT lists aligned.
+enum class EventSqlColumn : int
+{
+    Id,
+    Timestamp,
+    Event,
+    Router,
+    FromPeer,
+    ToPeer,
+    FromAs,
+    ToAs,
+    MessageType,
+    Action,
+    Sequence,
+    Prefixes,
+    Withdrawn,
+    NextHop,
+    AsPath,
+    LocalPref,
+    Med,
+    RawJson,
+};
+
+constexpr int columnIndex(EventSqlColumn column)
+{
+    return static_cast<int>(column);
+}
+
+const QString& eventSelectClause()
+{
+    static const auto select = QStringLiteral("SELECT id,timestamp,event,router,from_peer,to_peer,from_as,to_as,"
+                                              "msg_type,action,sequence,prefixes,withdrawn,next_hop,as_path,"
+                                              "local_pref,med,raw_json FROM bmp_events");
+    return select;
+}
+
+QVariant eventColumnValue(const QSqlQuery& query, EventSqlColumn column)
+{
+    return query.value(columnIndex(column));
+}
 
 QString joinedAsPath(const QVector<quint32>& path)
 {
@@ -58,6 +102,140 @@ QString safeRunName(QString value)
     return value.isEmpty() ? QStringLiteral("bgp-lab") : value;
 }
 
+const QStringList& eventFilterExpressions()
+{
+    static const QStringList expressions{
+        QStringLiteral("CAST(id AS TEXT)"),
+        QStringLiteral("substr(timestamp, 12)"),
+        QStringLiteral("COALESCE(event, '')"),
+        QStringLiteral("COALESCE(router, '')"),
+        QStringLiteral("COALESCE(from_peer, '')"),
+        QStringLiteral("COALESCE(to_peer, '')"),
+        QStringLiteral("COALESCE(CAST(from_as AS TEXT), '')"),
+        QStringLiteral("COALESCE(CAST(to_as AS TEXT), '')"),
+        QStringLiteral("COALESCE(msg_type, '')"),
+        QStringLiteral("COALESCE(action, '')"),
+        QStringLiteral("CASE WHEN sequence IS NULL OR sequence = 0 THEN '' ELSE CAST(sequence AS TEXT) END"),
+        QStringLiteral("replace(COALESCE(prefixes, ''), ',', ', ')"),
+        QStringLiteral("replace(COALESCE(withdrawn, ''), ',', ', ')"),
+        QStringLiteral("COALESCE(next_hop, '')"),
+        QStringLiteral("COALESCE(as_path, '')"),
+        QStringLiteral("COALESCE(CAST(local_pref AS TEXT), '')"),
+        QStringLiteral("COALESCE(CAST(med AS TEXT), '')"),
+    };
+    return expressions;
+}
+
+QString eventFilterPredicate()
+{
+    QStringList predicates;
+    predicates.reserve(eventFilterExpressions().size());
+    for (const auto& expression : eventFilterExpressions())
+    {
+        predicates.append(QStringLiteral("instr(lower(%1), lower(?)) > 0").arg(expression));
+    }
+    return QStringLiteral("(%1)").arg(predicates.join(QStringLiteral(" OR ")));
+}
+
+QString eventWhereClause(const QString& filter, const std::optional<quint64>& maxEventId = {}, const QString& exactEvent = {})
+{
+    QStringList predicates;
+    if (maxEventId)
+    {
+        predicates.append(QStringLiteral("id <= ?"));
+    }
+    if (!exactEvent.isEmpty())
+    {
+        predicates.append(QStringLiteral("event = ?"));
+    }
+    if (!filter.isEmpty())
+    {
+        predicates.append(eventFilterPredicate());
+    }
+    return predicates.isEmpty() ? QString{} : QStringLiteral(" WHERE %1").arg(predicates.join(QStringLiteral(" AND ")));
+}
+
+void bindEventConditions(QSqlQuery& query, const QString& filter, const std::optional<quint64>& maxEventId = {},
+                         const QString& exactEvent = {})
+{
+    if (maxEventId)
+    {
+        query.addBindValue(QVariant::fromValue(*maxEventId));
+    }
+    if (!exactEvent.isEmpty())
+    {
+        query.addBindValue(exactEvent);
+    }
+    if (!filter.isEmpty())
+    {
+        for (qsizetype index = 0; index < eventFilterExpressions().size(); ++index)
+        {
+            query.addBindValue(filter);
+        }
+    }
+}
+
+bool queryCancelled(const std::function<bool()>& cancelled, QString* error)
+{
+    if (!cancelled || !cancelled())
+    {
+        return false;
+    }
+    if (error)
+    {
+        *error = QStringLiteral("查询已取消");
+    }
+    return true;
+}
+
+bool querySingleCount(QSqlDatabase& database, const QString& filter, const std::optional<quint64>& maxEventId,
+                      const QString& exactEvent, qint64* count, const QString& description, QString* error,
+                      const std::function<bool()>& cancelled)
+{
+    if (queryCancelled(cancelled, error))
+    {
+        return false;
+    }
+    QSqlQuery query(database);
+    query.prepare(QStringLiteral("SELECT COUNT(*) FROM bmp_events") + eventWhereClause(filter, maxEventId, exactEvent));
+    bindEventConditions(query, filter, maxEventId, exactEvent);
+    if (!query.exec() || !query.next())
+    {
+        if (error)
+        {
+            *error = QStringLiteral("%1失败：%2").arg(description, query.lastError().text());
+        }
+        return false;
+    }
+    if (queryCancelled(cancelled, error))
+    {
+        return false;
+    }
+    *count = query.value(0).toLongLong();
+    return true;
+}
+
+bool queryEventCounts(QSqlDatabase& database, const QString& filter, const std::optional<quint64>& maxEventId,
+                      EventHistoryPage* result, QString* error, const std::function<bool()>& cancelled)
+{
+    if (!querySingleCount(database, {}, maxEventId, {}, &result->totalCount, QStringLiteral("统计事件总数"), error, cancelled) ||
+        !querySingleCount(database, {}, maxEventId, QStringLiteral("message_received"), &result->messageTotalCount,
+                          QStringLiteral("统计报文总数"), error, cancelled))
+    {
+        return false;
+    }
+    if (filter.isEmpty())
+    {
+        result->filteredCount = result->totalCount;
+        result->filteredMessageCount = result->messageTotalCount;
+        return true;
+    }
+    return querySingleCount(database, filter, maxEventId, {}, &result->filteredCount, QStringLiteral("统计过滤后事件数"), error,
+                            cancelled) &&
+           querySingleCount(database, filter, maxEventId, QStringLiteral("message_received"), &result->filteredMessageCount,
+                            QStringLiteral("统计过滤后报文数"), error, cancelled);
+}
+
 } // namespace
 
 EventStore::EventStore(QObject* parent) : QObject(parent)
@@ -75,6 +253,8 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
 {
     endRun();
     nextId_ = 1;
+    lastInsertedEventId_ = 0;
+    committedEventId_ = 0;
     ++runSerial_;
 
     QDir baseDirectory(settings.logDirectory);
@@ -234,6 +414,26 @@ void EventStore::appendEvent(SimulationEvent event)
     enqueueEvents(std::move(events));
 }
 
+void EventStore::requestCountSnapshot(quint64 requestId)
+{
+    if (!database_.isOpen())
+    {
+        emit countSnapshotReady(requestId, runSerial_, QString{}, 0, QStringLiteral("当前没有打开的 BMP 日志数据库"));
+        return;
+    }
+
+    QString error;
+    if (!commitTransaction(true, &error))
+    {
+        emit countSnapshotReady(requestId, runSerial_, databasePath_, committedEventId_, error);
+        return;
+    }
+    // Events still waiting in pendingEvents_ are deliberately not drained.
+    // Their later eventsStored signals are ordered after this watermark and
+    // are merged into the read-only count result by MainWindow.
+    emit countSnapshotReady(requestId, runSerial_, databasePath_, committedEventId_, QString{});
+}
+
 void EventStore::drainQueue()
 {
     QVector<SimulationEvent> batch;
@@ -302,6 +502,7 @@ void EventStore::persistBatch(QVector<SimulationEvent> events)
             }
             else
             {
+                lastInsertedEventId_ = std::max(lastInsertedEventId_, event.id);
                 ++pendingTransactionRows_;
                 if (pendingTransactionRows_ >= transactionBatchSize_)
                 {
@@ -345,18 +546,63 @@ void EventStore::drainAllPending()
     }
 }
 
-void EventStore::commitTransaction(bool restart)
+bool EventStore::commitTransaction(bool restart, QString* error)
 {
-    if (!database_.isOpen() || !transactionOpen_)
+    if (!database_.isOpen())
     {
-        return;
+        return false;
     }
+    if (!transactionOpen_)
+    {
+        // Successful inserts performed without an explicit transaction are
+        // already visible to read-only connections.
+        committedEventId_ = std::max(committedEventId_, lastInsertedEventId_);
+        if (!restart)
+        {
+            return true;
+        }
+        transactionOpen_ = database_.transaction();
+        if (!transactionOpen_ && error)
+        {
+            *error = QStringLiteral("启动 SQLite 日志事务失败：%1").arg(database_.lastError().text());
+        }
+        return transactionOpen_;
+    }
+    bool success = true;
     if (!database_.commit())
     {
-        emit storeError(QStringLiteral("提交 SQLite 日志失败：%1").arg(database_.lastError().text()));
+        success = false;
+        const auto message = QStringLiteral("提交 SQLite 日志失败：%1").arg(database_.lastError().text());
+        emit storeError(message);
+        if (error)
+        {
+            *error = message;
+        }
+        database_.rollback();
+        lastInsertedEventId_ = committedEventId_;
+        transactionOpen_ = false;
     }
-    transactionOpen_ = restart && database_.transaction();
+    else
+    {
+        committedEventId_ = std::max(committedEventId_, lastInsertedEventId_);
+        transactionOpen_ = false;
+    }
+    if (restart)
+    {
+        transactionOpen_ = database_.transaction();
+        if (!transactionOpen_)
+        {
+            success = false;
+            const auto message = QStringLiteral("重新启动 SQLite 日志事务失败：%1").arg(database_.lastError().text());
+            emit storeError(message);
+            if (error && error->isEmpty())
+            {
+                *error = message;
+            }
+        }
+    }
     pendingTransactionRows_ = 0;
+    return success;
 }
 
 bool EventStore::initializeSchema(QString* error)
@@ -375,6 +621,7 @@ bool EventStore::initializeSchema(QString* error)
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_from ON bmp_events(from_peer)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_to ON bmp_events(to_peer)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_action ON bmp_events(action)"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_event ON bmp_events(event)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_sequence ON bmp_events(sequence)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_from_as ON bmp_events(from_as)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_to_as ON bmp_events(to_as)"),
@@ -412,24 +659,26 @@ bool EventStore::prepareInsert(QString* error)
 
 bool EventStore::insertEvent(const SimulationEvent& event, const QByteArray& rawJson, QString* error)
 {
-    insertQuery_.bindValue(0, static_cast<qulonglong>(event.id));
-    insertQuery_.bindValue(1, event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")));
-    insertQuery_.bindValue(2, event.event);
-    insertQuery_.bindValue(3, event.router);
-    insertQuery_.bindValue(4, event.from);
-    insertQuery_.bindValue(5, event.to);
-    insertQuery_.bindValue(6, event.fromAs ? QVariant::fromValue(*event.fromAs) : QVariant{});
-    insertQuery_.bindValue(7, event.toAs ? QVariant::fromValue(*event.toAs) : QVariant{});
-    insertQuery_.bindValue(8, event.messageType);
-    insertQuery_.bindValue(9, event.action);
-    insertQuery_.bindValue(10, static_cast<qulonglong>(event.sequence));
-    insertQuery_.bindValue(11, event.prefixes.join(u','));
-    insertQuery_.bindValue(12, event.withdrawn.join(u','));
-    insertQuery_.bindValue(13, event.nextHop);
-    insertQuery_.bindValue(14, joinedAsPath(event.asPath));
-    insertQuery_.bindValue(15, event.localPref ? QVariant::fromValue(*event.localPref) : QVariant{});
-    insertQuery_.bindValue(16, event.med ? QVariant::fromValue(*event.med) : QVariant{});
-    insertQuery_.bindValue(17, QString::fromUtf8(rawJson));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Id), static_cast<qulonglong>(event.id));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Timestamp),
+                           event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Event), event.event);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Router), event.router);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::FromPeer), event.from);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::ToPeer), event.to);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::FromAs), event.fromAs ? QVariant::fromValue(*event.fromAs) : QVariant{});
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::ToAs), event.toAs ? QVariant::fromValue(*event.toAs) : QVariant{});
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::MessageType), event.messageType);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Action), event.action);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Sequence), static_cast<qulonglong>(event.sequence));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Prefixes), event.prefixes.join(u','));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Withdrawn), event.withdrawn.join(u','));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::NextHop), event.nextHop);
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::AsPath), joinedAsPath(event.asPath));
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::LocalPref),
+                           event.localPref ? QVariant::fromValue(*event.localPref) : QVariant{});
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::Med), event.med ? QVariant::fromValue(*event.med) : QVariant{});
+    insertQuery_.bindValue(columnIndex(EventSqlColumn::RawJson), QString::fromUtf8(rawJson));
     if (!insertQuery_.exec())
     {
         if (error)
@@ -444,65 +693,18 @@ bool EventStore::insertEvent(const SimulationEvent& event, const QByteArray& raw
 
 QJsonObject EventStore::eventToJson(const SimulationEvent& event)
 {
-    QJsonArray path;
-    for (const auto asn : event.asPath)
-    {
-        path.append(static_cast<qint64>(asn));
-    }
-    QJsonArray prefixes;
-    for (const auto& prefix : event.prefixes)
-    {
-        prefixes.append(prefix);
-    }
-    QJsonArray withdrawn;
-    for (const auto& prefix : event.withdrawn)
-    {
-        withdrawn.append(prefix);
-    }
-    QJsonObject details;
-    for (auto it = event.details.cbegin(); it != event.details.cend(); ++it)
-    {
-        details.insert(it.key(), it.value());
-    }
-    QJsonObject object{
-        {QStringLiteral("id"), static_cast<qint64>(event.id)},
-        {QStringLiteral("timestamp"), event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))},
-        {QStringLiteral("event"), event.event},
-        {QStringLiteral("router"), event.router},
-        {QStringLiteral("from"), event.from},
-        {QStringLiteral("to"), event.to},
-        {QStringLiteral("msg_type"), event.messageType},
-        {QStringLiteral("action"), event.action},
-        {QStringLiteral("sequence"), static_cast<qint64>(event.sequence)},
-        {QStringLiteral("prefixes"), prefixes},
-        {QStringLiteral("withdrawn"), withdrawn},
-        {QStringLiteral("next_hop"), event.nextHop},
-        {QStringLiteral("as_path"), path},
-        {QStringLiteral("details"), details},
-    };
-    if (event.fromAs)
-    {
-        object.insert(QStringLiteral("from_as"), static_cast<qint64>(*event.fromAs));
-    }
-    if (event.toAs)
-    {
-        object.insert(QStringLiteral("to_as"), static_cast<qint64>(*event.toAs));
-    }
-    if (event.localPref)
-    {
-        object.insert(QStringLiteral("local_pref"), static_cast<qint64>(*event.localPref));
-    }
-    if (event.med)
-    {
-        object.insert(QStringLiteral("med"), static_cast<qint64>(*event.med));
-    }
-    return object;
+    return SimulationEventCodec::toJson(event);
 }
 
-QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit, QString* error,
-                                                  const std::function<bool(qsizetype, qsizetype)>& progress)
+EventHistoryPage EventStore::queryDatabase(const QString& path, int limit, const QString& filter, QString* error,
+                                           const std::function<bool(qsizetype, qsizetype)>& progress,
+                                           const std::function<bool()>& cancelled)
 {
-    QVector<SimulationEvent> result;
+    EventHistoryPage result;
+    if (error)
+    {
+        error->clear();
+    }
     const auto connection = uniqueConnectionName("bgptester-history");
     {
         auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connection);
@@ -517,65 +719,81 @@ QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit
         }
         else
         {
-            qsizetype totalRows = 0;
-            if (progress)
-            {
-                QSqlQuery countQuery(database);
-                if (countQuery.exec(QStringLiteral("SELECT COUNT(*) FROM bmp_events")) && countQuery.next())
-                {
-                    totalRows = countQuery.value(0).toLongLong();
-                    if (limit > 0)
-                    {
-                        totalRows = std::min(totalRows, static_cast<qsizetype>(limit));
-                    }
-                }
-                progress(0, totalRows);
-            }
-
-            QSqlQuery query(database);
-            const auto select = QStringLiteral("SELECT id,timestamp,event,router,from_peer,to_peer,from_as,to_as,"
-                                               "msg_type,action,sequence,prefixes,withdrawn,next_hop,as_path,"
-                                               "local_pref,med,raw_json FROM bmp_events");
-            if (limit > 0)
-            {
-                query.prepare(select + QStringLiteral(" ORDER BY id DESC LIMIT ?"));
-                query.addBindValue(limit);
-            }
-            else
-            {
-                query.prepare(select + QStringLiteral(" ORDER BY id ASC"));
-            }
-            if (!query.exec())
+            const auto transactionStarted = database.transaction();
+            if (!transactionStarted)
             {
                 if (error)
                 {
-                    *error = QStringLiteral("查询历史日志失败：%1").arg(query.lastError().text());
+                    *error = QStringLiteral("无法创建历史日志只读快照：%1").arg(database.lastError().text());
                 }
             }
-            else
+            else if (queryEventCounts(database, filter, {}, &result, error, cancelled))
             {
-                qsizetype loadedRows = 0;
-                while (query.next())
+                const auto rowsToLoad = limit > 0 ? std::min(result.filteredCount, static_cast<qint64>(limit)) : result.filteredCount;
+                const auto continueLoading = !queryCancelled(cancelled, error) &&
+                                             (!progress || progress(0, static_cast<qsizetype>(rowsToLoad)));
+                if (continueLoading)
                 {
+                    QSqlQuery query(database);
+                    const auto& select = eventSelectClause();
+                    const auto where = eventWhereClause(filter);
                     if (limit > 0)
                     {
-                        result.prepend(eventFromQuery(query));
+                        query.prepare(select + where + QStringLiteral(" ORDER BY id DESC LIMIT ?"));
                     }
                     else
                     {
-                        result.append(eventFromQuery(query));
+                        query.prepare(select + where + QStringLiteral(" ORDER BY id ASC"));
                     }
-                    ++loadedRows;
-                    if (progress && loadedRows % 512 == 0 && !progress(loadedRows, totalRows))
+                    if (!filter.isEmpty())
                     {
-                        result.clear();
-                        break;
+                        bindEventConditions(query, filter);
+                    }
+                    if (limit > 0)
+                    {
+                        query.addBindValue(limit);
+                    }
+                    if (!query.exec())
+                    {
+                        if (error)
+                        {
+                            *error = QStringLiteral("查询历史日志失败：%1").arg(query.lastError().text());
+                        }
+                    }
+                    else
+                    {
+                        result.events.reserve(static_cast<qsizetype>(rowsToLoad));
+                        qsizetype loadedRows = 0;
+                        while (query.next())
+                        {
+                            if (queryCancelled(cancelled, error))
+                            {
+                                result.events.clear();
+                                break;
+                            }
+                            result.events.append(eventFromQuery(query));
+                            ++loadedRows;
+                            if (progress && loadedRows % 512 == 0 &&
+                                !progress(loadedRows, static_cast<qsizetype>(rowsToLoad)))
+                            {
+                                result.events.clear();
+                                break;
+                            }
+                        }
+                        if (limit > 0)
+                        {
+                            std::reverse(result.events.begin(), result.events.end());
+                        }
+                        if (progress)
+                        {
+                            progress(loadedRows, static_cast<qsizetype>(rowsToLoad));
+                        }
                     }
                 }
-                if (progress)
-                {
-                    progress(loadedRows, totalRows);
-                }
+            }
+            if (transactionStarted)
+            {
+                database.rollback();
             }
             database.close();
         }
@@ -584,39 +802,174 @@ QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit
     return result;
 }
 
+EventHistoryPage EventStore::countDatabase(const QString& path, const QString& filter, quint64 maxEventId, QString* error,
+                                           const std::function<bool()>& cancelled)
+{
+    EventHistoryPage result;
+    if (error)
+    {
+        error->clear();
+    }
+    const auto connection = uniqueConnectionName("bgptester-count");
+    {
+        auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connection);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        database.setDatabaseName(path);
+        if (!database.open())
+        {
+            if (error)
+            {
+                *error = QStringLiteral("无法打开实时日志计数快照：%1").arg(database.lastError().text());
+            }
+        }
+        else
+        {
+            const auto transactionStarted = database.transaction();
+            if (!transactionStarted)
+            {
+                if (error)
+                {
+                    *error = QStringLiteral("无法创建实时日志只读快照：%1").arg(database.lastError().text());
+                }
+            }
+            else
+            {
+                queryEventCounts(database, filter, maxEventId, &result, error, cancelled);
+                database.rollback();
+            }
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connection);
+    return result;
+}
+
+ConvergenceHistoryPage EventStore::queryConvergenceDatabase(const QString& path, int limit, QString* error,
+                                                             const std::function<bool()>& cancelled)
+{
+    ConvergenceHistoryPage result;
+    if (error)
+    {
+        error->clear();
+    }
+    const auto connection = uniqueConnectionName("bgptester-convergence-history");
+    {
+        auto database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connection);
+        database.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        database.setDatabaseName(path);
+        if (!database.open())
+        {
+            if (error)
+            {
+                *error = QStringLiteral("无法打开收敛历史：%1").arg(database.lastError().text());
+            }
+        }
+        else
+        {
+            const auto transactionStarted = database.transaction();
+            if (!transactionStarted)
+            {
+                if (error)
+                {
+                    *error = QStringLiteral("无法创建收敛历史只读快照：%1").arg(database.lastError().text());
+                }
+            }
+            else if (querySingleCount(database, {}, {}, QStringLiteral("converged"), &result.totalCount,
+                                      QStringLiteral("统计收敛记录总数"), error, cancelled) &&
+                     !queryCancelled(cancelled, error))
+            {
+                QSqlQuery query(database);
+                const auto& select = eventSelectClause();
+                query.prepare(select + eventWhereClause({}, {}, QStringLiteral("converged")) +
+                              QStringLiteral(" ORDER BY id DESC LIMIT ?"));
+                bindEventConditions(query, {}, {}, QStringLiteral("converged"));
+                query.addBindValue(std::max(0, limit));
+                if (!query.exec())
+                {
+                    if (error)
+                    {
+                        *error = QStringLiteral("查询收敛历史失败：%1").arg(query.lastError().text());
+                    }
+                }
+                else
+                {
+                    result.events.reserve(static_cast<qsizetype>(std::min(result.totalCount, static_cast<qint64>(std::max(0, limit)))));
+                    while (query.next())
+                    {
+                        if (queryCancelled(cancelled, error))
+                        {
+                            result.events.clear();
+                            break;
+                        }
+                        result.events.append(eventFromQuery(query));
+                    }
+                    std::reverse(result.events.begin(), result.events.end());
+                }
+            }
+            if (transactionStarted)
+            {
+                database.rollback();
+            }
+            database.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connection);
+    return result;
+}
+
+QVector<SimulationEvent> EventStore::readDatabase(const QString& path, int limit, QString* error,
+                                                  const std::function<bool(qsizetype, qsizetype)>& progress)
+{
+    return queryDatabase(path, limit, {}, error, progress).events;
+}
+
 SimulationEvent EventStore::eventFromQuery(const QSqlQuery& query)
 {
+    const auto rawJson = eventColumnValue(query, EventSqlColumn::RawJson).toByteArray();
+    if (auto decoded = SimulationEventCodec::fromJson(rawJson))
+    {
+        return std::move(*decoded);
+    }
+
+    // Compatibility path for legacy, incomplete, or malformed raw_json.
+    // Indexed SQL projections recover the established fields; details are
+    // still restored opportunistically from any usable JSON object.
     SimulationEvent event;
-    event.id = query.value(0).toULongLong();
-    event.timestamp = QDateTime::fromString(query.value(1).toString(), QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-    event.event = query.value(2).toString();
-    event.router = query.value(3).toString();
-    event.from = query.value(4).toString();
-    event.to = query.value(5).toString();
-    if (!query.value(6).isNull())
+    event.id = eventColumnValue(query, EventSqlColumn::Id).toULongLong();
+    event.timestamp = QDateTime::fromString(eventColumnValue(query, EventSqlColumn::Timestamp).toString(),
+                                            QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+    event.event = eventColumnValue(query, EventSqlColumn::Event).toString();
+    event.router = eventColumnValue(query, EventSqlColumn::Router).toString();
+    event.from = eventColumnValue(query, EventSqlColumn::FromPeer).toString();
+    event.to = eventColumnValue(query, EventSqlColumn::ToPeer).toString();
+    const auto fromAs = eventColumnValue(query, EventSqlColumn::FromAs);
+    if (!fromAs.isNull())
     {
-        event.fromAs = query.value(6).toUInt();
+        event.fromAs = fromAs.toUInt();
     }
-    if (!query.value(7).isNull())
+    const auto toAs = eventColumnValue(query, EventSqlColumn::ToAs);
+    if (!toAs.isNull())
     {
-        event.toAs = query.value(7).toUInt();
+        event.toAs = toAs.toUInt();
     }
-    event.messageType = query.value(8).toString();
-    event.action = query.value(9).toString();
-    event.sequence = query.value(10).toULongLong();
-    event.prefixes = query.value(11).toString().split(u',', Qt::SkipEmptyParts);
-    event.withdrawn = query.value(12).toString().split(u',', Qt::SkipEmptyParts);
-    event.nextHop = query.value(13).toString();
-    event.asPath = splitAsPath(query.value(14).toString());
-    if (!query.value(15).isNull())
+    event.messageType = eventColumnValue(query, EventSqlColumn::MessageType).toString();
+    event.action = eventColumnValue(query, EventSqlColumn::Action).toString();
+    event.sequence = eventColumnValue(query, EventSqlColumn::Sequence).toULongLong();
+    event.prefixes = eventColumnValue(query, EventSqlColumn::Prefixes).toString().split(u',', Qt::SkipEmptyParts);
+    event.withdrawn = eventColumnValue(query, EventSqlColumn::Withdrawn).toString().split(u',', Qt::SkipEmptyParts);
+    event.nextHop = eventColumnValue(query, EventSqlColumn::NextHop).toString();
+    event.asPath = splitAsPath(eventColumnValue(query, EventSqlColumn::AsPath).toString());
+    const auto localPref = eventColumnValue(query, EventSqlColumn::LocalPref);
+    if (!localPref.isNull())
     {
-        event.localPref = query.value(15).toUInt();
+        event.localPref = localPref.toUInt();
     }
-    if (!query.value(16).isNull())
+    const auto med = eventColumnValue(query, EventSqlColumn::Med);
+    if (!med.isNull())
     {
-        event.med = query.value(16).toUInt();
+        event.med = med.toUInt();
     }
-    const auto rawDocument = QJsonDocument::fromJson(query.value(17).toByteArray());
+    const auto rawDocument = QJsonDocument::fromJson(rawJson);
     if (rawDocument.isObject())
     {
         const auto details = rawDocument.object().value(QStringLiteral("details")).toObject();

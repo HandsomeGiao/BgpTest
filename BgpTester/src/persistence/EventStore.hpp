@@ -18,6 +18,21 @@
 namespace bgptester
 {
 
+struct EventHistoryPage
+{
+    QVector<SimulationEvent> events;
+    qint64 totalCount = 0;
+    qint64 filteredCount = 0;
+    qint64 messageTotalCount = 0;
+    qint64 filteredMessageCount = 0;
+};
+
+struct ConvergenceHistoryPage
+{
+    QVector<SimulationEvent> events;
+    qint64 totalCount = 0;
+};
+
 class EventStore final : public QObject
 {
     Q_OBJECT
@@ -50,6 +65,13 @@ public:
     {
         return runSerial_;
     }
+    static EventHistoryPage queryDatabase(const QString& path, int limit, const QString& filter = {}, QString* error = nullptr,
+                                          const std::function<bool(qsizetype, qsizetype)>& progress = {},
+                                          const std::function<bool()>& cancelled = {});
+    static EventHistoryPage countDatabase(const QString& path, const QString& filter, quint64 maxEventId,
+                                          QString* error = nullptr, const std::function<bool()>& cancelled = {});
+    static ConvergenceHistoryPage queryConvergenceDatabase(const QString& path, int limit, QString* error = nullptr,
+                                                            const std::function<bool()>& cancelled = {});
     static QVector<SimulationEvent> readDatabase(const QString& path, int limit, QString* error = nullptr,
                                                  const std::function<bool(qsizetype, qsizetype)>& progress = {});
     static QJsonObject eventToJson(const SimulationEvent& event);
@@ -60,9 +82,11 @@ public slots:
     // EventStore object's worker thread.
     void enqueueEvents(QVector<bgptester::SimulationEvent> events);
     void appendEvent(bgptester::SimulationEvent event);
+    void requestCountSnapshot(quint64 requestId);
 
 signals:
     void eventsStored(quint64 runSerial, QVector<bgptester::SimulationEvent> events);
+    void countSnapshotReady(quint64 requestId, quint64 runSerial, QString databasePath, quint64 maxEventId, QString error);
     void storeError(QString message);
     void pathsChanged(QString logFile, QString databaseFile);
 
@@ -75,7 +99,7 @@ private:
     bool insertEvent(const SimulationEvent& event, const QByteArray& rawJson, QString* error);
     void persistBatch(QVector<SimulationEvent> events);
     void drainAllPending();
-    void commitTransaction(bool restart);
+    bool commitTransaction(bool restart, QString* error = nullptr);
     static SimulationEvent eventFromQuery(const QSqlQuery& query);
     static QString uniqueConnectionName(const char* prefix);
 
@@ -87,6 +111,8 @@ private:
     QString databasePath_;
     quint64 nextId_ = 1;
     quint64 runSerial_ = 0;
+    quint64 lastInsertedEventId_ = 0;
+    quint64 committedEventId_ = 0;
     int pendingTransactionRows_ = 0;
     bool transactionOpen_ = false;
 

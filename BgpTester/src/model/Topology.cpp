@@ -236,40 +236,6 @@ QJsonObject Topology::toJson() const
         {QStringLiteral("router_class"), QStringLiteral("BgpRouter")},
     };
 
-    QMap<QString, QJsonArray> neighborArrays;
-    for (auto it = routers.cbegin(); it != routers.cend(); ++it)
-    {
-        neighborArrays.insert(it.key(), {});
-    }
-    for (const auto& link : links)
-    {
-        const auto aIt = routers.constFind(link.a);
-        const auto bIt = routers.constFind(link.b);
-        if (aIt == routers.cend() || bIt == routers.cend())
-        {
-            continue;
-        }
-        const auto session = aIt->asn == bIt->asn ? QStringLiteral("ibgp") : QStringLiteral("ebgp");
-        neighborArrays[link.a].append(QJsonObject{
-            {QStringLiteral("id"), link.b},
-            {QStringLiteral("remote_asn"), static_cast<qint64>(bIt->asn)},
-            {QStringLiteral("session_type"), session},
-            {QStringLiteral("rr_client"), link.rrClientFromA},
-            {QStringLiteral("mrai_ms"), link.mraiMsFromA},
-            {QStringLiteral("enabled"), link.enabled},
-            {QStringLiteral("relationship"), toString(neighborRelationshipFor(link, true))},
-        });
-        neighborArrays[link.b].append(QJsonObject{
-            {QStringLiteral("id"), link.a},
-            {QStringLiteral("remote_asn"), static_cast<qint64>(aIt->asn)},
-            {QStringLiteral("session_type"), session},
-            {QStringLiteral("rr_client"), link.rrClientFromB},
-            {QStringLiteral("mrai_ms"), link.mraiMsFromB},
-            {QStringLiteral("enabled"), link.enabled},
-            {QStringLiteral("relationship"), toString(neighborRelationshipFor(link, false))},
-        });
-    }
-
     QJsonArray routerArray;
     for (auto it = routers.cbegin(); it != routers.cend(); ++it)
     {
@@ -284,7 +250,6 @@ QJsonObject Topology::toJson() const
              QJsonObject{{QStringLiteral("x"), router.position.x()}, {QStringLiteral("y"), router.position.y()}}},
             {QStringLiteral("plugin"),
              QJsonObject{{QStringLiteral("id"), router.pluginId}, {QStringLiteral("settings"), router.pluginSettings}}},
-            {QStringLiteral("neighbors"), neighborArrays.value(router.id)},
         });
     }
 
@@ -318,7 +283,9 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
 
     const auto routerValues = object.value(QStringLiteral("routers")).toArray();
     QVector<QJsonObject> originalRouters;
+    QVector<QString> normalizedRouterIds;
     originalRouters.reserve(routerValues.size());
+    normalizedRouterIds.reserve(routerValues.size());
     int index = 0;
     for (const auto& value : routerValues)
     {
@@ -381,12 +348,23 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
         {
             router.pluginSettings = entry.value(QStringLiteral("plugin_settings")).toObject();
         }
+        normalizedRouterIds.append(router.id);
         topology.routers.insert(router.id, router);
         ++index;
     }
 
     const auto linkValues = object.value(QStringLiteral("links")).toArray();
-    QSet<QString> linksWithExplicitRelationship;
+    struct ExplicitLinkFields
+    {
+        bool enabled = false;
+        bool rrClientFromA = false;
+        bool rrClientFromB = false;
+        bool mraiMsFromA = false;
+        bool mraiMsFromB = false;
+        bool relationship = false;
+    };
+    QMap<QString, qsizetype> linkIndexes;
+    QMap<QString, ExplicitLinkFields> explicitLinkFields;
     for (const auto& value : linkValues)
     {
         if (!value.isObject())
@@ -401,6 +379,7 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
         LinkConfig link;
         link.a = entry.value(QStringLiteral("a")).toString().trimmed();
         link.b = entry.value(QStringLiteral("b")).toString().trimmed();
+        const auto edge = edgeKey(link.a, link.b);
         link.enabled = entry.value(QStringLiteral("enabled")).toBool(true);
         link.delayMs = jsonNonNegativeInt(entry, QStringLiteral("delay_ms"), 0);
         link.rrClientFromA = entry.value(QStringLiteral("rr_client_from_a")).toBool(false);
@@ -429,18 +408,31 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
                 return std::nullopt;
             }
             link.businessRelationship = *relationship;
-            linksWithExplicitRelationship.insert(edgeKey(link.a, link.b));
+        }
+        if (!linkIndexes.contains(edge))
+        {
+            linkIndexes.insert(edge, topology.links.size());
+            explicitLinkFields.insert(
+                edge, ExplicitLinkFields{
+                          .enabled = entry.value(QStringLiteral("enabled")).isBool(),
+                          .rrClientFromA = entry.value(QStringLiteral("rr_client_from_a")).isBool(),
+                          .rrClientFromB = entry.value(QStringLiteral("rr_client_from_b")).isBool(),
+                          .mraiMsFromA = entry.value(QStringLiteral("mrai_ms_from_a")).isDouble(),
+                          .mraiMsFromB = entry.value(QStringLiteral("mrai_ms_from_b")).isDouble(),
+                          .relationship = !relationshipValue.isUndefined() && !relationshipValue.isNull(),
+                      });
         }
         topology.links.append(link);
     }
 
-    // Old topology files kept directional MRAI/RR values in neighbor entries;
-    // relationship is accepted there as a compatibility format as well.
-    // Also synthesize a link when a valid neighbor pair has no links entry.
+    // Legacy topology files kept link/session values in neighbor entries. A
+    // links field is authoritative when present; neighbors only fill fields
+    // omitted from that link, or synthesize an otherwise missing link.
     QMap<QString, LinkBusinessRelationship> legacyRelationships;
-    for (const auto& routerObject : originalRouters)
+    for (qsizetype routerIndex = 0; routerIndex < originalRouters.size(); ++routerIndex)
     {
-        const auto routerId = routerObject.value(QStringLiteral("id")).toString();
+        const auto& routerObject = originalRouters[routerIndex];
+        const auto& routerId = normalizedRouterIds[routerIndex];
         for (const auto& neighborValue : routerObject.value(QStringLiteral("neighbors")).toArray())
         {
             const auto neighborObject = neighborValue.toObject();
@@ -449,21 +441,25 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
             {
                 continue;
             }
-            auto* link = topology.findLink(routerId, peerId);
-            if (!link)
+            const auto edge = edgeKey(routerId, peerId);
+            auto linkIndex = linkIndexes.constFind(edge);
+            if (linkIndex == linkIndexes.cend())
             {
                 LinkConfig generated;
                 generated.a = routerId;
                 generated.b = peerId;
-                generated.enabled = neighborObject.value(QStringLiteral("enabled")).toBool(true);
+                linkIndexes.insert(edge, topology.links.size());
+                explicitLinkFields.insert(edge, ExplicitLinkFields{});
                 topology.links.append(generated);
-                link = &topology.links.last();
+                linkIndex = linkIndexes.constFind(edge);
             }
+            auto& link = topology.links[linkIndex.value()];
+            const auto fields = explicitLinkFields.value(edge);
             const auto rr = neighborObject.value(QStringLiteral("rr_client")).toBool(false);
             const auto mrai = jsonNonNegativeInt(neighborObject, QStringLiteral("mrai_ms"), 0);
             const auto enabled = neighborObject.value(QStringLiteral("enabled")).toBool(true);
             const auto relationshipValue = neighborObject.value(QStringLiteral("relationship"));
-            if (!relationshipValue.isUndefined() && !relationshipValue.isNull())
+            if (!fields.relationship && !relationshipValue.isUndefined() && !relationshipValue.isNull())
             {
                 if (!relationshipValue.isString())
                 {
@@ -483,44 +479,44 @@ std::optional<Topology> Topology::fromJson(const QJsonObject& object, QString* e
                     }
                     return std::nullopt;
                 }
-                const auto edge = edgeKey(routerId, peerId);
-                const auto linkRelationship = linkRelationshipForNeighbor(*relationship, link->a == routerId);
-                if (linksWithExplicitRelationship.contains(edge))
+                const auto linkRelationship = linkRelationshipForNeighbor(*relationship, link.a == routerId);
+                const auto previous = legacyRelationships.constFind(edge);
+                if (previous != legacyRelationships.cend() && previous.value() != linkRelationship)
                 {
-                    if (link->businessRelationship != linkRelationship)
+                    if (error)
                     {
-                        if (error)
-                        {
-                            *error = QStringLiteral("链路 %1 - %2 与邻居条目的 relationship 不一致").arg(link->a, link->b);
-                        }
-                        return std::nullopt;
+                        *error = QStringLiteral("链路 %1 - %2 的双向邻居 relationship 不一致").arg(link.a, link.b);
                     }
+                    return std::nullopt;
                 }
-                else
-                {
-                    const auto previous = legacyRelationships.constFind(edge);
-                    if (previous != legacyRelationships.cend() && previous.value() != linkRelationship)
-                    {
-                        if (error)
-                        {
-                            *error = QStringLiteral("链路 %1 - %2 的双向邻居 relationship 不一致").arg(link->a, link->b);
-                        }
-                        return std::nullopt;
-                    }
-                    legacyRelationships.insert(edge, linkRelationship);
-                    link->businessRelationship = linkRelationship;
-                }
+                legacyRelationships.insert(edge, linkRelationship);
+                link.businessRelationship = linkRelationship;
             }
-            link->enabled = link->enabled && enabled;
-            if (link->a == routerId)
+            if (!fields.enabled)
             {
-                link->rrClientFromA = rr;
-                link->mraiMsFromA = mrai;
+                link.enabled = link.enabled && enabled;
+            }
+            if (link.a == routerId)
+            {
+                if (!fields.rrClientFromA)
+                {
+                    link.rrClientFromA = rr;
+                }
+                if (!fields.mraiMsFromA)
+                {
+                    link.mraiMsFromA = mrai;
+                }
             }
             else
             {
-                link->rrClientFromB = rr;
-                link->mraiMsFromB = mrai;
+                if (!fields.rrClientFromB)
+                {
+                    link.rrClientFromB = rr;
+                }
+                if (!fields.mraiMsFromB)
+                {
+                    link.mraiMsFromB = mrai;
+                }
             }
         }
     }

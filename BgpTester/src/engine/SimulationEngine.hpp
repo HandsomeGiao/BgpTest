@@ -79,9 +79,14 @@ private:
     {
         NeighborConfig config;
         PeerState state = PeerState::Idle;
+        quint64 sessionEpoch = 0;
+        quint64 mraiFlushGeneration = 0;
+        quint64 withdrawalFlushGeneration = 0;
         qint64 nextMraiAt = 0;
         bool flushScheduled = false;
         bool withdrawalFlushScheduled = false;
+        qsizetype pendingAdvertisementCount = 0;
+        qsizetype pendingWithdrawalCount = 0;
         QMap<QString, PendingUpdate> pending;
     };
 
@@ -112,6 +117,8 @@ private:
         ScheduledKind kind = ScheduledKind::DeliverMessages;
         QString from;
         QString to;
+        quint64 sessionEpoch = 0;
+        quint64 flushGeneration = 0;
         QVector<BgpMessage> messages;
     };
 
@@ -129,10 +136,19 @@ private:
 
     qint64 now() const;
     void clearRuntime();
-    bool buildRuntime(QString* error);
+    bool buildRuntime(const Topology& topology, QString* error);
     void armNextEvent();
     void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
     void publishStats();
+    void invalidateSession(PeerRuntime& peer);
+    void clearPendingUpdates(PeerRuntime& peer);
+    void setPendingUpdate(PeerRuntime& peer, const QString& prefix, PendingUpdate update);
+    void removePendingUpdate(PeerRuntime& peer, const QString& prefix);
+    void cancelEmptyFlushes(PeerRuntime& peer);
+    std::optional<quint64> sessionEpoch(const QString& from, const QString& to) const;
+    bool guardedMessageHasCurrentRoutes(const BgpMessage& message) const;
+    bool scheduledEventValid(const ScheduledEvent& event) const;
+    void pruneInvalidScheduledEvents();
 
     void scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs = 0);
     void scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt);
@@ -164,7 +180,7 @@ private:
     void recordTopologyEvent(const QString& name, QMap<QString, QString> details = {});
     bool hasRouteReflectorClients(const RouterRuntime& router) const;
 
-    Topology topology_;
+    SimulationSettings simulation_;
     QMap<QString, RouterRuntime> routers_;
     QMap<QString, LinkConfig> links_;
     std::priority_queue<ScheduledEvent, std::vector<ScheduledEvent>, LaterEvent> events_;
@@ -180,6 +196,7 @@ private:
     quint64 nextOrder_ = 0;
     quint64 nextGeneration_ = 0;
     quint64 deliveredMessages_ = 0;
+    bool scheduledEventsNeedPruning_ = false;
     bool routerSnapshotsDirty_ = false;
     bool running_ = false;
     bool converged_ = false;

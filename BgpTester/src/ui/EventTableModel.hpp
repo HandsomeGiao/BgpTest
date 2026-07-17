@@ -47,6 +47,7 @@ public:
     void setEvents(QVector<SimulationEvent> events);
     void clear();
     const SimulationEvent* eventAt(int row) const;
+    static bool matchesFilter(const SimulationEvent& event, const QString& filter);
     static constexpr qsizetype liveCapacity()
     {
         return capacity_;

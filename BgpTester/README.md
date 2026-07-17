@@ -114,7 +114,7 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 - `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
 - `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
 
-插件 ID 在进程内必须唯一，API 版本当前为 `3`。插件缺失、ID 重复、API
+插件 ID 在进程内必须唯一，API 版本当前为 `4`。插件缺失、ID 重复、API
 版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
 
 ### TFP 路径版本插件
@@ -153,7 +153,7 @@ SQLite 历史中检查传播过程。
 - `bmp_collector.log`：JSON Lines；
 - `bmp_collector.sqlite`：带常用查询索引的 SQLite 历史库。
 
-窗口底部的 BMP 监控器提供“事件日志”和“收敛时间”两个页面。事件日志页可通过“显示列”按钮或表头右键菜单选择要显示、隐藏的列，选择会在下次启动时恢复。收敛时间页实时显示当前收敛过程的触发事件与已用时，并保留本次运行中每一轮收敛的触发事件、开始时间、完成时间和持续时间；持续时间包含配置的收敛静默窗口。双击事件记录可查看完整 JSON；“打开历史”可载入已有 SQLite 日志及其中的收敛记录。
+窗口底部的 BMP 监控器提供“事件日志”和“收敛时间”两个页面。事件日志页可通过“显示列”按钮或表头右键菜单选择要显示、隐藏的列，选择会在下次启动时恢复。收敛时间页实时显示当前收敛过程的触发事件与已用时，并保留本次运行中每一轮收敛的触发事件、开始时间、完成时间和持续时间；持续时间包含配置的收敛静默窗口。双击事件记录可查看完整 JSON；“打开历史”会在后台查询 SQLite，只把最近 20000 条匹配事件放入表格，并另外显示完整日志中的事件总数、过滤后事件数、BGP 报文总数和过滤后报文数。这里的“报文”严格指 `event=message_received`，不包含拓扑和收敛事件。
 
 事件持久化运行在独立线程中。仿真线程先把批量事件放入有上限的队列，后台线程批量写入 JSONL 和 SQLite；队列达到上限时会对仿真施加背压，避免以内存无限堆积换取吞吐。GUI 每帧只抽取一批最近事件，实时表最多保留 20000 条，完整历史始终保存在日志文件中。
 
@@ -166,7 +166,9 @@ SQLite 历史中检查传播过程。
 - `rr_client_from_b` / `mrai_ms_from_b`：反方向。
 - `relationship`：eBGP 商业关系，可取 `unspecified`、`peer`、`a_provider` 或 `b_provider`；`a_provider` 表示 A 是 B 的 provider，`b_provider` 表示 B 是 A 的 provider。
 
-保存时会同时生成每台路由器的 `neighbors` 数组，便于人工阅读。其中 `neighbors[].relationship` 使用本地路由器视角，可取 `unspecified`、`peer`、`provider` 或 `customer`。加载旧拓扑时也会读取其中的方向性 MRAI/RR 字段；缺少商业关系字段的旧拓扑按 `unspecified` 处理，以保留原有普通 eBGP 行为。
+新保存的拓扑只以 `links` 作为链路与会话配置的事实来源，不再生成重复的 `neighbors` 数组。加载器仍兼容旧拓扑中的 `neighbors`：它可补充 `links` 中缺失的方向性 MRAI/RR、启用状态和商业关系，也可在没有对应 `links` 条目时补建链路；同一字段同时出现时以 `links` 为准。
+
+旧 `neighbors[].relationship` 使用本地路由器视角，可取 `unspecified`、`peer`、`provider` 或 `customer`。当 `links` 未显式给出 `enabled` 时，双向旧邻居条目的 `enabled` 按逻辑 AND 合并，即任一端为 `false` 时链路停用；双向 `relationship` 换算到链路视角后若互相矛盾，加载器会拒绝该拓扑。旧拓扑缺少商业关系字段时按 `unspecified` 处理，以保留原有普通 eBGP 行为。
 
 每台路由器可使用独立插件；旧拓扑未提供 `plugin` 时自动使用内置标准
 BGP 插件：

@@ -147,9 +147,9 @@ void SimulationEngine::startSimulation(Topology topology)
     }
 
     clearRuntime();
-    topology_ = std::move(topology);
+    simulation_ = topology.simulation;
     QString pluginError;
-    if (!buildRuntime(&pluginError))
+    if (!buildRuntime(topology, &pluginError))
     {
         clearRuntime();
         emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(pluginError));
@@ -160,7 +160,7 @@ void SimulationEngine::startSimulation(Topology topology)
     convergenceStartedAt_ = 0;
     convergenceSequence_ = 0;
     convergenceTriggerEvent_ = QStringLiteral("simulation_started");
-    convergenceTriggerContext_ = topology_.simulation.name;
+    convergenceTriggerContext_ = simulation_.name;
     running_ = true;
     converged_ = false;
     for (auto& router : routers_)
@@ -171,7 +171,7 @@ void SimulationEngine::startSimulation(Topology topology)
 
     emit runningChanged(true);
     emit convergenceChanged(false);
-    recordTopologyEvent(QStringLiteral("simulation_started"), {{QStringLiteral("name"), topology_.simulation.name},
+    recordTopologyEvent(QStringLiteral("simulation_started"), {{QStringLiteral("name"), simulation_.name},
                                                                {QStringLiteral("routers"), QString::number(routers_.size())},
                                                                {QStringLiteral("links"), QString::number(links_.size())}});
 
@@ -203,6 +203,7 @@ void SimulationEngine::stopSimulation()
     eventTimer_->stop();
     statusTimer_->stop();
     events_ = {};
+    scheduledEventsNeedPruning_ = false;
     for (auto& router : routers_)
     {
         router.active = false;
@@ -211,7 +212,7 @@ void SimulationEngine::stopSimulation()
         {
             peer.state = PeerState::Idle;
             router.node->peerStateChanged(peer.config, peer.state);
-            peer.pending.clear();
+            clearPendingUpdates(peer);
             peer.flushScheduled = false;
             peer.withdrawalFlushScheduled = false;
         }
@@ -228,6 +229,7 @@ void SimulationEngine::clearRuntime()
     eventTimer_->stop();
     statusTimer_->stop();
     events_ = {};
+    scheduledEventsNeedPruning_ = false;
     for (auto& router : routers_)
     {
         delete router.node;
@@ -235,6 +237,7 @@ void SimulationEngine::clearRuntime()
     }
     routers_.clear();
     links_.clear();
+    simulation_ = {};
     nextSequence_ = 0;
     nextOrder_ = 0;
     nextGeneration_ = 0;
@@ -244,20 +247,20 @@ void SimulationEngine::clearRuntime()
     convergenceTriggerContext_.clear();
 }
 
-bool SimulationEngine::buildRuntime(QString* error)
+bool SimulationEngine::buildRuntime(const Topology& topology, QString* error)
 {
     if (error)
     {
         error->clear();
     }
-    for (auto it = topology_.routers.cbegin(); it != topology_.routers.cend(); ++it)
+    for (auto it = topology.routers.cbegin(); it != topology.routers.cend(); ++it)
     {
         RouterRuntime runtime;
         runtime.config = it.value();
         runtime.active = true;
         runtime.localRoutes.reserve(runtime.config.originatedPrefixes.size());
         runtime.locRib.reserve(runtime.config.originatedPrefixes.size());
-        for (const auto& neighbor : topology_.neighborsFor(it.key()))
+        for (const auto& neighbor : topology.neighborsFor(it.key()))
         {
             PeerRuntime peer;
             peer.config = neighbor;
@@ -265,7 +268,7 @@ bool SimulationEngine::buildRuntime(QString* error)
             runtime.peers.insert(neighbor.id, peer);
         }
         QString creationError;
-        runtime.node = RouterPluginRegistry::instance().createRouterNode(runtime.config, topology_, this, &creationError);
+        runtime.node = RouterPluginRegistry::instance().createRouterNode(runtime.config, topology, this, &creationError);
         if (!runtime.node)
         {
             if (error)
@@ -293,7 +296,7 @@ bool SimulationEngine::buildRuntime(QString* error)
         }
         routers_.insert(it.key(), runtime);
     }
-    for (const auto& link : topology_.links)
+    for (const auto& link : topology.links)
     {
         links_.insert(Topology::edgeKey(link.a, link.b), link);
     }
@@ -302,6 +305,7 @@ bool SimulationEngine::buildRuntime(QString* error)
 
 void SimulationEngine::armNextEvent()
 {
+    pruneInvalidScheduledEvents();
     if (!running_ || events_.empty())
     {
         eventTimer_->stop();
@@ -309,6 +313,168 @@ void SimulationEngine::armNextEvent()
     }
     const auto delay = std::max<qint64>(0, events_.top().dueAt - now());
     eventTimer_->start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
+}
+
+void SimulationEngine::invalidateSession(PeerRuntime& peer)
+{
+    ++peer.sessionEpoch;
+    clearPendingUpdates(peer);
+    peer.flushScheduled = false;
+    peer.withdrawalFlushScheduled = false;
+    scheduledEventsNeedPruning_ = true;
+}
+
+void SimulationEngine::clearPendingUpdates(PeerRuntime& peer)
+{
+    peer.pending.clear();
+    peer.pendingAdvertisementCount = 0;
+    peer.pendingWithdrawalCount = 0;
+}
+
+void SimulationEngine::setPendingUpdate(PeerRuntime& peer, const QString& prefix, PendingUpdate update)
+{
+    if (const auto existing = peer.pending.constFind(prefix); existing != peer.pending.cend())
+    {
+        if (existing->route)
+        {
+            --peer.pendingAdvertisementCount;
+        }
+        else
+        {
+            --peer.pendingWithdrawalCount;
+        }
+    }
+    if (update.route)
+    {
+        ++peer.pendingAdvertisementCount;
+    }
+    else
+    {
+        ++peer.pendingWithdrawalCount;
+    }
+    peer.pending.insert(prefix, std::move(update));
+}
+
+void SimulationEngine::removePendingUpdate(PeerRuntime& peer, const QString& prefix)
+{
+    const auto existing = peer.pending.find(prefix);
+    if (existing == peer.pending.end())
+    {
+        return;
+    }
+    if (existing->route)
+    {
+        --peer.pendingAdvertisementCount;
+    }
+    else
+    {
+        --peer.pendingWithdrawalCount;
+    }
+    peer.pending.erase(existing);
+}
+
+void SimulationEngine::cancelEmptyFlushes(PeerRuntime& peer)
+{
+    if (peer.flushScheduled && peer.pendingAdvertisementCount == 0)
+    {
+        peer.flushScheduled = false;
+        ++peer.mraiFlushGeneration;
+        scheduledEventsNeedPruning_ = true;
+    }
+    if (peer.withdrawalFlushScheduled && peer.pendingWithdrawalCount == 0)
+    {
+        peer.withdrawalFlushScheduled = false;
+        ++peer.withdrawalFlushGeneration;
+        scheduledEventsNeedPruning_ = true;
+    }
+}
+
+std::optional<quint64> SimulationEngine::sessionEpoch(const QString& from, const QString& to) const
+{
+    const auto routerIt = routers_.constFind(from);
+    if (routerIt == routers_.cend())
+    {
+        return std::nullopt;
+    }
+    const auto peerIt = routerIt->peers.constFind(to);
+    if (peerIt == routerIt->peers.cend())
+    {
+        return std::nullopt;
+    }
+    return peerIt->sessionEpoch;
+}
+
+bool SimulationEngine::guardedMessageHasCurrentRoutes(const BgpMessage& message) const
+{
+    if (!message.guarded)
+    {
+        return true;
+    }
+    const auto routerIt = routers_.constFind(message.from);
+    if (routerIt == routers_.cend())
+    {
+        return false;
+    }
+    const auto peerGenerations = routerIt->outboundGenerations.constFind(message.to);
+    if (peerGenerations == routerIt->outboundGenerations.cend())
+    {
+        return false;
+    }
+    const auto isCurrent = [&](const QString& prefix)
+    {
+        const auto expected = message.generations.constFind(prefix);
+        return expected != message.generations.cend() && peerGenerations->value(prefix) == expected.value();
+    };
+    return std::any_of(message.nlri.cbegin(), message.nlri.cend(), isCurrent) ||
+           std::any_of(message.withdrawn.cbegin(), message.withdrawn.cend(), isCurrent);
+}
+
+bool SimulationEngine::scheduledEventValid(const ScheduledEvent& event) const
+{
+    const auto routerIt = routers_.constFind(event.from);
+    if (routerIt == routers_.cend() || !messageDeliverable(event.from, event.to))
+    {
+        return false;
+    }
+    const auto peerIt = routerIt->peers.constFind(event.to);
+    if (peerIt == routerIt->peers.cend() || peerIt->sessionEpoch != event.sessionEpoch)
+    {
+        return false;
+    }
+    switch (event.kind)
+    {
+        case ScheduledKind::DeliverMessages:
+            return std::any_of(event.messages.cbegin(), event.messages.cend(),
+                               [this](const auto& message) { return guardedMessageHasCurrentRoutes(message); });
+        case ScheduledKind::FlushMrai:
+            return peerIt->state == PeerState::Established && peerIt->flushScheduled && peerIt->pendingAdvertisementCount > 0 &&
+                   peerIt->mraiFlushGeneration == event.flushGeneration;
+        case ScheduledKind::FlushWithdrawals:
+            return peerIt->state == PeerState::Established && peerIt->withdrawalFlushScheduled && peerIt->pendingWithdrawalCount > 0 &&
+                   peerIt->withdrawalFlushGeneration == event.flushGeneration;
+    }
+    return false;
+}
+
+void SimulationEngine::pruneInvalidScheduledEvents()
+{
+    if (!scheduledEventsNeedPruning_)
+    {
+        return;
+    }
+
+    decltype(events_) retainedEvents;
+    while (!events_.empty())
+    {
+        auto event = events_.top();
+        events_.pop();
+        if (scheduledEventValid(event))
+        {
+            retainedEvents.push(std::move(event));
+        }
+    }
+    events_ = std::move(retainedEvents);
+    scheduledEventsNeedPruning_ = false;
 }
 
 void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, const QString& convergenceTriggerContext)
@@ -332,6 +498,7 @@ void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, cons
 
 void SimulationEngine::publishStats()
 {
+    pruneInvalidScheduledEvents();
     const auto elapsedMs = now();
     emit statsChanged(SimulationStats{
         .running = running_,
@@ -347,7 +514,8 @@ void SimulationEngine::publishStats()
 
 void SimulationEngine::scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs)
 {
-    if (!running_ || messages.isEmpty() || !messageDeliverable(from, to))
+    const auto currentEpoch = sessionEpoch(from, to);
+    if (!running_ || messages.isEmpty() || !currentEpoch || !messageDeliverable(from, to))
     {
         return;
     }
@@ -376,6 +544,7 @@ void SimulationEngine::scheduleMessages(const QString& from, const QString& to, 
             .kind = ScheduledKind::DeliverMessages,
             .from = from,
             .to = to,
+            .sessionEpoch = *currentEpoch,
             .messages = std::move(chunk),
         });
     }
@@ -385,12 +554,25 @@ void SimulationEngine::scheduleMessages(const QString& from, const QString& to, 
 
 void SimulationEngine::scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt)
 {
+    auto routerIt = routers_.find(from);
+    if (!running_ || routerIt == routers_.end())
+    {
+        return;
+    }
+    auto peerIt = routerIt->peers.find(to);
+    if (peerIt == routerIt->peers.end())
+    {
+        return;
+    }
+    const auto flushGeneration = ++peerIt->mraiFlushGeneration;
     events_.push(ScheduledEvent{
         .dueAt = std::max(now(), dueAt),
         .order = ++nextOrder_,
         .kind = ScheduledKind::FlushMrai,
         .from = from,
         .to = to,
+        .sessionEpoch = peerIt->sessionEpoch,
+        .flushGeneration = flushGeneration,
         .messages = {},
     });
     markActivity();
@@ -399,12 +581,25 @@ void SimulationEngine::scheduleMraiFlush(const QString& from, const QString& to,
 
 void SimulationEngine::scheduleWithdrawalFlush(const QString& from, const QString& to)
 {
+    auto routerIt = routers_.find(from);
+    if (!running_ || routerIt == routers_.end())
+    {
+        return;
+    }
+    auto peerIt = routerIt->peers.find(to);
+    if (peerIt == routerIt->peers.end())
+    {
+        return;
+    }
+    const auto flushGeneration = ++peerIt->withdrawalFlushGeneration;
     events_.push(ScheduledEvent{
         .dueAt = now(),
         .order = ++nextOrder_,
         .kind = ScheduledKind::FlushWithdrawals,
         .from = from,
         .to = to,
+        .sessionEpoch = peerIt->sessionEpoch,
+        .flushGeneration = flushGeneration,
         .messages = {},
     });
     markActivity();
@@ -422,10 +617,16 @@ void SimulationEngine::processDueEvents()
     constexpr qint64 maxTurnMs = 8;
     QElapsedTimer turnTimer;
     turnTimer.start();
+    pruneInvalidScheduledEvents();
     while (!events_.empty() && events_.top().dueAt <= now() && processed < maxPerTurn && turnTimer.elapsed() < maxTurnMs)
     {
         auto event = events_.top();
         events_.pop();
+        if (!scheduledEventValid(event))
+        {
+            ++processed;
+            continue;
+        }
         switch (event.kind)
         {
             case ScheduledKind::DeliverMessages:
@@ -505,7 +706,7 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
     peerIt->flushScheduled = false;
     if (!routerIt->active || peerIt->state != PeerState::Established || !messageDeliverable(from, to))
     {
-        peerIt->pending.clear();
+        clearPendingUpdates(*peerIt);
         return;
     }
 
@@ -534,6 +735,7 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
                 messages.append(makeUpdateMessage(from, to, prefix, pending.route, {}, pending.generation));
             }
         }
+        --peerIt->pendingAdvertisementCount;
         pendingIt = peerIt->pending.erase(pendingIt);
     }
     if (messages.isEmpty())
@@ -560,7 +762,7 @@ void SimulationEngine::flushWithdrawals(const QString& from, const QString& to)
     peerIt->withdrawalFlushScheduled = false;
     if (!routerIt->active || peerIt->state != PeerState::Established || !messageDeliverable(from, to))
     {
-        peerIt->pending.clear();
+        clearPendingUpdates(*peerIt);
         return;
     }
 
@@ -578,7 +780,7 @@ void SimulationEngine::flushWithdrawals(const QString& from, const QString& to)
         const auto current = peerGenerations == routerIt->outboundGenerations.cend() ? 0 : peerGenerations->value(prefix);
         if (current == pending.generation)
         {
-            if (!messages.isEmpty() && messages.last().attributes == pending.withdrawalAttributes)
+            if (!messages.isEmpty() && messages.last().withdrawalAttributes == pending.withdrawalAttributes)
             {
                 messages.last().withdrawn.append(prefix);
                 messages.last().generations.insert(prefix, pending.generation);
@@ -588,6 +790,7 @@ void SimulationEngine::flushWithdrawals(const QString& from, const QString& to)
                 messages.append(makeUpdateMessage(from, to, prefix, std::nullopt, pending.withdrawalAttributes, pending.generation));
             }
         }
+        --peerIt->pendingWithdrawalCount;
         pendingIt = peerIt->pending.erase(pendingIt);
     }
     scheduleMessages(from, to, std::move(messages));
@@ -670,11 +873,13 @@ void SimulationEngine::commitOutbound(const BgpMessage& message)
     {
         out.remove(prefix);
     }
-    for (const auto& prefix : message.nlri)
+    if (!message.nlri.isEmpty())
     {
-        RouteEntry route = message.advertisedRoute.value_or(RouteEntry{});
-        route.attributes = message.attributes;
-        out.insert(prefix, advertisedRouteFingerprint(route));
+        const auto fingerprint = advertisedRouteFingerprint(message.advertisedRoute.value_or(RouteEntry{}));
+        for (const auto& prefix : message.nlri)
+        {
+            out.insert(prefix, fingerprint);
+        }
     }
     auto generationsIt = routerIt->outboundGenerations.find(message.to);
     if (generationsIt != routerIt->outboundGenerations.end())
@@ -732,14 +937,13 @@ void SimulationEngine::handleOpen(const BgpMessage& message)
     }
     if (message.openAsn != peerIt->config.remoteAsn)
     {
+        neighborDown(message.to, message.from);
         BgpMessage notification;
         notification.type = MessageType::Notification;
         notification.errorCode = 2;
         notification.errorSubcode = 2;
         notification.errorData = QStringLiteral("Bad Peer AS");
         scheduleMessages(message.to, message.from, {notification});
-        peerIt->state = PeerState::Idle;
-        receiverIt->node->peerStateChanged(peerIt->config, peerIt->state);
         return;
     }
 
@@ -782,14 +986,13 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
     {
         for (const auto& prefix : message.withdrawn)
         {
-            routerIt->node->importWithdrawal(prefix, message.attributes, peerIt->config);
+            routerIt->node->importWithdrawal(prefix, message.withdrawalAttributes, peerIt->config);
             peerRoutes.remove(prefix);
             // A version trigger can stale a candidate learned from another
             // peer even if this sender had no Adj-RIB-In entry to remove.
             changed.insert(prefix);
         }
-        RouteEntry advertisedRoute = message.advertisedRoute.value_or(RouteEntry{});
-        advertisedRoute.attributes = message.attributes;
+        const RouteEntry advertisedRoute = message.advertisedRoute.value_or(RouteEntry{});
         for (const auto& prefix : message.nlri)
         {
             auto imported = routerIt->node->importAdvertisedRoute(prefix, advertisedRoute, peerIt->config);
@@ -832,9 +1035,7 @@ void SimulationEngine::neighborDown(const QString& routerId, const QString& peer
     }
     peerIt->state = PeerState::Idle;
     routerIt->node->peerStateChanged(peerIt->config, peerIt->state);
-    peerIt->pending.clear();
-    peerIt->flushScheduled = false;
-    peerIt->withdrawalFlushScheduled = false;
+    invalidateSession(*peerIt);
     routerIt->outboundGenerations.remove(peerId);
     routerIt->adjRibOut.remove(peerId);
     QSet<QString> affected;
@@ -972,7 +1173,7 @@ void SimulationEngine::disseminate(const QString& routerId, const QString& prefi
 }
 
 void SimulationEngine::queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix,
-                                          const std::optional<RouteEntry>& route, PathAttributes withdrawalAttributes)
+                                           const std::optional<RouteEntry>& route, PathAttributes withdrawalAttributes)
 {
     auto routerIt = routers_.find(routerId);
     if (routerIt == routers_.end())
@@ -980,7 +1181,8 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         return;
     }
     auto peerIt = routerIt->peers.find(peerId);
-    if (peerIt == routerIt->peers.end())
+    if (peerIt == routerIt->peers.end() || peerIt->state != PeerState::Established ||
+        !messageDeliverable(routerId, peerId))
     {
         return;
     }
@@ -990,23 +1192,30 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         const auto hadDelivered = outbound != routerIt->adjRibOut.cend() && outbound->contains(prefix);
         if (!hadDelivered)
         {
-            peerIt->pending.remove(prefix);
+            removePendingUpdate(*peerIt, prefix);
+            bool generationRemoved = false;
             auto generations = routerIt->outboundGenerations.find(peerId);
             if (generations != routerIt->outboundGenerations.end())
             {
-                generations->remove(prefix);
+                generationRemoved = generations->remove(prefix) > 0;
                 if (generations->isEmpty())
                 {
                     routerIt->outboundGenerations.erase(generations);
                 }
             }
+            scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || generationRemoved;
+            cancelEmptyFlushes(*peerIt);
             return;
         }
         const auto generation = ++nextGeneration_;
-        routerIt->outboundGenerations[peerId][prefix] = generation;
-        peerIt->pending.insert(
-            prefix,
+        auto& generations = routerIt->outboundGenerations[peerId];
+        const auto supersedesQueuedUpdate = generations.contains(prefix);
+        generations[prefix] = generation;
+        scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || supersedesQueuedUpdate;
+        setPendingUpdate(
+            *peerIt, prefix,
             PendingUpdate{.route = std::nullopt, .withdrawalAttributes = std::move(withdrawalAttributes), .generation = generation});
+        cancelEmptyFlushes(*peerIt);
         if (!peerIt->withdrawalFlushScheduled)
         {
             peerIt->withdrawalFlushScheduled = true;
@@ -1016,8 +1225,12 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
     }
 
     const auto generation = ++nextGeneration_;
-    routerIt->outboundGenerations[peerId][prefix] = generation;
-    peerIt->pending.insert(prefix, PendingUpdate{.route = route, .withdrawalAttributes = {}, .generation = generation});
+    auto& generations = routerIt->outboundGenerations[peerId];
+    const auto supersedesQueuedUpdate = generations.contains(prefix);
+    generations[prefix] = generation;
+    scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || supersedesQueuedUpdate;
+    setPendingUpdate(*peerIt, prefix, PendingUpdate{.route = route, .withdrawalAttributes = {}, .generation = generation});
+    cancelEmptyFlushes(*peerIt);
     if (!peerIt->flushScheduled)
     {
         peerIt->flushScheduled = true;
@@ -1039,13 +1252,12 @@ BgpMessage SimulationEngine::makeUpdateMessage(const QString& from, const QStrin
     if (route)
     {
         message.nlri.append(prefix);
-        message.attributes = route->attributes;
         message.advertisedRoute = route;
     }
     else
     {
         message.withdrawn.append(prefix);
-        message.attributes = withdrawalAttributes;
+        message.withdrawalAttributes = withdrawalAttributes;
     }
     return message;
 }
@@ -1068,10 +1280,6 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
         return;
     }
     linkIt->enabled = enabled;
-    if (auto* configLink = topology_.findLink(a, b))
-    {
-        configLink->enabled = enabled;
-    }
     if (auto router = routers_.find(a); router != routers_.end())
     {
         if (auto peer = router->peers.find(b); peer != router->peers.end())
@@ -1132,18 +1340,14 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
         {
             neighborDown(peerId, routerId);
         }
+        for (const auto& peerId : peers)
+        {
+            neighborDown(routerId, peerId);
+        }
         routerIt->localRoutes.clear();
         routerIt->locRib.clear();
         routerIt->adjRibIn.clear();
         routerIt->adjRibOut.clear();
-        for (auto& peer : routerIt->peers)
-        {
-            peer.state = PeerState::Idle;
-            routerIt->node->peerStateChanged(peer.config, peer.state);
-            peer.pending.clear();
-            peer.flushScheduled = false;
-            peer.withdrawalFlushScheduled = false;
-        }
         if (!oldPrefixes.isEmpty())
         {
             emit ribChanged(routerId);
@@ -1197,7 +1401,6 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
     if (!routerIt->config.originatedPrefixes.contains(prefix))
     {
         routerIt->config.originatedPrefixes.append(prefix);
-        topology_.routers[routerId].originatedPrefixes.append(prefix);
     }
     if (!routerIt->active || routerIt->localRoutes.contains(prefix))
     {
@@ -1225,7 +1428,6 @@ void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& pr
         return;
     }
     routerIt->config.originatedPrefixes.removeAll(prefix);
-    topology_.routers[routerId].originatedPrefixes.removeAll(prefix);
     if (!routerIt->localRoutes.contains(prefix))
     {
         return;
@@ -1243,7 +1445,8 @@ void SimulationEngine::updateStatus()
     {
         return;
     }
-    const auto quietMs = std::max(0, topology_.simulation.convergenceQuietMs);
+    pruneInvalidScheduledEvents();
+    const auto quietMs = std::max(0, simulation_.convergenceQuietMs);
     const auto isNowConverged = events_.empty() && now() - lastActivityAt_ >= quietMs;
     if (isNowConverged != converged_)
     {
@@ -1387,16 +1590,17 @@ SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
     }
     if (message.type == MessageType::Update)
     {
+        const auto& attributes = message.advertisedRoute ? message.advertisedRoute->attributes : message.withdrawalAttributes;
         event.action = message.nlri.isEmpty() && !message.withdrawn.isEmpty() ? QStringLiteral("WITHDRAW") : QStringLiteral("UPDATE");
-        event.nextHop = message.attributes.nextHop;
-        event.asPath = message.attributes.asPath;
-        event.localPref = message.attributes.localPref;
-        event.med = message.attributes.med;
-        if (message.attributes.tfpVersionInfo)
+        event.nextHop = attributes.nextHop;
+        event.asPath = attributes.asPath;
+        event.localPref = attributes.localPref;
+        event.med = attributes.med;
+        if (attributes.tfpVersionInfo)
         {
             event.details.insert(QStringLiteral("tfp_dependency_vector"),
-                                 tfpVectorText(message.attributes.tfpVersionInfo->dependencyVector));
-            event.details.insert(QStringLiteral("tfp_trigger_vector"), tfpVectorText(message.attributes.tfpVersionInfo->triggerVector));
+                                 tfpVectorText(attributes.tfpVersionInfo->dependencyVector));
+            event.details.insert(QStringLiteral("tfp_trigger_vector"), tfpVectorText(attributes.tfpVersionInfo->triggerVector));
         }
     }
     else

@@ -38,6 +38,7 @@ add_library(bgptester_core STATIC
     src/engine/SimulationEngine.cpp
     src/plugin/RouterPluginRegistry.cpp
     src/persistence/EventStore.cpp
+    src/persistence/SimulationEventCodec.cpp
 )
 
 target_include_directories(bgptester_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

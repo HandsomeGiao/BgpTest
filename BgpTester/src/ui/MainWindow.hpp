@@ -5,6 +5,7 @@
 
 #include <QMainWindow>
 #include <QMap>
+#include <QSet>
 #include <QThread>
 
 class QAction;
@@ -15,6 +16,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QPushButton;
 class QSortFilterProxyModel;
 class QTableView;
 class QTableWidget;
@@ -86,6 +88,9 @@ private slots:
     void showEventDetails(const QModelIndex& proxyIndex);
     void enqueueStoredEvents(quint64 runSerial, QVector<bgptester::SimulationEvent> events);
     void drainUiEventQueue();
+    void onEventFilterChanged(const QString& filter);
+    void refreshEventFilter();
+    void clearEventTable();
 
 private:
     void buildActions();
@@ -93,6 +98,13 @@ private:
     void buildInspectorDock();
     void buildEventDock();
     void saveEventColumnVisibility() const;
+    void updateEventCountLabel();
+    void updateHistoryControls();
+    void startHistoryFilterQuery(quint64 generation, const QString& path, const QString& filter);
+    void startLiveCountQuery(quint64 requestId, quint64 runSerial, const QString& path, quint64 maxEventId,
+                             const QString& filter);
+    void trackQueryThread(QThread* thread);
+    void stopAndWaitForQueryThreads();
     void connectEngine();
     void setTopology(Topology topology, const QString& path = {});
     void setDirty(bool dirty);
@@ -107,7 +119,7 @@ private:
     void appendConvergenceEvents(const QVector<SimulationEvent>& events);
     void appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext, const QDateTime& completedAt,
                                  qint64 durationMs);
-    void rebuildConvergenceHistory(const QVector<SimulationEvent>& events);
+    void rebuildConvergenceHistory(const QVector<SimulationEvent>& events, qint64 totalCount);
     void clearConvergenceHistory(const QString& stateText);
     void refreshRuntimeControls();
     bool beginEventRun(QString* error);
@@ -132,8 +144,30 @@ private:
     EventTableModel* eventModel_ = nullptr;
     QSortFilterProxyModel* eventProxy_ = nullptr;
     QTimer* uiEventDrainTimer_ = nullptr;
+    QTimer* eventFilterTimer_ = nullptr;
     QVector<SimulationEvent> pendingUiEvents_;
     quint64 eventRunSerial_ = 0;
+    quint64 liveCountRequestId_ = 0;
+    quint64 historyQueryGeneration_ = 0;
+    qint64 eventTotalCount_ = 0;
+    qint64 eventFilteredCount_ = 0;
+    qint64 messageTotalCount_ = 0;
+    qint64 messageFilteredCount_ = 0;
+    bool eventFilteredCountKnown_ = true;
+    bool eventCountQueryFailed_ = false;
+    bool historyFilterQueryInProgress_ = false;
+    QString historyDatabasePath_;
+    QSet<QThread*> queryThreads_;
+    QThread* historyLoadThread_ = nullptr;
+    QThread* historyFilterThread_ = nullptr;
+    QThread* liveCountQueryThread_ = nullptr;
+    bool liveCountSnapshotPending_ = false;
+    bool liveCountRefreshPending_ = false;
+    bool liveCountDeltaActive_ = false;
+    qint64 liveDeltaEventTotal_ = 0;
+    qint64 liveDeltaEventFiltered_ = 0;
+    qint64 liveDeltaMessageTotal_ = 0;
+    qint64 liveDeltaMessageFiltered_ = 0;
 
     QAction* newAction_ = nullptr;
     QAction* openAction_ = nullptr;
@@ -168,6 +202,7 @@ private:
     QTableView* eventView_ = nullptr;
     QLineEdit* eventFilterEdit_ = nullptr;
     QCheckBox* followEventsCheck_ = nullptr;
+    QPushButton* historyButton_ = nullptr;
     QLabel* eventCountLabel_ = nullptr;
     QTableWidget* convergenceTable_ = nullptr;
     QLabel* convergenceStateLabel_ = nullptr;

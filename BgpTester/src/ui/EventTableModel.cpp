@@ -172,6 +172,10 @@ void EventTableModel::appendEvents(QVector<SimulationEvent> events)
 
 void EventTableModel::setEvents(QVector<SimulationEvent> events)
 {
+    if (events.size() > capacity_)
+    {
+        events.remove(0, events.size() - capacity_);
+    }
     beginResetModel();
     events_ = std::move(events);
     endResetModel();
@@ -191,6 +195,26 @@ void EventTableModel::clear()
 const SimulationEvent* EventTableModel::eventAt(int row) const
 {
     return row >= 0 && row < events_.size() ? &events_.at(row) : nullptr;
+}
+
+bool EventTableModel::matchesFilter(const SimulationEvent& event, const QString& filter)
+{
+    if (filter.isEmpty())
+    {
+        return true;
+    }
+    const auto matches = [&filter](const QString& value) { return value.contains(filter, Qt::CaseInsensitive); };
+    if (matches(QString::number(event.id)) || matches(event.timestamp.toString(QStringLiteral("HH:mm:ss.zzz"))) ||
+        matches(event.event) || matches(event.router) || matches(event.from) || matches(event.to) ||
+        (event.fromAs && matches(QString::number(*event.fromAs))) || (event.toAs && matches(QString::number(*event.toAs))) ||
+        matches(event.messageType) || matches(event.action) || (event.sequence != 0 && matches(QString::number(event.sequence))) ||
+        matches(event.prefixes.join(QStringLiteral(", "))) || matches(event.withdrawn.join(QStringLiteral(", "))) ||
+        matches(event.nextHop) || matches(asPathText(event.asPath)) ||
+        (event.localPref && matches(QString::number(*event.localPref))) || (event.med && matches(QString::number(*event.med))))
+    {
+        return true;
+    }
+    return false;
 }
 
 } // namespace bgptester

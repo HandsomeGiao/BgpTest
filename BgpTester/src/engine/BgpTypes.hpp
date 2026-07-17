@@ -86,8 +86,8 @@ struct TfpEntity
 
 using TfpVersionVector = QMap<TfpEntity, quint64>;
 
-// Unified TFP_VERSION_INFO path attribute.  It is also carried in the
-// PathAttributes member of a withdrawal-only BgpMessage.
+// Unified TFP_VERSION_INFO path attribute. It is also carried in the
+// withdrawalAttributes member of a withdrawal-only BgpMessage.
 struct TfpVersionInfo
 {
     TfpVersionVector dependencyVector;
@@ -133,8 +133,8 @@ struct BgpMessage
     QString openRouterId;
     QStringList nlri;
     QStringList withdrawn;
-    PathAttributes attributes;
     std::optional<RouteEntry> advertisedRoute;
+    PathAttributes withdrawalAttributes;
     int errorCode = 0;
     int errorSubcode = 0;
     QString errorData;

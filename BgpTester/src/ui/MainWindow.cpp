@@ -63,12 +63,22 @@ namespace
 
 struct HistoryLoadState
 {
-    QVector<SimulationEvent> events;
+    EventHistoryPage page;
+    ConvergenceHistoryPage convergencePage;
     QString error;
+    QString convergenceError;
     std::atomic<qint64> loadedRows{0};
     std::atomic<qint64> totalRows{0};
     std::atomic_bool cancelRequested{false};
 };
+
+struct LiveCountQueryState
+{
+    EventHistoryPage page;
+    QString error;
+};
+
+constexpr int convergenceHistoryCapacity = 5000;
 
 class PersistentCheckableMenu final : public QMenu
 {
@@ -333,6 +343,37 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     connect(scene_, &TopologyScene::topologyModified, this, &MainWindow::markDirty);
     connect(scene_, &TopologyScene::selectionContextChanged, this, &MainWindow::sceneSelectionChanged);
     connect(eventStore_, &EventStore::eventsStored, this, &MainWindow::enqueueStoredEvents, Qt::QueuedConnection);
+    connect(eventStore_, &EventStore::countSnapshotReady, this,
+            [this](quint64 requestId, quint64 runSerial, const QString& databasePath, quint64 maxEventId, const QString& error)
+            {
+                liveCountSnapshotPending_ = false;
+                if (requestId != liveCountRequestId_ || runSerial != eventRunSerial_ || !historyDatabasePath_.isEmpty() || closing_ ||
+                    simulationStartPending_)
+                {
+                    if (liveCountRefreshPending_ && !closing_ && historyDatabasePath_.isEmpty() && !eventFilterTimer_->isActive())
+                    {
+                        liveCountRefreshPending_ = false;
+                        QTimer::singleShot(0, this, &MainWindow::refreshEventFilter);
+                    }
+                    return;
+                }
+                if (!error.isEmpty())
+                {
+                    statusBar()->showMessage(error, 5000);
+                    eventFilteredCountKnown_ = false;
+                    eventCountQueryFailed_ = true;
+                    liveCountDeltaActive_ = false;
+                    updateEventCountLabel();
+                    return;
+                }
+                liveDeltaEventTotal_ = 0;
+                liveDeltaEventFiltered_ = 0;
+                liveDeltaMessageTotal_ = 0;
+                liveDeltaMessageFiltered_ = 0;
+                liveCountDeltaActive_ = true;
+                liveCountRefreshPending_ = false;
+                startLiveCountQuery(requestId, runSerial, databasePath, maxEventId, eventFilterEdit_->text());
+            });
     connect(eventStore_, &EventStore::storeError, this, [this](const QString& message) { statusBar()->showMessage(message, 8000); });
     connect(eventStore_, &EventStore::pathsChanged, this,
             [this](const QString&, const QString& database)
@@ -372,6 +413,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
+    closing_ = true;
+    ++historyQueryGeneration_;
+    ++liveCountRequestId_;
+    stopAndWaitForQueryThreads();
     if (engineThread_.isRunning())
     {
         if (simulationRunning_)
@@ -605,7 +650,7 @@ void MainWindow::buildEventDock()
     eventFilterEdit_->setClearButtonEnabled(true);
     eventFilterEdit_->setPlaceholderText(QStringLiteral("过滤所有列：路由器、动作、ASN、前缀…"));
     eventCountLabel_ = new QLabel(QStringLiteral("显示 0 / 共 0 条"), eventPage);
-    eventCountLabel_->setMinimumWidth(125);
+    eventCountLabel_->setMinimumWidth(430);
     followEventsCheck_ = new QCheckBox(QStringLiteral("跟随实时"), eventPage);
     followEventsCheck_->setChecked(true);
     auto* columnsButton = new QToolButton(eventPage);
@@ -615,15 +660,15 @@ void MainWindow::buildEventDock()
     columnsButton->setPopupMode(QToolButton::InstantPopup);
     columnsButton->setToolTip(QStringLiteral("选择 BMP 事件日志中显示的列"));
     auto* clearButton = new QPushButton(QStringLiteral("清空表格"), eventPage);
-    auto* historyButton = new QPushButton(QStringLiteral("打开历史…"), eventPage);
-    connect(clearButton, &QPushButton::clicked, eventModel_, &EventTableModel::clear);
-    connect(historyButton, &QPushButton::clicked, this, &MainWindow::openHistory);
+    historyButton_ = new QPushButton(QStringLiteral("打开历史…"), eventPage);
+    connect(clearButton, &QPushButton::clicked, this, &MainWindow::clearEventTable);
+    connect(historyButton_, &QPushButton::clicked, this, &MainWindow::openHistory);
     filterRow->addWidget(eventFilterEdit_, 1);
     filterRow->addWidget(eventCountLabel_);
     filterRow->addWidget(followEventsCheck_);
     filterRow->addWidget(columnsButton);
     filterRow->addWidget(clearButton);
-    filterRow->addWidget(historyButton);
+    filterRow->addWidget(historyButton_);
     layout->addLayout(filterRow);
 
     eventProxy_ = new QSortFilterProxyModel(this);
@@ -632,13 +677,15 @@ void MainWindow::buildEventDock()
     eventProxy_->setFilterKeyColumn(-1);
     eventProxy_->setFilterRole(Qt::UserRole);
     eventProxy_->setSortRole(Qt::DisplayRole);
-    connect(eventFilterEdit_, &QLineEdit::textChanged, eventProxy_, &QSortFilterProxyModel::setFilterFixedString);
-    const auto updateEventCount = [this]
-    { eventCountLabel_->setText(QStringLiteral("显示 %1 / 共 %2 条").arg(eventProxy_->rowCount()).arg(eventModel_->rowCount())); };
-    connect(eventProxy_, &QAbstractItemModel::rowsInserted, this, updateEventCount);
-    connect(eventProxy_, &QAbstractItemModel::rowsRemoved, this, updateEventCount);
-    connect(eventProxy_, &QAbstractItemModel::modelReset, this, updateEventCount);
-    connect(eventProxy_, &QAbstractItemModel::layoutChanged, this, updateEventCount);
+    eventFilterTimer_ = new QTimer(this);
+    eventFilterTimer_->setSingleShot(true);
+    eventFilterTimer_->setInterval(300);
+    connect(eventFilterTimer_, &QTimer::timeout, this, &MainWindow::refreshEventFilter);
+    connect(eventFilterEdit_, &QLineEdit::textChanged, this, &MainWindow::onEventFilterChanged);
+    connect(eventProxy_, &QAbstractItemModel::rowsInserted, this, &MainWindow::updateEventCountLabel);
+    connect(eventProxy_, &QAbstractItemModel::rowsRemoved, this, &MainWindow::updateEventCountLabel);
+    connect(eventProxy_, &QAbstractItemModel::modelReset, this, &MainWindow::updateEventCountLabel);
+    connect(eventProxy_, &QAbstractItemModel::layoutChanged, this, &MainWindow::updateEventCountLabel);
     eventView_ = new QTableView(eventPage);
     eventView_->setModel(eventProxy_);
     eventView_->setAlternatingRowColors(true);
@@ -739,6 +786,8 @@ void MainWindow::buildEventDock()
     addDockWidget(Qt::BottomDockWidgetArea, dock);
     viewMenu_->addAction(dock->toggleViewAction());
     resizeDocks({dock}, {280}, Qt::Vertical);
+    updateEventCountLabel();
+    updateHistoryControls();
 }
 
 void MainWindow::saveEventColumnVisibility() const
@@ -756,6 +805,297 @@ void MainWindow::saveEventColumnVisibility() const
         }
     }
     QSettings().setValue(QStringLiteral("bmp/eventTableHiddenColumns"), hiddenColumns);
+}
+
+void MainWindow::updateEventCountLabel()
+{
+    if (!eventCountLabel_ || !eventProxy_)
+    {
+        return;
+    }
+    const auto filteredText = eventFilteredCountKnown_ ? QString::number(eventFilteredCount_)
+                                                       : (eventCountQueryFailed_ ? QStringLiteral("失败") : QStringLiteral("查询中"));
+    const auto filteredMessageText = eventFilteredCountKnown_ ? QString::number(messageFilteredCount_)
+                                                              : (eventCountQueryFailed_ ? QStringLiteral("失败")
+                                                                                       : QStringLiteral("查询中"));
+    eventCountLabel_->setText(QStringLiteral("窗口 %1 · 事件 %2/%3 · 报文 %4/%5")
+                                  .arg(eventProxy_->rowCount())
+                                  .arg(filteredText)
+                                  .arg(eventTotalCount_)
+                                  .arg(filteredMessageText)
+                                  .arg(messageTotalCount_));
+    eventCountLabel_->setToolTip(
+        QStringLiteral("格式：窗口行数 · 过滤后事件/全部事件 · 过滤后报文/全部报文。报文严格指 event=message_received；"
+                       "窗口仅保留最近 %1 条，四个计数针对完整日志。")
+            .arg(EventTableModel::liveCapacity()));
+}
+
+void MainWindow::updateHistoryControls()
+{
+    const auto enabled = !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_;
+    if (openHistoryAction_)
+    {
+        openHistoryAction_->setEnabled(enabled);
+    }
+    if (historyButton_)
+    {
+        historyButton_->setEnabled(enabled);
+    }
+}
+
+void MainWindow::clearEventTable()
+{
+    if (uiEventDrainTimer_)
+    {
+        uiEventDrainTimer_->stop();
+    }
+    pendingUiEvents_.clear();
+    eventModel_->clear();
+}
+
+void MainWindow::onEventFilterChanged(const QString& filter)
+{
+    ++historyQueryGeneration_;
+    ++liveCountRequestId_;
+    eventCountQueryFailed_ = false;
+    liveCountDeltaActive_ = false;
+    if (historyFilterThread_)
+    {
+        historyFilterThread_->requestInterruption();
+    }
+    if (liveCountQueryThread_)
+    {
+        liveCountQueryThread_->requestInterruption();
+        liveCountRefreshPending_ = true;
+    }
+    if (liveCountSnapshotPending_)
+    {
+        liveCountRefreshPending_ = true;
+    }
+
+    if (historyDatabasePath_.isEmpty())
+    {
+        eventProxy_->setFilterFixedString(filter);
+        if (filter.isEmpty())
+        {
+            eventFilteredCount_ = eventTotalCount_;
+            messageFilteredCount_ = messageTotalCount_;
+            eventFilteredCountKnown_ = true;
+            liveCountRefreshPending_ = false;
+            eventFilterTimer_->stop();
+        }
+        else if (eventRunSerial_ == 0)
+        {
+            eventFilteredCount_ = eventProxy_->rowCount();
+            messageFilteredCount_ = 0;
+            eventFilteredCountKnown_ = true;
+            liveCountRefreshPending_ = false;
+            eventFilterTimer_->stop();
+        }
+        else
+        {
+            eventFilteredCountKnown_ = false;
+            eventFilterTimer_->start();
+        }
+    }
+    else
+    {
+        // The history query already applies the filter to the complete
+        // database; applying the proxy again would only re-filter the window.
+        eventProxy_->setFilterFixedString(QString{});
+        if (filter.isEmpty())
+        {
+            eventFilteredCount_ = eventTotalCount_;
+            messageFilteredCount_ = messageTotalCount_;
+            eventFilteredCountKnown_ = true;
+        }
+        else
+        {
+            eventFilteredCountKnown_ = false;
+        }
+        eventFilterTimer_->start();
+    }
+    updateEventCountLabel();
+}
+
+void MainWindow::refreshEventFilter()
+{
+    if (closing_ || simulationStartPending_)
+    {
+        return;
+    }
+    const auto filter = eventFilterEdit_->text();
+    if (!historyDatabasePath_.isEmpty())
+    {
+        if (!historyFilterQueryInProgress_)
+        {
+            startHistoryFilterQuery(historyQueryGeneration_, historyDatabasePath_, filter);
+        }
+        return;
+    }
+    if (filter.isEmpty() || eventRunSerial_ == 0)
+    {
+        return;
+    }
+
+    if (liveCountQueryThread_)
+    {
+        liveCountQueryThread_->requestInterruption();
+        liveCountRefreshPending_ = true;
+        return;
+    }
+    if (liveCountSnapshotPending_)
+    {
+        liveCountRefreshPending_ = true;
+        return;
+    }
+
+    liveCountSnapshotPending_ = true;
+    liveCountRefreshPending_ = false;
+    const auto requestId = liveCountRequestId_;
+    QMetaObject::invokeMethod(eventStore_,
+                              [store = eventStore_, requestId] { store->requestCountSnapshot(requestId); },
+                              Qt::QueuedConnection);
+}
+
+void MainWindow::startHistoryFilterQuery(quint64 generation, const QString& path, const QString& filter)
+{
+    historyFilterQueryInProgress_ = true;
+    auto state = std::make_shared<HistoryLoadState>();
+    auto* loadThread = QThread::create(
+        [state, path, filter]
+        {
+            const auto cancelled = [] { return QThread::currentThread()->isInterruptionRequested(); };
+            state->page = EventStore::queryDatabase(path, static_cast<int>(EventTableModel::liveCapacity()), filter, &state->error, {},
+                                                    cancelled);
+        });
+    historyFilterThread_ = loadThread;
+    trackQueryThread(loadThread);
+    connect(loadThread, &QThread::finished, this,
+            [this, state, generation, path, loadThread]
+            {
+                loadThread->deleteLater();
+                if (historyFilterThread_ == loadThread)
+                {
+                    historyFilterThread_ = nullptr;
+                }
+                historyFilterQueryInProgress_ = false;
+                const auto current = generation == historyQueryGeneration_ && path == historyDatabasePath_ && !closing_ &&
+                                     !simulationRunning_ && !simulationStartPending_;
+                if (current)
+                {
+                    if (!state->error.isEmpty())
+                    {
+                        statusBar()->showMessage(state->error, 5000);
+                        eventFilteredCountKnown_ = false;
+                        eventCountQueryFailed_ = true;
+                        updateEventCountLabel();
+                    }
+                    else
+                    {
+                        eventTotalCount_ = state->page.totalCount;
+                        eventFilteredCount_ = state->page.filteredCount;
+                        messageTotalCount_ = state->page.messageTotalCount;
+                        messageFilteredCount_ = state->page.filteredMessageCount;
+                        eventFilteredCountKnown_ = true;
+                        eventCountQueryFailed_ = false;
+                        eventModel_->setEvents(std::move(state->page.events));
+                        updateEventCountLabel();
+                    }
+                }
+                else if (!historyDatabasePath_.isEmpty() && !historyLoadInProgress_ && !closing_ && !simulationRunning_ &&
+                         !simulationStartPending_)
+                {
+                    eventFilterTimer_->start();
+                }
+            });
+    loadThread->start();
+}
+
+void MainWindow::startLiveCountQuery(quint64 requestId, quint64 runSerial, const QString& path, quint64 maxEventId,
+                                     const QString& filter)
+{
+    auto state = std::make_shared<LiveCountQueryState>();
+    auto* queryThread = QThread::create(
+        [state, path, filter, maxEventId]
+        {
+            const auto cancelled = [] { return QThread::currentThread()->isInterruptionRequested(); };
+            state->page = EventStore::countDatabase(path, filter, maxEventId, &state->error, cancelled);
+        });
+    liveCountQueryThread_ = queryThread;
+    trackQueryThread(queryThread);
+    connect(queryThread, &QThread::finished, this,
+            [this, state, requestId, runSerial, queryThread]
+            {
+                queryThread->deleteLater();
+                if (liveCountQueryThread_ == queryThread)
+                {
+                    liveCountQueryThread_ = nullptr;
+                }
+                const auto current = requestId == liveCountRequestId_ && runSerial == eventRunSerial_ &&
+                                     historyDatabasePath_.isEmpty() && !closing_ && !simulationStartPending_;
+                if (current && state->error.isEmpty())
+                {
+                    eventTotalCount_ = state->page.totalCount + liveDeltaEventTotal_;
+                    eventFilteredCount_ = state->page.filteredCount + liveDeltaEventFiltered_;
+                    messageTotalCount_ = state->page.messageTotalCount + liveDeltaMessageTotal_;
+                    messageFilteredCount_ = state->page.filteredMessageCount + liveDeltaMessageFiltered_;
+                    eventFilteredCountKnown_ = true;
+                    eventCountQueryFailed_ = false;
+                    liveCountDeltaActive_ = false;
+                    updateEventCountLabel();
+                }
+                else if (current)
+                {
+                    eventFilteredCountKnown_ = false;
+                    eventCountQueryFailed_ = true;
+                    liveCountDeltaActive_ = false;
+                    statusBar()->showMessage(state->error, 5000);
+                    updateEventCountLabel();
+                }
+                else
+                {
+                    liveCountDeltaActive_ = false;
+                }
+
+                if (liveCountRefreshPending_ && !closing_ && historyDatabasePath_.isEmpty() && !eventFilterTimer_->isActive())
+                {
+                    liveCountRefreshPending_ = false;
+                    QTimer::singleShot(0, this, &MainWindow::refreshEventFilter);
+                }
+            });
+    queryThread->start();
+}
+
+void MainWindow::trackQueryThread(QThread* thread)
+{
+    thread->setParent(this);
+    queryThreads_.insert(thread);
+    connect(thread, &QThread::finished, this,
+            [this, thread]
+            {
+                queryThreads_.remove(thread);
+            });
+}
+
+void MainWindow::stopAndWaitForQueryThreads()
+{
+    const auto threads = queryThreads_.values();
+    for (auto* thread : threads)
+    {
+        thread->requestInterruption();
+    }
+    for (auto* thread : threads)
+    {
+        thread->wait();
+    }
+    queryThreads_.clear();
+    historyLoadThread_ = nullptr;
+    historyFilterThread_ = nullptr;
+    liveCountQueryThread_ = nullptr;
+    historyFilterQueryInProgress_ = false;
+    liveCountSnapshotPending_ = false;
+    liveCountDeltaActive_ = false;
 }
 
 void MainWindow::connectEngine()
@@ -863,7 +1203,7 @@ bool MainWindow::saveTopologyAs()
 
 void MainWindow::openHistory()
 {
-    if (historyLoadInProgress_)
+    if (closing_ || simulationRunning_ || simulationStartPending_ || historyLoadInProgress_)
     {
         return;
     }
@@ -875,8 +1215,21 @@ void MainWindow::openHistory()
         return;
     }
 
+    // A run that has just stopped may still have a queued final transaction.
+    // Commit it before a read-only history connection takes its snapshot.
+    if (eventStore_ && eventStoreThread_.isRunning())
+    {
+        QMetaObject::invokeMethod(eventStore_, &EventStore::flush, Qt::BlockingQueuedConnection);
+    }
+
     historyLoadInProgress_ = true;
-    openHistoryAction_->setEnabled(false);
+    updateEditorActions();
+    const auto generation = ++historyQueryGeneration_;
+    if (historyFilterThread_)
+    {
+        historyFilterThread_->requestInterruption();
+    }
+    const auto filter = eventFilterEdit_->text();
     auto state = std::make_shared<HistoryLoadState>();
 
     auto* progressDialog = new QProgressDialog(this);
@@ -913,28 +1266,62 @@ void MainWindow::openHistory()
     progressTimer->start();
 
     auto* loadThread = QThread::create(
-        [state, path]
+        [state, path, filter]
         {
-            state->events = EventStore::readDatabase(path, 0, &state->error,
-                                                     [state](qsizetype loaded, qsizetype total)
-                                                     {
-                                                         state->loadedRows.store(loaded, std::memory_order_relaxed);
-                                                         state->totalRows.store(total, std::memory_order_relaxed);
-                                                         return !state->cancelRequested.load(std::memory_order_relaxed);
-                                                     });
-        });
-    connect(loadThread, &QThread::finished, this,
-            [this, state, path, progressDialog]
+            const auto cancelled = [state]
             {
+                return state->cancelRequested.load(std::memory_order_relaxed) ||
+                       QThread::currentThread()->isInterruptionRequested();
+            };
+            state->page = EventStore::queryDatabase(path, static_cast<int>(EventTableModel::liveCapacity()), filter, &state->error,
+                                                    [state](qsizetype loaded, qsizetype total)
+                                                    {
+                                                        state->loadedRows.store(loaded, std::memory_order_relaxed);
+                                                        state->totalRows.store(total, std::memory_order_relaxed);
+                                                        return !state->cancelRequested.load(std::memory_order_relaxed) &&
+                                                               !QThread::currentThread()->isInterruptionRequested();
+                                                    },
+                                                    cancelled);
+            if (state->error.isEmpty() && !cancelled())
+            {
+                state->convergencePage =
+                    EventStore::queryConvergenceDatabase(path, convergenceHistoryCapacity, &state->convergenceError, cancelled);
+            }
+        });
+    historyLoadThread_ = loadThread;
+    trackQueryThread(loadThread);
+    connect(progressDialog, &QProgressDialog::canceled, loadThread, &QThread::requestInterruption);
+    connect(loadThread, &QThread::finished, this,
+            [this, state, path, generation, progressDialog, loadThread]
+            {
+                loadThread->deleteLater();
+                if (historyLoadThread_ == loadThread)
+                {
+                    historyLoadThread_ = nullptr;
+                }
                 historyLoadInProgress_ = false;
-                openHistoryAction_->setEnabled(!simulationRunning_);
+                updateEditorActions();
                 progressDialog->setRange(0, 1000);
                 progressDialog->setValue(1000);
+
+                if (generation != historyQueryGeneration_ || closing_ || simulationRunning_ || simulationStartPending_)
+                {
+                    progressDialog->deleteLater();
+                    if (!closing_ && !simulationRunning_ && !simulationStartPending_ && !eventFilteredCountKnown_)
+                    {
+                        eventFilterTimer_->start();
+                    }
+                    return;
+                }
 
                 if (state->cancelRequested.load(std::memory_order_relaxed))
                 {
                     progressDialog->deleteLater();
                     statusBar()->showMessage(QStringLiteral("已取消加载历史 BMP 日志"), 4000);
+                    if (!eventFilteredCountKnown_)
+                    {
+                        eventFilterTimer_->start();
+                    }
                     return;
                 }
 
@@ -942,20 +1329,56 @@ void MainWindow::openHistory()
                 {
                     progressDialog->deleteLater();
                     QMessageBox::critical(this, QStringLiteral("无法读取日志"), state->error);
+                    if (!eventFilteredCountKnown_)
+                    {
+                        eventFilterTimer_->start();
+                    }
                     return;
                 }
 
-                const auto eventCount = state->events.size();
+                const auto eventCount = state->page.events.size();
                 progressDialog->setLabelText(QStringLiteral("正在更新日志表格…"));
+                historyDatabasePath_ = path;
+                ++liveCountRequestId_;
+                if (liveCountQueryThread_)
+                {
+                    liveCountQueryThread_->requestInterruption();
+                }
+                liveCountSnapshotPending_ = false;
+                liveCountRefreshPending_ = false;
+                eventTotalCount_ = state->page.totalCount;
+                eventFilteredCount_ = state->page.filteredCount;
+                messageTotalCount_ = state->page.messageTotalCount;
+                messageFilteredCount_ = state->page.filteredMessageCount;
+                eventFilteredCountKnown_ = true;
+                eventCountQueryFailed_ = false;
+                liveCountDeltaActive_ = false;
+                eventProxy_->setFilterFixedString(QString{});
                 eventProxy_->sort(-1);
-                rebuildConvergenceHistory(state->events);
-                eventModel_->setEvents(std::move(state->events));
+                uiEventDrainTimer_->stop();
+                pendingUiEvents_.clear();
+                if (state->convergenceError.isEmpty())
+                {
+                    rebuildConvergenceHistory(state->convergencePage.events, state->convergencePage.totalCount);
+                }
+                else
+                {
+                    clearConvergenceHistory(QStringLiteral("历史收敛记录读取失败：%1").arg(state->convergenceError));
+                }
+                eventModel_->setEvents(std::move(state->page.events));
                 followEventsCheck_->setChecked(false);
                 logPathLabel_->setText(QStringLiteral("历史：%1").arg(QDir::toNativeSeparators(path)));
-                statusBar()->showMessage(QStringLiteral("已载入 %1 条历史 BMP 日志").arg(eventCount), 4000);
+                logPathLabel_->setToolTip(path);
+                updateEventCountLabel();
+                statusBar()->showMessage(QStringLiteral("已显示最近 %1 条事件；事件 %2/%3，报文 %4/%5")
+                                             .arg(eventCount)
+                                             .arg(eventFilteredCount_)
+                                             .arg(eventTotalCount_)
+                                             .arg(messageFilteredCount_)
+                                             .arg(messageTotalCount_),
+                                         5000);
                 progressDialog->deleteLater();
             });
-    connect(loadThread, &QThread::finished, loadThread, &QObject::deleteLater);
     loadThread->start();
 }
 
@@ -1230,6 +1653,10 @@ void MainWindow::markDirty()
 
 void MainWindow::startSimulation()
 {
+    if (closing_ || simulationRunning_ || simulationStartPending_ || historyLoadInProgress_)
+    {
+        return;
+    }
     const auto problems = topology_.validate();
     if (!problems.isEmpty())
     {
@@ -1242,15 +1669,40 @@ void MainWindow::startSimulation()
         QMessageBox::critical(this, QStringLiteral("无法创建日志"), error);
         return;
     }
-    eventModel_->clear();
+    ++historyQueryGeneration_;
+    ++liveCountRequestId_;
+    if (historyLoadThread_)
+    {
+        historyLoadThread_->requestInterruption();
+    }
+    if (historyFilterThread_)
+    {
+        historyFilterThread_->requestInterruption();
+    }
+    if (liveCountQueryThread_)
+    {
+        liveCountQueryThread_->requestInterruption();
+    }
+    historyDatabasePath_.clear();
+    eventFilterTimer_->stop();
+    eventTotalCount_ = 0;
+    eventFilteredCount_ = 0;
+    messageTotalCount_ = 0;
+    messageFilteredCount_ = 0;
+    eventFilteredCountKnown_ = true;
+    eventCountQueryFailed_ = false;
+    liveCountSnapshotPending_ = false;
+    liveCountRefreshPending_ = false;
+    liveCountDeltaActive_ = false;
+    eventProxy_->setFilterFixedString(eventFilterEdit_->text());
+    clearEventTable();
     clearConvergenceHistory(QStringLiteral("当前：等待启动"));
-    pendingUiEvents_.clear();
     followEventsCheck_->setChecked(true);
     runtimeRouters_.clear();
     runtimeLinks_.clear();
     scene_->clearRuntimeState();
-    startAction_->setEnabled(false);
     simulationStartPending_ = true;
+    updateEditorActions();
     const auto copy = topology_;
     QMetaObject::invokeMethod(engine_, [engine = engine_, copy] { engine->startSimulation(copy); }, Qt::QueuedConnection);
 }
@@ -1521,10 +1973,46 @@ void MainWindow::showEventDetails(const QModelIndex& proxyIndex)
 
 void MainWindow::enqueueStoredEvents(quint64 runSerial, QVector<SimulationEvent> events)
 {
-    if (runSerial != eventRunSerial_ || events.isEmpty())
+    if (runSerial != eventRunSerial_ || events.isEmpty() || !historyDatabasePath_.isEmpty())
     {
         return;
     }
+    const auto filter = eventFilterEdit_->text();
+    for (const auto& event : events)
+    {
+        const auto message = event.event == QStringLiteral("message_received");
+        const auto matched = EventTableModel::matchesFilter(event, filter);
+        ++eventTotalCount_;
+        if (message)
+        {
+            ++messageTotalCount_;
+        }
+        if (eventFilteredCountKnown_ && matched)
+        {
+            ++eventFilteredCount_;
+            if (message)
+            {
+                ++messageFilteredCount_;
+            }
+        }
+        if (liveCountDeltaActive_)
+        {
+            ++liveDeltaEventTotal_;
+            if (matched)
+            {
+                ++liveDeltaEventFiltered_;
+            }
+            if (message)
+            {
+                ++liveDeltaMessageTotal_;
+                if (matched)
+                {
+                    ++liveDeltaMessageFiltered_;
+                }
+            }
+        }
+    }
+    updateEventCountLabel();
     appendConvergenceEvents(events);
     const auto capacity = EventTableModel::liveCapacity();
     if (events.size() >= capacity)
@@ -1595,7 +2083,7 @@ void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& trigge
     convergenceTable_->scrollToBottom();
 }
 
-void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& events)
+void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& events, qint64 totalCount)
 {
     clearConvergenceHistory(QStringLiteral("当前：正在读取历史记录"));
     QDateTime inferredStart;
@@ -1639,7 +2127,13 @@ void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& event
             inferredTriggerContext = convergenceEventContext(event);
         }
     }
-    convergenceStateLabel_->setText(QStringLiteral("当前：已载入历史记录"));
+    const auto displayedCount = convergenceTable_->rowCount();
+    convergenceCountLabel_->setText(QStringLiteral("显示 %1 / 总计 %2 次").arg(displayedCount).arg(totalCount));
+    convergenceStateLabel_->setText(totalCount > displayedCount
+                                        ? QStringLiteral("当前：已载入最近 %1 次收敛记录（总计 %2 次，较早记录未显示）")
+                                              .arg(displayedCount)
+                                              .arg(totalCount)
+                                        : QStringLiteral("当前：已载入全部 %1 次收敛记录").arg(totalCount));
 }
 
 void MainWindow::clearConvergenceHistory(const QString& stateText)
@@ -1692,7 +2186,7 @@ void MainWindow::setTopology(Topology topology, const QString& path)
 void MainWindow::setDirty(bool dirty)
 {
     dirty_ = dirty;
-    saveAction_->setEnabled(dirty_ && !simulationRunning_);
+    updateEditorActions();
     updateWindowTitle();
 }
 
@@ -1719,19 +2213,25 @@ void MainWindow::updateWindowTitle()
 
 void MainWindow::updateEditorActions()
 {
-    const auto editable = !simulationRunning_;
+    const auto editable = !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_;
+    const auto runtimeControlsEnabled = !closing_ && simulationRunning_;
     for (auto* action : {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
                          addLinkAction_, deleteAction_})
     {
         action->setEnabled(editable);
     }
     saveAction_->setEnabled(editable && dirty_);
-    openHistoryAction_->setEnabled(editable);
     startAction_->setEnabled(editable);
-    stopAction_->setEnabled(!editable);
-    routerToggleButton_->setEnabled(!editable);
-    linkToggleButton_->setEnabled(!editable);
-    prefixEdit_->setEnabled(!editable);
+    stopAction_->setEnabled(runtimeControlsEnabled);
+    routerToggleButton_->setEnabled(runtimeControlsEnabled);
+    linkToggleButton_->setEnabled(runtimeControlsEnabled);
+    prefixEdit_->setEnabled(runtimeControlsEnabled);
+    eventFilterEdit_->setEnabled(!closing_ && !historyLoadInProgress_ && !simulationStartPending_);
+    if (scene_)
+    {
+        scene_->setEditable(editable);
+    }
+    updateHistoryControls();
 }
 
 void MainWindow::refreshTopologySelectors()
@@ -1953,6 +2453,14 @@ void MainWindow::closeEvent(QCloseEvent* event)
         return;
     }
     closing_ = true;
+    ++historyQueryGeneration_;
+    ++liveCountRequestId_;
+    if (eventFilterTimer_)
+    {
+        eventFilterTimer_->stop();
+    }
+    updateEditorActions();
+    stopAndWaitForQueryThreads();
     QSettings settings;
     settings.setValue(QStringLiteral("main/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("main/state"), saveState());
