@@ -731,17 +731,46 @@ void MainWindow::buildInspectorDock()
 
     auto* linkBox = new QGroupBox(QStringLiteral("链路状态"), control);
     auto* linkLayout = new QVBoxLayout(linkBox);
+    linkSearchEdit_ = new QLineEdit(linkBox);
+    linkSearchEdit_->setPlaceholderText(QStringLiteral("搜索链路，例如 R1 或 R1 ↔ R2"));
+    linkSearchEdit_->setClearButtonEnabled(true);
+    linkSearchEdit_->setToolTip(QStringLiteral("输入任一端点名称以筛选链路，清空后显示全部链路"));
     linkCombo_ = new QComboBox(linkBox);
     linkListModel_ = new TopologyLinkListModel(this);
-    linkCombo_->setModel(linkListModel_);
+    linkFilterModel_ = new QSortFilterProxyModel(this);
+    linkFilterModel_->setSourceModel(linkListModel_);
+    linkFilterModel_->setFilterCaseSensitivity(Qt::CaseInsensitive);
+    linkFilterModel_->setFilterRole(Qt::DisplayRole);
+    linkCombo_->setModel(linkFilterModel_);
     linkCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     linkCombo_->setMinimumContentsLength(24);
     linkCombo_->setMaxVisibleItems(30);
     if (auto* list = qobject_cast<QListView*>(linkCombo_->view()))
     {
         list->setUniformItemSizes(true);
+        list->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+        list->setVerticalScrollMode(QAbstractItemView::ScrollPerItem);
     }
     connect(linkCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::selectedLinkChanged);
+    auto* linkSelectRow = new QHBoxLayout;
+    linkBrowseButton_ = new QToolButton(linkBox);
+    linkBrowseButton_->setText(QStringLiteral("展开列表"));
+    linkBrowseButton_->setArrowType(Qt::DownArrow);
+    linkBrowseButton_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    linkBrowseButton_->setToolTip(QStringLiteral("展开链路列表；可拖动右侧滚动条快速浏览"));
+    linkBrowseButton_->setAccessibleName(QStringLiteral("浏览所有链路"));
+    connect(linkBrowseButton_, &QToolButton::clicked, linkCombo_, &QComboBox::showPopup);
+    connect(linkSearchEdit_, &QLineEdit::returnPressed, linkCombo_, &QComboBox::showPopup);
+    connect(linkSearchEdit_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        const auto selectedLink = linkCombo_->currentData().toString();
+        linkFilterModel_->setFilterFixedString(text.trimmed());
+        const auto selectedIndex = selectedLink.isEmpty() ? -1 : linkCombo_->findData(selectedLink);
+        linkCombo_->setCurrentIndex(selectedIndex >= 0 ? selectedIndex : (linkCombo_->count() > 0 ? 0 : -1));
+        linkBrowseButton_->setEnabled(!closing_ && linkCombo_->count() > 0);
+        refreshRuntimeControls();
+    });
+    linkSelectRow->addWidget(linkCombo_, 1);
+    linkSelectRow->addWidget(linkBrowseButton_);
     auto* linkStateRow = new QHBoxLayout;
     linkStateLabel_ = new QLabel(QStringLiteral("—"), linkBox);
     linkToggleButton_ = new QToolButton(linkBox);
@@ -749,7 +778,8 @@ void MainWindow::buildInspectorDock()
     connect(linkToggleButton_, &QToolButton::clicked, this, &MainWindow::toggleSelectedLink);
     linkStateRow->addWidget(linkStateLabel_, 1);
     linkStateRow->addWidget(linkToggleButton_);
-    linkLayout->addWidget(linkCombo_);
+    linkLayout->addWidget(linkSearchEdit_);
+    linkLayout->addLayout(linkSelectRow);
     linkLayout->addLayout(linkStateRow);
     controlLayout->addWidget(linkBox);
 
@@ -2637,6 +2667,7 @@ void MainWindow::updateEditorActions()
     startAction_->setEnabled(editable);
     stopAction_->setEnabled(stopEnabled);
     routerToggleButton_->setEnabled(runtimeControlsEnabled);
+    linkBrowseButton_->setEnabled(!closing_ && linkCombo_->count() > 0);
     linkToggleButton_->setEnabled(runtimeControlsEnabled);
     prefixEdit_->setEnabled(runtimeControlsEnabled);
     eventFilterEdit_->setEnabled(!closing_ && !historyLoadInProgress_ && !simulationStartPending_);
@@ -2662,6 +2693,7 @@ void MainWindow::refreshTopologySelectors()
     const auto linkIndex = oldLink.isEmpty() ? -1 : linkCombo_->findData(oldLink);
     linkCombo_->setCurrentIndex(linkIndex >= 0 ? linkIndex : (linkCombo_->count() > 0 ? 0 : -1));
     linkCombo_->blockSignals(false);
+    linkBrowseButton_->setEnabled(!closing_ && linkCombo_->count() > 0);
     refreshRuntimeControls();
 }
 

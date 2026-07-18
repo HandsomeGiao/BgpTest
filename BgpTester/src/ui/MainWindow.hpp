@@ -199,6 +199,7 @@ private:
     QComboBox* linkCombo_ = nullptr;
     TopologyRouterListModel* routerListModel_ = nullptr;
     TopologyLinkListModel* linkListModel_ = nullptr;
+    QSortFilterProxyModel* linkFilterModel_ = nullptr;
     QTabWidget* inspectorTabs_ = nullptr;
     QTableView* ribTable_ = nullptr;
     QTableView* allRoutesTable_ = nullptr;
@@ -208,6 +209,8 @@ private:
     QLabel* routerStateLabel_ = nullptr;
     QToolButton* routerToggleButton_ = nullptr;
     QLabel* linkStateLabel_ = nullptr;
+    QLineEdit* linkSearchEdit_ = nullptr;
+    QToolButton* linkBrowseButton_ = nullptr;
     QToolButton* linkToggleButton_ = nullptr;
     QLineEdit* prefixEdit_ = nullptr;
     QTableView* eventView_ = nullptr;
