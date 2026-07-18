@@ -34,6 +34,8 @@ class BestRoutesTableModel;
 class SimulationEngine;
 class TopologyScene;
 class TopologyView;
+class TopologyRouterListModel;
+class TopologyLinkListModel;
 
 class MainWindow final : public QMainWindow
 {
@@ -43,6 +45,7 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+    // Starts an asynchronous load; true means the request was accepted.
     bool openTopologyPath(const QString& path, bool showErrors = true);
 
 protected:
@@ -105,6 +108,7 @@ private:
                              const QString& filter);
     void trackQueryThread(QThread* thread);
     void stopAndWaitForQueryThreads();
+    void stopTopologyLoad();
     void connectEngine();
     void setTopology(Topology topology, const QString& path = {});
     void setDirty(bool dirty);
@@ -168,6 +172,9 @@ private:
     qint64 liveDeltaEventFiltered_ = 0;
     qint64 liveDeltaMessageTotal_ = 0;
     qint64 liveDeltaMessageFiltered_ = 0;
+    QThread* topologyLoadThread_ = nullptr;
+    quint64 topologyLoadGeneration_ = 0;
+    bool topologyLoadInProgress_ = false;
 
     QAction* newAction_ = nullptr;
     QAction* openAction_ = nullptr;
@@ -188,6 +195,8 @@ private:
 
     QComboBox* routerCombo_ = nullptr;
     QComboBox* linkCombo_ = nullptr;
+    TopologyRouterListModel* routerListModel_ = nullptr;
+    TopologyLinkListModel* linkListModel_ = nullptr;
     QTabWidget* inspectorTabs_ = nullptr;
     QTableView* ribTable_ = nullptr;
     QTableView* allRoutesTable_ = nullptr;

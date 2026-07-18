@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QVector>
 
+#include <functional>
 #include <optional>
 
 namespace bgptester
@@ -96,6 +97,24 @@ struct NeighborConfig
     bool operator==(const NeighborConfig&) const = default;
 };
 
+enum class TopologyLoadStage
+{
+    ReadingRouters,
+    ReadingLinks,
+    Validating
+};
+
+struct TopologyLoadProgress
+{
+    TopologyLoadStage stage = TopologyLoadStage::ReadingRouters;
+    qint64 bytesProcessed = 0;
+    qint64 totalBytes = 0;
+    qsizetype routersLoaded = 0;
+    qsizetype linksLoaded = 0;
+};
+
+using TopologyLoadProgressCallback = std::function<bool(const TopologyLoadProgress&)>;
+
 class Topology
 {
 public:
@@ -105,7 +124,9 @@ public:
 
     QJsonObject toJson() const;
     static std::optional<Topology> fromJson(const QJsonObject& object, QString* error = nullptr);
-    static std::optional<Topology> load(const QString& path, QString* error = nullptr);
+    // The callback runs in the calling thread; return false to cancel.
+    static std::optional<Topology> load(const QString& path, QString* error = nullptr,
+                                        const TopologyLoadProgressCallback& progress = {});
     bool save(const QString& path, QString* error = nullptr) const;
 
     QStringList validate() const;

@@ -12,6 +12,7 @@ namespace bgptester
 
 class RouterGraphicsItem;
 class LinkGraphicsItem;
+class TopologyOverviewItem;
 
 class TopologyScene final : public QGraphicsScene
 {
@@ -31,6 +32,10 @@ public:
 
     void setTopology(Topology* topology);
     void rebuild();
+    bool usesOverviewRendering() const
+    {
+        return overviewItem_ != nullptr;
+    }
     void setMode(Mode mode);
     Mode mode() const
     {
@@ -77,6 +82,7 @@ private:
     Topology* topology_ = nullptr;
     QMap<QString, RouterGraphicsItem*> routerItems_;
     QMap<QString, LinkGraphicsItem*> linkItems_;
+    TopologyOverviewItem* overviewItem_ = nullptr;
     QList<QGraphicsItem*> asGroupItems_;
     QMap<QString, bool> runtimeRouterState_;
     QMap<QString, bool> runtimeLinkState_;

@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QGraphicsItemGroup>
 #include <QGraphicsSceneMouseEvent>
+#include <QHash>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPathStroker>
@@ -19,6 +20,12 @@ namespace bgptester
 {
 namespace
 {
+
+// Individual QGraphicsObjects preserve full editing behavior for normal labs.
+// Beyond these limits a single level-of-detail item avoids hundreds of
+// thousands of QObject allocations and scene-index updates.
+constexpr qsizetype detailedRouterLimit = 3000;
+constexpr qsizetype detailedLinkLimit = 15000;
 
 QColor asColor(quint32 asn)
 {
@@ -341,6 +348,233 @@ private:
     bool highlighted_ = false;
 };
 
+class TopologyOverviewItem final : public QGraphicsItem
+{
+public:
+    enum
+    {
+        Type = QGraphicsItem::UserType + 3
+    };
+
+    TopologyOverviewItem(const Topology* topology, const QMap<QString, bool>* runtimeRouterState,
+                         const QMap<QString, bool>* runtimeLinkState, const QSet<QString>* highlightedEdges)
+        : runtimeRouterState_(runtimeRouterState), runtimeLinkState_(runtimeLinkState), highlightedEdges_(highlightedEdges)
+    {
+        setFlag(QGraphicsItem::ItemUsesExtendedStyleOption);
+        setZValue(-20.0);
+        if (!topology)
+        {
+            bounds_ = {-1000, -800, 3000, 2200};
+            return;
+        }
+
+        QSet<QString> reflectors;
+        QHash<QString, QPointF> positions;
+        positions.reserve(topology->routers.size());
+        routers_.reserve(topology->routers.size());
+        for (const auto& link : topology->links)
+        {
+            if (link.rrClientFromA)
+            {
+                reflectors.insert(link.a);
+            }
+            if (link.rrClientFromB)
+            {
+                reflectors.insert(link.b);
+            }
+        }
+
+        bool firstRouter = true;
+        for (auto it = topology->routers.cbegin(); it != topology->routers.cend(); ++it)
+        {
+            const auto& router = it.value();
+            positions.insert(it.key(), router.position);
+            routers_.append(RouterVisual{router.id, router.routerId, router.asn, router.position, reflectors.contains(it.key())});
+            const QRectF routerRect(router.position - QPointF(55, 35), QSizeF(110, 70));
+            bounds_ = firstRouter ? routerRect : bounds_.united(routerRect);
+            firstRouter = false;
+        }
+        if (firstRouter)
+        {
+            bounds_ = {-1000, -800, 3000, 2200};
+        }
+        else
+        {
+            bounds_ = bounds_.adjusted(-250, -250, 250, 250);
+        }
+
+        links_.reserve(topology->links.size());
+        for (const auto& link : topology->links)
+        {
+            const auto a = positions.constFind(link.a);
+            const auto b = positions.constFind(link.b);
+            if (a == positions.cend() || b == positions.cend())
+            {
+                continue;
+            }
+            links_.append(LinkVisual{QLineF(a.value(), b.value()), Topology::edgeKey(link.a, link.b), link.enabled});
+        }
+    }
+
+    int type() const override
+    {
+        return Type;
+    }
+
+    QRectF boundingRect() const override
+    {
+        return bounds_;
+    }
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget*) override
+    {
+        const auto lod = std::max<qreal>(0.0001, QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform()));
+        const auto exposed = option->exposedRect.adjusted(-80, -80, 80, 80);
+        painter->save();
+        painter->setClipRect(option->exposedRect);
+        painter->setRenderHint(QPainter::Antialiasing, lod >= 0.08);
+
+        const qsizetype linkBudget = lod < 0.02 ? 25000 : (lod < 0.08 ? 60000 : std::max<qsizetype>(1, links_.size()));
+        const auto linkStride = sampleStride(links_.size(), linkBudget);
+        QPen normalLinkPen(QColor(96, 125, 139, lod < 0.08 ? 85 : 145), 1.0);
+        normalLinkPen.setCosmetic(true);
+        normalLinkPen.setCapStyle(Qt::FlatCap);
+        painter->setPen(normalLinkPen);
+        for (qsizetype index = 0; index < links_.size(); index += linkStride)
+        {
+            const auto& visual = links_[index];
+            if (!QRectF(visual.line.p1(), visual.line.p2()).normalized().adjusted(-1, -1, 1, 1).intersects(exposed))
+            {
+                continue;
+            }
+
+            const auto runtime = runtimeLinkState_->constFind(visual.key);
+            const bool enabled = runtime == runtimeLinkState_->cend() ? visual.enabled : runtime.value();
+            const bool highlighted = highlightedEdges_->contains(visual.key);
+            if (highlighted || !enabled)
+            {
+                QPen specialPen(highlighted ? QColor(QStringLiteral("#00a8e8")) : QColor(QStringLiteral("#c62828")),
+                                highlighted ? 3.0 : 1.5, enabled ? Qt::SolidLine : Qt::DashLine);
+                specialPen.setCosmetic(true);
+                painter->setPen(specialPen);
+                painter->drawLine(visual.line);
+                painter->setPen(normalLinkPen);
+            }
+            else
+            {
+                painter->drawLine(visual.line);
+            }
+        }
+
+        const qsizetype routerBudget = lod < 0.04 ? 25000 : std::max<qsizetype>(1, routers_.size());
+        const auto routerStride = sampleStride(routers_.size(), routerBudget);
+        if (lod < 0.08)
+        {
+            QPen pointPen(QColor(QStringLiteral("#284b63")), 2.0);
+            pointPen.setCosmetic(true);
+            painter->setPen(pointPen);
+            for (qsizetype index = 0; index < routers_.size(); index += routerStride)
+            {
+                const auto& visual = routers_[index];
+                if (exposed.contains(visual.position))
+                {
+                    painter->drawPoint(visual.position);
+                }
+            }
+        }
+        else if (lod < 0.3)
+        {
+            const auto radius = std::clamp<qreal>(3.0 / lod, 6.0, 28.0);
+            painter->setPen(Qt::NoPen);
+            for (qsizetype index = 0; index < routers_.size(); index += routerStride)
+            {
+                const auto& visual = routers_[index];
+                const QRectF marker(visual.position - QPointF(radius, radius), QSizeF(radius * 2, radius * 2));
+                if (!marker.intersects(exposed))
+                {
+                    continue;
+                }
+                painter->setBrush(routerColor(visual));
+                painter->drawEllipse(marker);
+            }
+        }
+        else
+        {
+            for (const auto& visual : std::as_const(routers_))
+            {
+                const QRectF rect(visual.position - QPointF(55, 35), QSizeF(110, 70));
+                if (!rect.intersects(exposed))
+                {
+                    continue;
+                }
+                painter->setPen(QPen(QColor(QStringLiteral("#415a77")), 1.5));
+                painter->setBrush(routerColor(visual).lighter(185));
+                painter->drawRoundedRect(rect.adjusted(1, 1, -1, -1), 10, 10);
+                painter->setPen(QColor(QStringLiteral("#172b4d")));
+                auto font = painter->font();
+                font.setBold(true);
+                painter->setFont(font);
+                painter->drawText(QRectF(rect.left() + 4, rect.top() + 5, rect.width() - 8, 22), Qt::AlignCenter, visual.id);
+                font.setBold(false);
+                font.setPointSizeF(std::max<qreal>(6.0, font.pointSizeF() - 1.0));
+                painter->setFont(font);
+                painter->drawText(QRectF(rect.left() + 4, rect.top() + 28, rect.width() - 8, 18), Qt::AlignCenter,
+                                  QStringLiteral("AS%1").arg(visual.asn));
+                painter->drawText(QRectF(rect.left() + 4, rect.top() + 45, rect.width() - 8, 18), Qt::AlignCenter,
+                                  visual.routerId);
+                if (visual.routeReflector)
+                {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(QColor(QStringLiteral("#7b2cbf")));
+                    painter->drawEllipse(visual.position + QPointF(43, -24), 8, 8);
+                }
+            }
+        }
+        painter->restore();
+    }
+
+private:
+    struct RouterVisual
+    {
+        QString id;
+        QString routerId;
+        quint32 asn = 0;
+        QPointF position;
+        bool routeReflector = false;
+    };
+
+    struct LinkVisual
+    {
+        QLineF line;
+        QString key;
+        bool enabled = true;
+    };
+
+    static qsizetype sampleStride(qsizetype count, qsizetype budget)
+    {
+        return std::max<qsizetype>(1, (count + std::max<qsizetype>(1, budget) - 1) / std::max<qsizetype>(1, budget));
+    }
+
+    QColor routerColor(const RouterVisual& router) const
+    {
+        const auto runtime = runtimeRouterState_->constFind(router.id);
+        if (runtime == runtimeRouterState_->cend())
+        {
+            auto color = asColor(router.asn).darker(135);
+            color.setAlpha(210);
+            return color;
+        }
+        return runtime.value() ? QColor(QStringLiteral("#2d6a4f")) : QColor(QStringLiteral("#b02a37"));
+    }
+
+    QRectF bounds_;
+    QVector<RouterVisual> routers_;
+    QVector<LinkVisual> links_;
+    const QMap<QString, bool>* runtimeRouterState_ = nullptr;
+    const QMap<QString, bool>* runtimeLinkState_ = nullptr;
+    const QSet<QString>* highlightedEdges_ = nullptr;
+};
+
 TopologyScene::TopologyScene(QObject* parent) : QGraphicsScene(parent)
 {
     setSceneRect(-1000, -800, 3000, 2200);
@@ -362,6 +596,7 @@ void TopologyScene::rebuild()
 {
     rebuilding_ = true;
     routerMovePending_ = false;
+    overviewItem_ = nullptr;
     clear();
     routerItems_.clear();
     linkItems_.clear();
@@ -374,14 +609,31 @@ void TopologyScene::rebuild()
         return;
     }
 
+    if (topology_->routers.size() > detailedRouterLimit || topology_->links.size() > detailedLinkLimit)
+    {
+        overviewItem_ = new TopologyOverviewItem(topology_, &runtimeRouterState_, &runtimeLinkState_, &highlightedEdges_);
+        addItem(overviewItem_);
+        updateSceneRectFromRouters();
+        rebuilding_ = false;
+        return;
+    }
+
+    QSet<QString> reflectorIds;
+    for (const auto& link : topology_->links)
+    {
+        if (link.rrClientFromA)
+        {
+            reflectorIds.insert(link.a);
+        }
+        if (link.rrClientFromB)
+        {
+            reflectorIds.insert(link.b);
+        }
+    }
+
     for (auto it = topology_->routers.cbegin(); it != topology_->routers.cend(); ++it)
     {
-        bool isReflector = false;
-        for (const auto& neighbor : topology_->neighborsFor(it.key()))
-        {
-            isReflector = isReflector || neighbor.rrClient;
-        }
-        auto* item = new RouterGraphicsItem(it.value(), isReflector, this);
+        auto* item = new RouterGraphicsItem(it.value(), reflectorIds.contains(it.key()), this);
         addItem(item);
         item->setPos(it->position);
         item->setFlag(QGraphicsItem::ItemIsMovable, editable_);
@@ -503,6 +755,10 @@ bool TopologyScene::deleteSelection()
 void TopologyScene::setRouterRuntimeState(const QString& routerId, bool active)
 {
     runtimeRouterState_.insert(routerId, active);
+    if (overviewItem_)
+    {
+        overviewItem_->update();
+    }
     if (auto* item = routerItems_.value(routerId))
     {
         item->setRuntimeState(active);
@@ -513,6 +769,10 @@ void TopologyScene::setLinkRuntimeState(const QString& a, const QString& b, bool
 {
     const auto key = Topology::edgeKey(a, b);
     runtimeLinkState_.insert(key, enabled);
+    if (overviewItem_)
+    {
+        overviewItem_->update();
+    }
     if (auto* item = linkItems_.value(key))
     {
         item->setRuntimeState(enabled);
@@ -530,6 +790,10 @@ void TopologyScene::highlightPath(const QStringList& hops)
     {
         it.value()->setHighlighted(highlightedEdges_.contains(it.key()));
     }
+    if (overviewItem_)
+    {
+        overviewItem_->update();
+    }
 }
 
 void TopologyScene::clearRuntimeState()
@@ -545,6 +809,10 @@ void TopologyScene::clearRuntimeState()
     {
         item->setRuntimeState(std::nullopt);
         item->setHighlighted(false);
+    }
+    if (overviewItem_)
+    {
+        overviewItem_->update();
     }
 }
 
@@ -648,7 +916,7 @@ void TopologyScene::rebuildAsGroups()
         delete item;
     }
     asGroupItems_.clear();
-    if (!topology_)
+    if (!topology_ || overviewItem_)
     {
         return;
     }
@@ -674,6 +942,11 @@ void TopologyScene::rebuildAsGroups()
 
 void TopologyScene::updateSceneRectFromRouters()
 {
+    if (overviewItem_)
+    {
+        setSceneRect(overviewItem_->boundingRect());
+        return;
+    }
     if (routerItems_.isEmpty())
     {
         setSceneRect(-1000, -800, 3000, 2200);

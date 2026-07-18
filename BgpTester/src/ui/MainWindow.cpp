@@ -7,6 +7,7 @@
 #include "ui/RibTableModels.hpp"
 #include "ui/TopologyScene.hpp"
 
+#include <QAbstractListModel>
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
@@ -30,6 +31,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListView>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -53,6 +55,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -69,6 +72,18 @@ struct HistoryLoadState
     QString convergenceError;
     std::atomic<qint64> loadedRows{0};
     std::atomic<qint64> totalRows{0};
+    std::atomic_bool cancelRequested{false};
+};
+
+struct TopologyLoadState
+{
+    std::optional<Topology> topology;
+    QString error;
+    std::atomic<qint64> bytesProcessed{0};
+    std::atomic<qint64> totalBytes{0};
+    std::atomic<qint64> routersLoaded{0};
+    std::atomic<qint64> linksLoaded{0};
+    std::atomic<int> stage{static_cast<int>(TopologyLoadStage::ReadingRouters)};
     std::atomic_bool cancelRequested{false};
 };
 
@@ -314,6 +329,109 @@ QString convergenceTriggerText(const QString& event, const QString& context)
 
 } // namespace
 
+class TopologyRouterListModel final : public QAbstractListModel
+{
+public:
+    explicit TopologyRouterListModel(QObject* parent = nullptr) : QAbstractListModel(parent)
+    {
+    }
+
+    int rowCount(const QModelIndex& parent = {}) const override
+    {
+        if (parent.isValid())
+        {
+            return 0;
+        }
+        return static_cast<int>(std::min<qsizetype>(routerIds_.size(), std::numeric_limits<int>::max()));
+    }
+
+    QVariant data(const QModelIndex& index, int role) const override
+    {
+        if (!index.isValid() || index.row() < 0)
+        {
+            return {};
+        }
+        const auto row = static_cast<qsizetype>(index.row());
+        if (row >= routerIds_.size())
+        {
+            return {};
+        }
+        if (role == Qt::DisplayRole || role == Qt::EditRole || role == Qt::UserRole)
+        {
+            return routerIds_[row];
+        }
+        return {};
+    }
+
+    void setTopology(const Topology* topology)
+    {
+        beginResetModel();
+        routerIds_ = topology ? topology->routers.keys() : QStringList{};
+        endResetModel();
+    }
+
+private:
+    QStringList routerIds_;
+};
+
+class TopologyLinkListModel final : public QAbstractListModel
+{
+public:
+    explicit TopologyLinkListModel(QObject* parent = nullptr) : QAbstractListModel(parent)
+    {
+    }
+
+    int rowCount(const QModelIndex& parent = {}) const override
+    {
+        if (parent.isValid() || !topology_)
+        {
+            return 0;
+        }
+        return static_cast<int>(std::min<qsizetype>(topology_->links.size(), std::numeric_limits<int>::max()));
+    }
+
+    QVariant data(const QModelIndex& index, int role) const override
+    {
+        if (!topology_ || !index.isValid() || index.row() < 0)
+        {
+            return {};
+        }
+        const auto row = static_cast<qsizetype>(index.row());
+        if (row >= topology_->links.size())
+        {
+            return {};
+        }
+        const auto& link = topology_->links[row];
+        if (role == Qt::DisplayRole || role == Qt::EditRole)
+        {
+            return QStringLiteral("%1 ↔ %2").arg(link.a, link.b);
+        }
+        if (role == Qt::UserRole)
+        {
+            return Topology::edgeKey(link.a, link.b);
+        }
+        if (role == Qt::UserRole + 1)
+        {
+            return link.a;
+        }
+        if (role == Qt::UserRole + 2)
+        {
+            return link.b;
+        }
+        return {};
+    }
+
+    void setTopology(const Topology* topology)
+    {
+        beginResetModel();
+        topology_ = topology;
+        endResetModel();
+    }
+
+private:
+    const Topology* topology_ = nullptr;
+};
+
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 {
     setObjectName(QStringLiteral("BgpTesterMainWindow"));
@@ -403,17 +521,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     QSettings settings;
     restoreGeometry(settings.value(QStringLiteral("main/geometry")).toByteArray());
     restoreState(settings.value(QStringLiteral("main/state")).toByteArray());
+    setTopology(starterTopology());
+    setDirty(false);
     const auto lastTopology = settings.value(QStringLiteral("files/lastTopology")).toString();
-    if (lastTopology.isEmpty() || !QFileInfo::exists(lastTopology) || !openTopologyPath(lastTopology, false))
+    if (!lastTopology.isEmpty() && QFileInfo::exists(lastTopology))
     {
-        setTopology(starterTopology());
-        setDirty(false);
+        const auto absolutePath = QFileInfo(lastTopology).absoluteFilePath();
+        const auto restoreGeneration = topologyLoadGeneration_;
+        QTimer::singleShot(0, this,
+                           [this, absolutePath, restoreGeneration]
+                           {
+                               if (!closing_ && !topologyLoadInProgress_ && topologyLoadGeneration_ == restoreGeneration)
+                               {
+                                   openTopologyPath(absolutePath, false);
+                               }
+                           });
     }
 }
 
 MainWindow::~MainWindow()
 {
     closing_ = true;
+    stopTopologyLoad();
     ++historyQueryGeneration_;
     ++liveCountRequestId_;
     stopAndWaitForQueryThreads();
@@ -546,7 +675,15 @@ void MainWindow::buildInspectorDock()
     auto* routerRow = new QHBoxLayout;
     routerRow->addWidget(new QLabel(QStringLiteral("路由器"), container));
     routerCombo_ = new QComboBox(container);
-    routerCombo_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    routerListModel_ = new TopologyRouterListModel(this);
+    routerCombo_->setModel(routerListModel_);
+    routerCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    routerCombo_->setMinimumContentsLength(18);
+    routerCombo_->setMaxVisibleItems(30);
+    if (auto* list = qobject_cast<QListView*>(routerCombo_->view()))
+    {
+        list->setUniformItemSizes(true);
+    }
     routerRow->addWidget(routerCombo_, 1);
     connect(routerCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::selectedRouterChanged);
     layout->addLayout(routerRow);
@@ -589,6 +726,15 @@ void MainWindow::buildInspectorDock()
     auto* linkBox = new QGroupBox(QStringLiteral("链路状态"), control);
     auto* linkLayout = new QVBoxLayout(linkBox);
     linkCombo_ = new QComboBox(linkBox);
+    linkListModel_ = new TopologyLinkListModel(this);
+    linkCombo_->setModel(linkListModel_);
+    linkCombo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    linkCombo_->setMinimumContentsLength(24);
+    linkCombo_->setMaxVisibleItems(30);
+    if (auto* list = qobject_cast<QListView*>(linkCombo_->view()))
+    {
+        list->setUniformItemSizes(true);
+    }
     connect(linkCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::selectedLinkChanged);
     auto* linkStateRow = new QHBoxLayout;
     linkStateLabel_ = new QLabel(QStringLiteral("—"), linkBox);
@@ -1146,21 +1292,169 @@ void MainWindow::openTopology()
 
 bool MainWindow::openTopologyPath(const QString& path, bool showErrors)
 {
-    QString error;
-    const auto topology = Topology::load(path, &error);
-    if (!topology)
+    if (closing_ || topologyLoadInProgress_)
+    {
+        return false;
+    }
+
+    const QFileInfo fileInfo(path);
+    if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable())
     {
         if (showErrors)
         {
-            QMessageBox::critical(this, QStringLiteral("无法打开拓扑"), error);
+            QMessageBox::critical(this, QStringLiteral("无法打开拓扑"),
+                                  QStringLiteral("无法读取 %1").arg(fileInfo.absoluteFilePath()));
         }
         return false;
     }
-    setTopology(*topology, QFileInfo(path).absoluteFilePath());
-    setDirty(false);
-    QSettings().setValue(QStringLiteral("files/lastTopology"), topologyPath_);
-    statusBar()->showMessage(QStringLiteral("已加载 %1").arg(topologyPath_), 4000);
+
+    const auto absolutePath = fileInfo.absoluteFilePath();
+    const auto generation = ++topologyLoadGeneration_;
+    auto state = std::make_shared<TopologyLoadState>();
+    state->totalBytes.store(fileInfo.size(), std::memory_order_relaxed);
+
+    auto* progressDialog = new QProgressDialog(QStringLiteral("正在读取拓扑…"), QStringLiteral("取消"), 0, 1000, this);
+    progressDialog->setWindowTitle(QStringLiteral("加载拓扑"));
+    progressDialog->setWindowModality(Qt::WindowModal);
+    progressDialog->setMinimumDuration(0);
+    progressDialog->setAutoClose(false);
+    progressDialog->setAutoReset(false);
+    progressDialog->setValue(0);
+
+    auto* progressTimer = new QTimer(progressDialog);
+    progressTimer->setInterval(100);
+    connect(progressTimer, &QTimer::timeout, progressDialog,
+            [state, progressDialog]
+            {
+                const auto processed = state->bytesProcessed.load(std::memory_order_relaxed);
+                const auto total = state->totalBytes.load(std::memory_order_relaxed);
+                const auto routers = state->routersLoaded.load(std::memory_order_relaxed);
+                const auto links = state->linksLoaded.load(std::memory_order_relaxed);
+                const auto stage = static_cast<TopologyLoadStage>(state->stage.load(std::memory_order_relaxed));
+                const auto stageText = stage == TopologyLoadStage::ReadingRouters
+                                           ? QStringLiteral("正在解析路由器")
+                                           : (stage == TopologyLoadStage::ReadingLinks ? QStringLiteral("正在解析链路")
+                                                                                       : QStringLiteral("正在校验拓扑"));
+                if (total > 0)
+                {
+                    const auto value = stage == TopologyLoadStage::Validating
+                                           ? 1000
+                                           : static_cast<int>(std::clamp<qint64>(processed * 1000 / total, 0, 999));
+                    progressDialog->setValue(value);
+                    progressDialog->setLabelText(
+                        QStringLiteral("%1… %2 / %3 MiB · %4 台路由器 · %5 条链路")
+                            .arg(stageText)
+                            .arg(processed / (1024.0 * 1024.0), 0, 'f', 1)
+                            .arg(total / (1024.0 * 1024.0), 0, 'f', 1)
+                            .arg(routers)
+                            .arg(links));
+                }
+                else
+                {
+                    progressDialog->setLabelText(QStringLiteral("%1… %2 台路由器 · %3 条链路").arg(stageText).arg(routers).arg(links));
+                }
+            });
+
+    auto* loadThread = QThread::create(
+        [state, absolutePath]
+        {
+            state->topology = Topology::load(
+                absolutePath, &state->error,
+                [state](const TopologyLoadProgress& progress)
+                {
+                    state->bytesProcessed.store(progress.bytesProcessed, std::memory_order_relaxed);
+                    state->totalBytes.store(progress.totalBytes, std::memory_order_relaxed);
+                    state->routersLoaded.store(progress.routersLoaded, std::memory_order_relaxed);
+                    state->linksLoaded.store(progress.linksLoaded, std::memory_order_relaxed);
+                    state->stage.store(static_cast<int>(progress.stage), std::memory_order_relaxed);
+                    return !state->cancelRequested.load(std::memory_order_relaxed) &&
+                           !QThread::currentThread()->isInterruptionRequested();
+                });
+        });
+    loadThread->setObjectName(QStringLiteral("TopologyLoaderThread"));
+    loadThread->setParent(this);
+    topologyLoadThread_ = loadThread;
+    topologyLoadInProgress_ = true;
+    updateEditorActions();
+
+    connect(progressDialog, &QProgressDialog::canceled, loadThread,
+            [state, loadThread]
+            {
+                state->cancelRequested.store(true, std::memory_order_relaxed);
+                loadThread->requestInterruption();
+            });
+    connect(loadThread, &QThread::finished, this,
+            [this, state, absolutePath, generation, showErrors, progressDialog, progressTimer, loadThread]
+            {
+                const auto interrupted = loadThread->isInterruptionRequested();
+                QObject::disconnect(progressDialog, nullptr, loadThread, nullptr);
+                progressTimer->stop();
+                progressDialog->close();
+                progressDialog->deleteLater();
+                loadThread->deleteLater();
+                if (topologyLoadThread_ == loadThread)
+                {
+                    topologyLoadThread_ = nullptr;
+                }
+                topologyLoadInProgress_ = false;
+                if (closing_ || generation != topologyLoadGeneration_)
+                {
+                    return;
+                }
+                updateEditorActions();
+                if (state->cancelRequested.load(std::memory_order_relaxed) || interrupted)
+                {
+                    statusBar()->showMessage(QStringLiteral("已取消加载拓扑"), 4000);
+                    return;
+                }
+                if (!state->topology)
+                {
+                    if (showErrors)
+                    {
+                        QMessageBox::critical(this, QStringLiteral("无法打开拓扑"), state->error);
+                    }
+                    else
+                    {
+                        statusBar()->showMessage(QStringLiteral("自动加载拓扑失败：%1").arg(state->error), 8000);
+                    }
+                    return;
+                }
+
+                const auto routerCount = state->topology->routers.size();
+                const auto linkCount = state->topology->links.size();
+                setTopology(std::move(*state->topology), absolutePath);
+                setDirty(false);
+                QSettings().setValue(QStringLiteral("files/lastTopology"), topologyPath_);
+                statusBar()->showMessage(
+                    QStringLiteral("已加载 %1（%2 台路由器，%3 条链路%4）")
+                        .arg(topologyPath_)
+                        .arg(routerCount)
+                        .arg(linkCount)
+                        .arg(scene_->usesOverviewRendering() ? QStringLiteral("，概览渲染") : QString{}),
+                    8000);
+            });
+
+    progressTimer->start();
+    progressDialog->show();
+    loadThread->start();
     return true;
+}
+
+void MainWindow::stopTopologyLoad()
+{
+    ++topologyLoadGeneration_;
+    auto* thread = topologyLoadThread_;
+    topologyLoadThread_ = nullptr;
+    topologyLoadInProgress_ = false;
+    if (!thread)
+    {
+        return;
+    }
+    thread->requestInterruption();
+    if (thread->isRunning())
+    {
+        thread->wait();
+    }
 }
 
 bool MainWindow::saveTopology()
@@ -1203,7 +1497,7 @@ bool MainWindow::saveTopologyAs()
 
 void MainWindow::openHistory()
 {
-    if (closing_ || simulationRunning_ || simulationStartPending_ || historyLoadInProgress_)
+    if (closing_ || simulationRunning_ || simulationStartPending_ || historyLoadInProgress_ || topologyLoadInProgress_)
     {
         return;
     }
@@ -2213,7 +2507,8 @@ void MainWindow::updateWindowTitle()
 
 void MainWindow::updateEditorActions()
 {
-    const auto editable = !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_;
+    const auto editable =
+        !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_ && !topologyLoadInProgress_;
     const auto runtimeControlsEnabled = !closing_ && simulationRunning_;
     for (auto* action : {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
                          addLinkAction_, deleteAction_})
@@ -2221,6 +2516,7 @@ void MainWindow::updateEditorActions()
         action->setEnabled(editable);
     }
     saveAction_->setEnabled(editable && dirty_);
+    openHistoryAction_->setEnabled(editable);
     startAction_->setEnabled(editable);
     stopAction_->setEnabled(runtimeControlsEnabled);
     routerToggleButton_->setEnabled(runtimeControlsEnabled);
@@ -2238,31 +2534,16 @@ void MainWindow::refreshTopologySelectors()
 {
     const auto oldRouter = routerCombo_->currentText();
     routerCombo_->blockSignals(true);
-    routerCombo_->clear();
-    routerCombo_->addItems(topology_.routers.keys());
-    const auto routerIndex = routerCombo_->findText(oldRouter);
-    if (routerIndex >= 0)
-    {
-        routerCombo_->setCurrentIndex(routerIndex);
-    }
+    routerListModel_->setTopology(&topology_);
+    const auto routerIndex = oldRouter.isEmpty() ? -1 : routerCombo_->findText(oldRouter);
+    routerCombo_->setCurrentIndex(routerIndex >= 0 ? routerIndex : (routerCombo_->count() > 0 ? 0 : -1));
     routerCombo_->blockSignals(false);
 
     const auto oldLink = linkCombo_->currentData().toString();
     linkCombo_->blockSignals(true);
-    linkCombo_->clear();
-    for (const auto& link : topology_.links)
-    {
-        const auto key = Topology::edgeKey(link.a, link.b);
-        linkCombo_->addItem(QStringLiteral("%1 ↔ %2").arg(link.a, link.b), key);
-        const auto row = linkCombo_->count() - 1;
-        linkCombo_->setItemData(row, link.a, Qt::UserRole + 1);
-        linkCombo_->setItemData(row, link.b, Qt::UserRole + 2);
-    }
-    const auto linkIndex = linkCombo_->findData(oldLink);
-    if (linkIndex >= 0)
-    {
-        linkCombo_->setCurrentIndex(linkIndex);
-    }
+    linkListModel_->setTopology(&topology_);
+    const auto linkIndex = oldLink.isEmpty() ? -1 : linkCombo_->findData(oldLink);
+    linkCombo_->setCurrentIndex(linkIndex >= 0 ? linkIndex : (linkCombo_->count() > 0 ? 0 : -1));
     linkCombo_->blockSignals(false);
     refreshRuntimeControls();
 }
@@ -2453,6 +2734,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
         return;
     }
     closing_ = true;
+    stopTopologyLoad();
     ++historyQueryGeneration_;
     ++liveCountRequestId_;
     if (eventFilterTimer_)
