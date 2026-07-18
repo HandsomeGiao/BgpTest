@@ -197,6 +197,7 @@ private:
     qint64 lastActivityAt_ = 0;
     qint64 convergenceStartedAt_ = 0;
     quint64 convergenceSequence_ = 0;
+    quint64 convergenceMessageCount_ = 0;
     QString convergenceTriggerEvent_;
     QString convergenceTriggerContext_;
     quint64 nextSequence_ = 0;

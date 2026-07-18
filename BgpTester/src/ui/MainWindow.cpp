@@ -237,6 +237,13 @@ std::optional<quint64> positiveDetail(const SimulationEvent& event, const QStrin
     return ok && value > 0 ? std::optional<quint64>{value} : std::nullopt;
 }
 
+std::optional<quint64> unsignedDetail(const SimulationEvent& event, const QString& key)
+{
+    bool ok = false;
+    const auto value = event.details.value(key).toULongLong(&ok);
+    return ok ? std::optional<quint64>{value} : std::nullopt;
+}
+
 QString durationText(qint64 durationMs)
 {
     if (durationMs < 1000)
@@ -948,18 +955,20 @@ void MainWindow::buildEventDock()
     convergenceSummary->addWidget(clearConvergenceButton);
     convergenceLayout->addLayout(convergenceSummary);
 
-    convergenceTable_ = new QTableWidget(0, 5, convergencePage);
+    convergenceTable_ = new QTableWidget(0, 6, convergencePage);
     convergenceTable_->setObjectName(QStringLiteral("convergenceHistoryTable"));
     convergenceTable_->setHorizontalHeaderLabels({QStringLiteral("轮次"), QStringLiteral("触发事件"), QStringLiteral("开始时间"),
-                                                  QStringLiteral("完成时间"), QStringLiteral("持续时间")});
+                                                  QStringLiteral("完成时间"), QStringLiteral("持续时间"), QStringLiteral("BGP 报文数")});
     configureDataTable(convergenceTable_);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     convergenceLayout->addWidget(convergenceTable_, 1);
-    auto* convergenceNote = new QLabel(QStringLiteral("持续时间包含配置的收敛静默窗口。"), convergencePage);
+    auto* convergenceNote =
+        new QLabel(QStringLiteral("持续时间包含配置的收敛静默窗口；BGP 报文数严格统计本轮的 message_received 事件。"), convergencePage);
     convergenceNote->setStyleSheet(QStringLiteral("color:#6c757d"));
     convergenceLayout->addWidget(convergenceNote);
     monitorTabs->addTab(convergencePage, QStringLiteral("收敛时间"));
@@ -2494,12 +2503,13 @@ void MainWindow::appendConvergenceEvents(const QVector<SimulationEvent>& events)
         const auto sequence =
             positiveDetail(event, QStringLiteral("convergence_sequence")).value_or(static_cast<quint64>(convergenceTable_->rowCount() + 1));
         appendConvergenceRecord(sequence, event.details.value(QStringLiteral("trigger_event")),
-                                event.details.value(QStringLiteral("trigger_context")), event.timestamp, *durationMs);
+                                event.details.value(QStringLiteral("trigger_context")), event.timestamp, *durationMs,
+                                unsignedDetail(event, QStringLiteral("bgp_message_count")));
     }
 }
 
 void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext,
-                                         const QDateTime& completedAt, qint64 durationMs)
+                                         const QDateTime& completedAt, qint64 durationMs, std::optional<quint64> bgpMessageCount)
 {
     if (!completedAt.isValid())
     {
@@ -2517,6 +2527,17 @@ void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& trigge
     durationItem->setData(Qt::UserRole, durationMs);
     durationItem->setToolTip(QStringLiteral("%1 ms（包含收敛静默窗口）").arg(durationMs));
     convergenceTable_->setItem(row, 4, durationItem);
+    auto* messageCountItem = tableItem(bgpMessageCount ? QString::number(*bgpMessageCount) : QStringLiteral("—"));
+    if (bgpMessageCount)
+    {
+        messageCountItem->setData(Qt::UserRole, QVariant::fromValue(*bgpMessageCount));
+        messageCountItem->setToolTip(QStringLiteral("本轮收敛共收到 %1 条 BGP 报文（event=message_received）").arg(*bgpMessageCount));
+    }
+    else
+    {
+        messageCountItem->setToolTip(QStringLiteral("该历史记录未保存 BGP 报文数量"));
+    }
+    convergenceTable_->setItem(row, 5, messageCountItem);
     convergenceCountLabel_->setText(QStringLiteral("已记录 %1 次").arg(convergenceTable_->rowCount()));
     convergenceStateLabel_->setText(QStringLiteral("当前：已收敛 · 触发：%1 · 最近 %2")
                                         .arg(convergenceTriggerText(triggerEvent, triggerContext), durationText(durationMs)));
@@ -2553,7 +2574,8 @@ void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& event
                 const auto triggerEvent = event.details.value(QStringLiteral("trigger_event"), inferredTriggerEvent);
                 const auto triggerContext = event.details.value(QStringLiteral("trigger_context"),
                                                                 triggerEvent == inferredTriggerEvent ? inferredTriggerContext : QString{});
-                appendConvergenceRecord(sequence, triggerEvent, triggerContext, event.timestamp, *durationMs);
+                appendConvergenceRecord(sequence, triggerEvent, triggerContext, event.timestamp, *durationMs,
+                                        unsignedDetail(event, QStringLiteral("bgp_message_count")));
             }
             inferredStart = {};
             inferredTriggerEvent.clear();

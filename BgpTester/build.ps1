@@ -5,6 +5,7 @@ param(
     [string]$CompilerRoot = "",
     [string]$Generator = "",
     [switch]$Clean,
+    [switch]$Test,
     [switch]$Deploy
 )
 
@@ -88,11 +89,14 @@ if ($Clean -and (Test-Path -LiteralPath $BuildDir)) {
     Remove-Item -LiteralPath $ResolvedBuild -Recurse -Force
 }
 
+$BuildTesting = if ($Test) { "ON" } else { "OFF" }
+
 $ConfigureArgs = @(
     "-S", $ProjectDir,
     "-B", $BuildDir,
     "-G", $Generator,
     "-DCMAKE_BUILD_TYPE=$Configuration",
+    "-DBUILD_TESTING=$BuildTesting",
     "-DCMAKE_PREFIX_PATH=$QtPrefix"
 ) + $CompilerArgs
 
@@ -100,8 +104,11 @@ $ConfigureArgs = @(
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & cmake --build $BuildDir --config $Configuration --parallel
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& ctest --test-dir $BuildDir -C $Configuration --output-on-failure
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+if ($Test) {
+    & ctest --test-dir $BuildDir -C $Configuration --output-on-failure
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 if ($Deploy) {
     $DeployTool = Join-Path $QtPrefix "bin\windeployqt.exe"

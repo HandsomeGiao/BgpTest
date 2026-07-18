@@ -8,6 +8,8 @@
 #include <QSet>
 #include <QThread>
 
+#include <optional>
+
 class QAction;
 class QActionGroup;
 class QCheckBox;
@@ -124,7 +126,7 @@ private:
     void populatePeerTable(const QVector<PeerSnapshot>& snapshots);
     void appendConvergenceEvents(const QVector<SimulationEvent>& events);
     void appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext, const QDateTime& completedAt,
-                                 qint64 durationMs);
+                                 qint64 durationMs, std::optional<quint64> bgpMessageCount);
     void rebuildConvergenceHistory(const QVector<SimulationEvent>& events, qint64 totalCount);
     void clearConvergenceHistory(const QString& stateText);
     void refreshRuntimeControls();

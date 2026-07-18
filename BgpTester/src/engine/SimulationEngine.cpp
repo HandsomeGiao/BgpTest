@@ -190,6 +190,7 @@ void SimulationEngine::startSimulation(Topology topology)
     lastActivityAt_ = 0;
     convergenceStartedAt_ = 0;
     convergenceSequence_ = 0;
+    convergenceMessageCount_ = 0;
     convergenceTriggerEvent_ = QStringLiteral("simulation_started");
     convergenceTriggerContext_ = simulation_.name;
     converged_ = false;
@@ -295,6 +296,7 @@ void SimulationEngine::clearRuntime()
     nextOrder_ = 0;
     nextGeneration_ = 0;
     deliveredMessages_ = 0;
+    convergenceMessageCount_ = 0;
     routingStateDirty_ = false;
     convergenceTriggerEvent_.clear();
     convergenceTriggerContext_.clear();
@@ -636,6 +638,7 @@ void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, cons
     {
         converged_ = false;
         convergenceStartedAt_ = activityAt;
+        convergenceMessageCount_ = 0;
         convergenceTriggerEvent_ = convergenceTriggerEvent.isEmpty() ? QStringLiteral("routing_activity") : convergenceTriggerEvent;
         convergenceTriggerContext_ = convergenceTriggerContext;
         emit convergenceChanged(false);
@@ -826,6 +829,7 @@ void SimulationEngine::deliverMessages(const ScheduledEvent& event)
         recordedEvents.append(messageEvent(message));
         ++deliveredMessages_;
         markActivity();
+        ++convergenceMessageCount_;
         switch (message.type)
         {
             case MessageType::Open:
@@ -1613,6 +1617,7 @@ void SimulationEngine::updateStatus()
                                  {QStringLiteral("started_at_ms"), QString::number(convergenceStartedAt_)},
                                  {QStringLiteral("completed_at_ms"), QString::number(completedAt)},
                                  {QStringLiteral("duration_ms"), QString::number(durationMs)},
+                                 {QStringLiteral("bgp_message_count"), QString::number(convergenceMessageCount_)},
                                  {QStringLiteral("trigger_event"), convergenceTriggerEvent_},
                                  {QStringLiteral("trigger_context"), convergenceTriggerContext_}});
         }
