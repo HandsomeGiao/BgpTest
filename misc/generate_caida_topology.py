@@ -7,9 +7,14 @@ CAIDA 数据只描述 AS 之间的关系，不包含 AS 内部拓扑。本脚本
 AS 稳定地随机选择一种合成 iBGP 模板，再用 CAIDA 的 peer/provider-customer
 关系连接各 AS 的边界路由器。
 
-默认只生成有限大小的连通 AS 子图。当前数据集全量展开会产生数十万台路由器
-和超过百万条链路，虽然 JSON 格式有效，但并不适合直接交给 BgpTester 的 GUI
-或仿真器。只有显式传入 --all-ases 时才会生成全量拓扑。
+默认使用 ``deep`` 抽样：从高层 provider 沿 provider→customer 关系做深度优先
+遍历，并且只保留 valley-free 的 customer-cone 骨干树。这样 ``--max-ases``
+增加时会真正增加 AS 路径深度，不会因为高连接 AS 和诱导图捷径退化成直径为
+2 的星形图。旧的 BFS + 诱导子图行为可用 ``--sampling-mode dense`` 启用。
+
+当前数据集全量展开会产生数十万台路由器和超过百万条链路，虽然 JSON 格式
+有效，但并不适合直接交给 BgpTester 的 GUI 或仿真器。只有显式传入
+``--all-ases`` 时才会生成全量拓扑。
 
 示例：
 
@@ -23,7 +28,7 @@ from __future__ import annotations
 
 import argparse
 import bz2
-from collections import Counter
+from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 import gzip
 import hashlib
@@ -51,6 +56,7 @@ BENCHMARK_PREFIX_CAPACITY = 1 << 17  # 198.18.0.0/15 中的 /32 数量
 STANDARD_PLUGIN_ID = "org.bgptester.router.standard-bgp"
 DEFAULT_TEMPLATES = ("full_mesh", "rr_star", "dual_rr")
 ALL_TEMPLATES = ("single", *DEFAULT_TEMPLATES)
+DEEP_ROOT_CANDIDATE_COUNT = 128
 
 
 class GenerationError(RuntimeError):
@@ -250,7 +256,178 @@ def stable_rng(seed: int, *parts: object) -> random.Random:
     return random.Random(int.from_bytes(digest, "big"))
 
 
-def select_connected_ases(
+def load_ordered_customers(
+    path: Path,
+    *,
+    seed: int,
+    skip_invalid: bool,
+) -> dict[int, tuple[int, ...]]:
+    """读取 provider→customer 邻接表，并为每个 provider 稳定地打乱客户顺序。"""
+
+    customer_sets: dict[int, set[int]] = defaultdict(set)
+    for relationship in iter_relationships(path, skip_invalid=skip_invalid):
+        if relationship.kind == "provider_customer":
+            customer_sets[relationship.a].add(relationship.b)
+
+    ordered: dict[int, tuple[int, ...]] = {}
+    for provider in sorted(customer_sets):
+        customers = sorted(customer_sets[provider])
+        stable_rng(seed, "deep-customer-order", provider).shuffle(customers)
+        ordered[provider] = tuple(customers)
+    return ordered
+
+
+def build_customer_cone_tree(
+    root_asn: int,
+    max_ases: int,
+    ordered_customers: dict[int, tuple[int, ...]],
+) -> tuple[set[int], list[int], list[ASRelationship]]:
+    """深度优先构造 provider→customer 树。
+
+    每个节点只保留第一次到达它的 provider 边，因此结果无环。任意两节点间的
+    唯一路径都是 customer→provider* 后接 provider→customer*，天然符合
+    valley-free 出口策略。
+    """
+
+    selected = {root_asn}
+    order = [root_asn]
+    tree: list[ASRelationship] = []
+    stack: list[tuple[int, Iterator[int]]] = [
+        (root_asn, iter(ordered_customers.get(root_asn, ())))
+    ]
+
+    while stack and len(selected) < max_ases:
+        provider, children = stack[-1]
+        try:
+            customer = next(children)
+        except StopIteration:
+            stack.pop()
+            continue
+        if customer in selected:
+            continue
+        selected.add(customer)
+        order.append(customer)
+        tree.append(ASRelationship(provider, customer, "provider_customer"))
+        stack.append((customer, iter(ordered_customers.get(customer, ()))))
+
+    return selected, order, tree
+
+
+def tree_diameter(
+    selected_ases: set[int],
+    tree: Sequence[ASRelationship],
+) -> tuple[int, tuple[int, int]]:
+    if not selected_ases:
+        return 0, (0, 0)
+    if len(selected_ases) == 1:
+        only = next(iter(selected_ases))
+        return 0, (only, only)
+
+    adjacency: dict[int, list[int]] = {asn: [] for asn in selected_ases}
+    for relationship in tree:
+        adjacency[relationship.a].append(relationship.b)
+        adjacency[relationship.b].append(relationship.a)
+
+    def farthest(start: int) -> tuple[int, int]:
+        distances = {start: 0}
+        pending = deque([start])
+        while pending:
+            current = pending.popleft()
+            for neighbor in adjacency[current]:
+                if neighbor not in distances:
+                    distances[neighbor] = distances[current] + 1
+                    pending.append(neighbor)
+        if len(distances) != len(selected_ases):
+            raise GenerationError("deep customer-cone 骨干树不连通")
+        return max(distances, key=lambda asn: (distances[asn], -asn)), max(
+            distances.values()
+        )
+
+    endpoint_a, _ = farthest(min(selected_ases))
+    endpoint_b, diameter = farthest(endpoint_a)
+    return diameter, (endpoint_a, endpoint_b)
+
+
+def select_deep_customer_cone(
+    *,
+    all_ases: set[int],
+    ordered_customers: dict[int, tuple[int, ...]],
+    max_ases: int,
+    requested_root_asn: int | None,
+    seed: int,
+) -> tuple[int, set[int], list[int], list[ASRelationship], int, tuple[int, int]]:
+    """选择能容纳目标规模且骨干直径尽量大的 customer cone。"""
+
+    if max_ases > len(all_ases):
+        raise GenerationError(
+            f"--max-ases={max_ases} 超过数据集中的 AS 数量 {len(all_ases)}"
+        )
+    if requested_root_asn is not None:
+        if requested_root_asn not in all_ases:
+            raise GenerationError(f"root ASN {requested_root_asn} 不存在于输入数据中")
+        selected, order, tree = build_customer_cone_tree(
+            requested_root_asn, max_ases, ordered_customers
+        )
+        if len(selected) < max_ases:
+            raise GenerationError(
+                f"AS{requested_root_asn} 的 provider→customer cone 只能选择 "
+                f"{len(selected)} 个 AS，无法达到 {max_ases}；请更换 --root-asn，"
+                "或使用 --sampling-mode dense"
+            )
+        diameter, endpoints = tree_diameter(selected, tree)
+        return requested_root_asn, selected, order, tree, diameter, endpoints
+
+    ranked_roots = sorted(
+        ordered_customers,
+        key=lambda asn: (-len(ordered_customers[asn]), asn),
+    )[:DEEP_ROOT_CANDIDATE_COUNT]
+    if not ranked_roots:
+        raise GenerationError(
+            "输入数据中没有 provider→customer 关系，deep 模式无法构造 "
+            "customer cone；请使用 --sampling-mode dense"
+        )
+    best: tuple[
+        tuple[int, int, float],
+        int,
+        set[int],
+        list[int],
+        list[ASRelationship],
+        tuple[int, int],
+    ] | None = None
+    largest_cone = 0
+    largest_root = 0
+
+    for candidate in ranked_roots:
+        selected, order, tree = build_customer_cone_tree(
+            candidate, max_ases, ordered_customers
+        )
+        if len(selected) > largest_cone:
+            largest_cone = len(selected)
+            largest_root = candidate
+        if len(selected) < max_ases:
+            continue
+        diameter, endpoints = tree_diameter(selected, tree)
+        degrees: Counter[int] = Counter()
+        for relationship in tree:
+            degrees[relationship.a] += 1
+            degrees[relationship.b] += 1
+        max_degree = max(degrees.values(), default=0)
+        tie_breaker = stable_rng(seed, "deep-root-tie", candidate).random()
+        score = (diameter, -max_degree, tie_breaker)
+        if best is None or score > best[0]:
+            best = (score, candidate, selected, order, tree, endpoints)
+
+    if best is None:
+        raise GenerationError(
+            f"前 {len(ranked_roots)} 个候选 provider 中最大的 customer cone "
+            f"只有 {largest_cone} 个 AS（根 AS{largest_root}），无法达到 "
+            f"{max_ases}；请指定其他 --root-asn 或使用 --sampling-mode dense"
+        )
+    score, root_asn, selected, order, tree, endpoints = best
+    return root_asn, selected, order, tree, score[0], endpoints
+
+
+def select_dense_connected_ases(
     path: Path,
     *,
     all_ases: set[int],
@@ -354,6 +531,28 @@ def limit_relationships(
         raise GenerationError("选中的 AS 关系图不连通，无法在限制边数后保持连通")
     kept = tree + extras[: max_links - len(tree)]
     return sorted(kept, key=lambda relationship: (*relationship.key, relationship.kind))
+
+
+def add_induced_extras(
+    backbone: Sequence[ASRelationship],
+    induced: Sequence[ASRelationship],
+    *,
+    requested_count: int,
+    seed: int,
+) -> tuple[list[ASRelationship], int]:
+    backbone_keys = {relationship.key for relationship in backbone}
+    candidates = [
+        relationship
+        for relationship in induced
+        if relationship.key not in backbone_keys
+    ]
+    stable_rng(seed, "deep-extra-links", requested_count).shuffle(candidates)
+    chosen = candidates[:requested_count]
+    combined = [*backbone, *chosen]
+    return (
+        sorted(combined, key=lambda relationship: (*relationship.key, relationship.kind)),
+        len(chosen),
+    )
 
 
 def circular_nodes(roles: Sequence[str], radius: float, phase: float = -math.pi / 2) -> tuple[TemplateNode, ...]:
@@ -746,7 +945,20 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="显式生成全量 AS（输出非常大，不推荐直接用于 GUI/仿真）",
     )
-    parser.add_argument("--root-asn", type=asn_value, help="连通 BFS 抽样的根 ASN")
+    parser.add_argument(
+        "--sampling-mode",
+        choices=("deep", "dense"),
+        default="deep",
+        help=(
+            "deep 构造较长的 provider→customer DFS 骨干；dense 保留旧版 "
+            "BFS + 诱导子图行为"
+        ),
+    )
+    parser.add_argument(
+        "--root-asn",
+        type=asn_value,
+        help="deep 模式的 customer-cone 根 provider，或 dense 模式的 BFS 根 ASN",
+    )
     parser.add_argument("--seed", type=int, default=20260701, help="可复现随机种子")
     parser.add_argument(
         "--templates",
@@ -758,8 +970,17 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=non_negative_int,
         default=0,
         help=(
-            "AS 间链路上限；0 保留全部关系；裁边只保证无向连通，"
-            "不保证 valley-free 策略下任意前缀可达"
+            "dense/--all-ases 模式的 AS 间链路上限；0 保留全部关系；"
+            "裁边只保证无向连通"
+        ),
+    )
+    parser.add_argument(
+        "--extra-inter-as-links",
+        type=non_negative_int,
+        default=0,
+        help=(
+            "deep 模式在 customer-cone 树之外加入的诱导边数量；"
+            "额外边可能显著缩短 AS_PATH"
         ),
     )
     parser.add_argument("--no-prefixes", action="store_true", help="不生成每 AS 一个合成 /32 前缀")
@@ -785,6 +1006,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def validate_arguments(args: argparse.Namespace) -> None:
     if args.root_asn is not None and args.all_ases:
         raise GenerationError("--root-asn 只用于有限连通抽样，不能与 --all-ases 同时使用")
+    if args.all_ases and args.extra_inter_as_links:
+        raise GenerationError("--extra-inter-as-links 不能与 --all-ases 同时使用")
+    if not args.all_ases and args.sampling_mode == "deep" and args.max_inter_as_links:
+        raise GenerationError(
+            "--max-inter-as-links 只用于 dense/--all-ases 模式；deep 模式请使用 "
+            "--extra-inter-as-links"
+        )
+    if args.sampling_mode == "dense" and args.extra_inter_as_links:
+        raise GenerationError("--extra-inter-as-links 只用于 deep 模式")
     for minimum_name, maximum_name in (
         ("ibgp_delay_min_ms", "ibgp_delay_max_ms"),
         ("ebgp_delay_min_ms", "ebgp_delay_max_ms"),
@@ -807,6 +1037,10 @@ def print_summary(
     selected_count: int,
     relationship_count: int,
     root_asn: int | None,
+    sampling_mode: str,
+    backbone_diameter: int | None,
+    diameter_endpoints: tuple[int, int] | None,
+    extra_link_count: int,
     summary: BuildSummary,
     dry_run: bool,
 ) -> None:
@@ -818,8 +1052,17 @@ def print_summary(
         for example in stats.invalid_examples:
             print(f"    - {example}")
     print(f"  选中: {selected_count} 个 AS, {relationship_count} 条 AS 间关系")
+    print(f"  抽样模式: {sampling_mode}")
     if root_asn is not None:
         print(f"  抽样根: AS{root_asn}")
+    if backbone_diameter is not None and diameter_endpoints is not None:
+        path_note = "；无额外边时对应最长预期 AS_PATH" if not extra_link_count else ""
+        print(
+            f"  customer-cone 骨干直径: {backbone_diameter} AS hops "
+            f"(AS{diameter_endpoints[0]} ↔ AS{diameter_endpoints[1]}){path_note}"
+        )
+    if extra_link_count:
+        print(f"  额外诱导边: {extra_link_count}（可能缩短实际 AS_PATH）")
     print(f"  路由器: {summary.router_count}")
     print(
         "  链路: "
@@ -868,6 +1111,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
 
         stats = scan_dataset(input_path, skip_invalid=args.skip_invalid_lines)
+        backbone_diameter: int | None = None
+        diameter_endpoints: tuple[int, int] | None = None
+        extra_link_count = 0
         if args.all_ases:
             print(
                 "警告：正在显式生成全量拓扑；该结果通常不适合直接用于 BgpTester GUI/仿真。",
@@ -876,12 +1122,77 @@ def main(argv: Sequence[str] | None = None) -> int:
             selected_ases = set(stats.ases)
             as_order = sorted(selected_ases)
             root_asn: int | None = None
+            sampling_mode = "all"
+            relationships = collect_induced_relationships(
+                input_path, selected_ases, skip_invalid=args.skip_invalid_lines
+            )
+            induced_relationship_count = len(relationships)
+            relationships = limit_relationships(
+                relationships,
+                selected_ases,
+                max_links=args.max_inter_as_links,
+                seed=args.seed,
+            )
+            if len(relationships) < induced_relationship_count:
+                print(
+                    "警告：AS 间裁边仅保持无向图连通；商业关系策略下的路由"
+                    "可达性可能低于未裁边拓扑。",
+                    file=sys.stderr,
+                )
+        elif args.sampling_mode == "deep":
+            sampling_mode = "deep"
+            ordered_customers = load_ordered_customers(
+                input_path,
+                seed=args.seed,
+                skip_invalid=args.skip_invalid_lines,
+            )
+            (
+                root_asn,
+                selected_ases,
+                as_order,
+                backbone,
+                backbone_diameter,
+                diameter_endpoints,
+            ) = select_deep_customer_cone(
+                all_ases=stats.ases,
+                ordered_customers=ordered_customers,
+                max_ases=args.max_ases,
+                requested_root_asn=args.root_asn,
+                seed=args.seed,
+            )
+            relationships = sorted(
+                backbone,
+                key=lambda relationship: (*relationship.key, relationship.kind),
+            )
+            if args.extra_inter_as_links:
+                induced = collect_induced_relationships(
+                    input_path, selected_ases, skip_invalid=args.skip_invalid_lines
+                )
+                relationships, extra_link_count = add_induced_extras(
+                    backbone,
+                    induced,
+                    requested_count=args.extra_inter_as_links,
+                    seed=args.seed,
+                )
+                if extra_link_count < args.extra_inter_as_links:
+                    print(
+                        f"警告：选中的 AS 中只有 {extra_link_count} 条可加入的额外"
+                        "诱导边。",
+                        file=sys.stderr,
+                    )
+                if extra_link_count:
+                    print(
+                        "警告：额外诱导边会产生捷径，实际最长 AS_PATH 可能小于"
+                        "报告的 customer-cone 骨干直径。",
+                        file=sys.stderr,
+                    )
         else:
+            sampling_mode = "dense"
             root_asn = args.root_asn
             if root_asn is None:
                 root_rng = stable_rng(args.seed, "root-asn", len(stats.ases))
                 root_asn = root_rng.choice(sorted(stats.ases))
-            selected_ases, as_order = select_connected_ases(
+            selected_ases, as_order = select_dense_connected_ases(
                 input_path,
                 all_ases=stats.ases,
                 max_ases=args.max_ases,
@@ -889,23 +1200,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 seed=args.seed,
                 skip_invalid=args.skip_invalid_lines,
             )
-
-        relationships = collect_induced_relationships(
-            input_path, selected_ases, skip_invalid=args.skip_invalid_lines
-        )
-        induced_relationship_count = len(relationships)
-        relationships = limit_relationships(
-            relationships,
-            selected_ases,
-            max_links=args.max_inter_as_links,
-            seed=args.seed,
-        )
-        if len(relationships) < induced_relationship_count:
-            print(
-                "警告：AS 间裁边仅保持无向图连通；商业关系策略下的路由可达性"
-                "可能低于未裁边拓扑。",
-                file=sys.stderr,
+            relationships = collect_induced_relationships(
+                input_path, selected_ases, skip_invalid=args.skip_invalid_lines
             )
+            induced_relationship_count = len(relationships)
+            relationships = limit_relationships(
+                relationships,
+                selected_ases,
+                max_links=args.max_inter_as_links,
+                seed=args.seed,
+            )
+            if len(relationships) < induced_relationship_count:
+                print(
+                    "警告：AS 间裁边仅保持无向图连通；商业关系策略下的路由"
+                    "可达性可能低于未裁边拓扑。",
+                    file=sys.stderr,
+                )
         topology, summary = build_topology(
             as_order,
             relationships,
@@ -935,6 +1245,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             selected_count=len(selected_ases),
             relationship_count=len(relationships),
             root_asn=root_asn,
+            sampling_mode=sampling_mode,
+            backbone_diameter=backbone_diameter,
+            diameter_endpoints=diameter_endpoints,
+            extra_link_count=extra_link_count,
             summary=summary,
             dry_run=args.dry_run,
         )
