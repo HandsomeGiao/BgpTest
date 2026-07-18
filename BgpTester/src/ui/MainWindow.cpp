@@ -38,6 +38,7 @@
 #include <QMetaObject>
 #include <QMouseEvent>
 #include <QProgressDialog>
+#include <QPointer>
 #include <QPushButton>
 #include <QRandomGenerator>
 #include <QSettings>
@@ -542,13 +543,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 MainWindow::~MainWindow()
 {
     closing_ = true;
+    const auto startupWasPending = simulationStartPending_;
+    if (startupWasPending)
+    {
+        engine_->requestStartupCancellation();
+    }
     stopTopologyLoad();
     ++historyQueryGeneration_;
     ++liveCountRequestId_;
     stopAndWaitForQueryThreads();
     if (engineThread_.isRunning())
     {
-        if (simulationRunning_)
+        if (simulationRunning_ || startupWasPending)
         {
             QMetaObject::invokeMethod(engine_, &SimulationEngine::stopSimulation, Qt::BlockingQueuedConnection);
         }
@@ -1252,11 +1258,13 @@ void MainWindow::connectEngine()
     connect(engine_, &SimulationEngine::runningChanged, this, &MainWindow::onRunningChanged);
     connect(engine_, &SimulationEngine::convergenceChanged, this, &MainWindow::onConvergenceChanged);
     connect(engine_, &SimulationEngine::statsChanged, this, &MainWindow::onStatsChanged);
+    connect(engine_, &SimulationEngine::startupProgress, this, &MainWindow::onStartupProgress);
+    connect(engine_, &SimulationEngine::startupCancelled, this, &MainWindow::onStartupCancelled);
     connect(engine_, &SimulationEngine::eventsGenerated, eventStore_, &EventStore::enqueueEvents, Qt::DirectConnection);
     connect(engine_, &SimulationEngine::routerSnapshotsChanged, this, &MainWindow::onRouterSnapshots);
     connect(engine_, &SimulationEngine::ribSnapshotReady, this, &MainWindow::onRibSnapshot);
     connect(engine_, &SimulationEngine::peersSnapshotReady, this, &MainWindow::onPeerSnapshots);
-    connect(engine_, &SimulationEngine::ribChanged, this, &MainWindow::onRibChanged);
+    connect(engine_, &SimulationEngine::routingStateChanged, this, &MainWindow::onRoutingStateChanged);
     connect(engine_, &SimulationEngine::pathReady, this, &MainWindow::onPathReady);
     connect(engine_, &SimulationEngine::routerStateChanged, this, &MainWindow::onRouterRuntimeState);
     connect(engine_, &SimulationEngine::linkStateChanged, this, &MainWindow::onLinkRuntimeState);
@@ -1951,18 +1959,6 @@ void MainWindow::startSimulation()
     {
         return;
     }
-    const auto problems = topology_.validate();
-    if (!problems.isEmpty())
-    {
-        QMessageBox::critical(this, QStringLiteral("拓扑无效"), problems.join(u'\n'));
-        return;
-    }
-    QString error;
-    if (!beginEventRun(&error))
-    {
-        QMessageBox::critical(this, QStringLiteral("无法创建日志"), error);
-        return;
-    }
     ++historyQueryGeneration_;
     ++liveCountRequestId_;
     if (historyLoadThread_)
@@ -1990,26 +1986,115 @@ void MainWindow::startSimulation()
     liveCountDeltaActive_ = false;
     eventProxy_->setFilterFixedString(eventFilterEdit_->text());
     clearEventTable();
-    clearConvergenceHistory(QStringLiteral("当前：等待启动"));
+    clearConvergenceHistory(QStringLiteral("当前：正在创建 BMP 日志"));
     followEventsCheck_->setChecked(true);
     runtimeRouters_.clear();
     runtimeLinks_.clear();
     scene_->clearRuntimeState();
+    scene_->setEditable(false);
     simulationStartPending_ = true;
+    simulationStartCancelRequested_ = false;
+    engine_->prepareStartup();
+    simulationStatusLabel_->setText(QStringLiteral("● 正在启动"));
+    simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
     updateEditorActions();
-    const auto copy = topology_;
-    QMetaObject::invokeMethod(engine_, [engine = engine_, copy] { engine->startSimulation(copy); }, Qt::QueuedConnection);
+    const auto settings = topology_.simulation;
+    const auto topology = topology_;
+    const QPointer<MainWindow> self(this);
+    auto* store = eventStore_;
+    const auto invoked = QMetaObject::invokeMethod(
+        store,
+        [self, store, settings, topology]() mutable
+        {
+            QString error;
+            const auto started = store->beginRun(settings, &error);
+            const auto runSerial = store->runSerial();
+            if (!self)
+            {
+                if (started)
+                {
+                    store->endRun();
+                }
+                return;
+            }
+            const auto callbackQueued = QMetaObject::invokeMethod(
+                self.data(),
+                [self, started, runSerial, error = std::move(error), topology = std::move(topology)]() mutable
+                {
+                    if (!self)
+                    {
+                        return;
+                    }
+                    if (self->closing_ || self->simulationStartCancelRequested_)
+                    {
+                        self->simulationStartPending_ = false;
+                        self->simulationStartCancelRequested_ = false;
+                        if (started)
+                        {
+                            self->endEventRun(false);
+                        }
+                        self->simulationStatusLabel_->setText(QStringLiteral("● 已停止"));
+                        self->simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#6c757d"));
+                        self->convergenceStateLabel_->setText(QStringLiteral("当前：已取消启动"));
+                        self->scene_->setEditable(!self->closing_);
+                        self->updateEditorActions();
+                        return;
+                    }
+                    if (!started)
+                    {
+                        self->simulationStartPending_ = false;
+                        self->simulationStatusLabel_->setText(QStringLiteral("● 启动失败"));
+                        self->simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#b02a37"));
+                        self->convergenceStateLabel_->setText(QStringLiteral("当前：启动失败"));
+                        self->scene_->setEditable(true);
+                        self->updateEditorActions();
+                        QMessageBox::critical(self, QStringLiteral("无法创建日志"), error);
+                        return;
+                    }
+                    self->eventRunSerial_ = runSerial;
+                    QMetaObject::invokeMethod(self->engine_,
+                                              [engine = self->engine_, topology = std::move(topology)]() mutable
+                                              { engine->startSimulation(std::move(topology)); },
+                                              Qt::QueuedConnection);
+                },
+                Qt::QueuedConnection);
+            if (!callbackQueued && started)
+            {
+                store->endRun();
+            }
+        },
+        Qt::QueuedConnection);
+    if (!invoked)
+    {
+        simulationStartPending_ = false;
+        simulationStatusLabel_->setText(QStringLiteral("● 启动失败"));
+        simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#b02a37"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：启动失败"));
+        scene_->setEditable(true);
+        updateEditorActions();
+        QMessageBox::critical(this, QStringLiteral("无法创建日志"), QStringLiteral("无法调用 BMP 事件持久化线程"));
+    }
 }
 
 void MainWindow::stopSimulation()
 {
     stopAction_->setEnabled(false);
+    if (simulationStartPending_ && !simulationRunning_)
+    {
+        simulationStartCancelRequested_ = true;
+        engine_->requestStartupCancellation();
+        QMetaObject::invokeMethod(engine_, &SimulationEngine::stopSimulation, Qt::QueuedConnection);
+        simulationStatusLabel_->setText(QStringLiteral("● 正在取消启动"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：正在取消启动"));
+        return;
+    }
     QMetaObject::invokeMethod(engine_, &SimulationEngine::stopSimulation, Qt::QueuedConnection);
 }
 
 void MainWindow::onRunningChanged(bool running)
 {
     simulationStartPending_ = false;
+    simulationStartCancelRequested_ = false;
     simulationRunning_ = running;
     scene_->setEditable(!running);
     updateEditorActions();
@@ -2063,12 +2148,44 @@ void MainWindow::onStatsChanged(const SimulationStats& stats)
 void MainWindow::onRouterSnapshots(QVector<RouterSnapshot> snapshots)
 {
     runtimeRouters_.clear();
+    QMap<QString, bool> runtimeStates;
     for (const auto& snapshot : snapshots)
     {
         runtimeRouters_.insert(snapshot.id, snapshot);
-        scene_->setRouterRuntimeState(snapshot.id, snapshot.active);
+        runtimeStates.insert(snapshot.id, snapshot.active);
     }
+    scene_->setRouterRuntimeStates(std::move(runtimeStates));
     refreshRuntimeControls();
+}
+
+void MainWindow::onStartupProgress(const QString& stage, qint64 completed, qint64 total)
+{
+    if (!simulationStartPending_ || simulationStartCancelRequested_)
+    {
+        return;
+    }
+    const auto progress = total > 0 ? QStringLiteral("%1 / %2").arg(completed).arg(total) : QString{};
+    const auto text = progress.isEmpty() ? stage : QStringLiteral("%1 · %2").arg(stage, progress);
+    simulationStatusLabel_->setText(QStringLiteral("● 正在启动"));
+    convergenceStateLabel_->setText(QStringLiteral("当前：%1").arg(text));
+    statusBar()->showMessage(text);
+}
+
+void MainWindow::onStartupCancelled()
+{
+    if (!simulationStartPending_)
+    {
+        return;
+    }
+    simulationStartPending_ = false;
+    simulationStartCancelRequested_ = false;
+    endEventRun(false);
+    simulationStatusLabel_->setText(QStringLiteral("● 已停止"));
+    simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#6c757d"));
+    scene_->setEditable(true);
+    convergenceStateLabel_->setText(QStringLiteral("当前：已取消启动"));
+    statusBar()->showMessage(QStringLiteral("已取消仿真启动"), 4000);
+    updateEditorActions();
 }
 
 void MainWindow::onRibSnapshot(const RibSnapshot& snapshot)
@@ -2098,12 +2215,9 @@ void MainWindow::onPeerSnapshots(const QString& routerId, QVector<PeerSnapshot> 
     }
 }
 
-void MainWindow::onRibChanged(const QString& routerId)
+void MainWindow::onRoutingStateChanged()
 {
-    if (routerId == routerCombo_->currentText())
-    {
-        scheduleSelectedRouterSnapshot();
-    }
+    scheduleSelectedRouterSnapshot();
 }
 
 void MainWindow::onPathReady(const QString& routerId, const QString& prefix, const QStringList& path)
@@ -2140,6 +2254,8 @@ void MainWindow::onEngineError(const QString& message)
         updateEditorActions();
         simulationStatusLabel_->setText(QStringLiteral("● 启动失败"));
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#b02a37"));
+        convergenceStateLabel_->setText(QStringLiteral("当前：启动失败"));
+        scene_->setEditable(true);
     }
     QMessageBox::critical(this, QStringLiteral("仿真错误"), message);
 }
@@ -2510,6 +2626,7 @@ void MainWindow::updateEditorActions()
     const auto editable =
         !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_ && !topologyLoadInProgress_;
     const auto runtimeControlsEnabled = !closing_ && simulationRunning_;
+    const auto stopEnabled = !closing_ && (simulationRunning_ || simulationStartPending_);
     for (auto* action : {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
                          addLinkAction_, deleteAction_})
     {
@@ -2518,7 +2635,7 @@ void MainWindow::updateEditorActions()
     saveAction_->setEnabled(editable && dirty_);
     openHistoryAction_->setEnabled(editable);
     startAction_->setEnabled(editable);
-    stopAction_->setEnabled(runtimeControlsEnabled);
+    stopAction_->setEnabled(stopEnabled);
     routerToggleButton_->setEnabled(runtimeControlsEnabled);
     linkToggleButton_->setEnabled(runtimeControlsEnabled);
     prefixEdit_->setEnabled(runtimeControlsEnabled);
@@ -2649,35 +2766,6 @@ void MainWindow::refreshRuntimeControls()
     }
 }
 
-bool MainWindow::beginEventRun(QString* error)
-{
-    bool started = false;
-    quint64 workerRunSerial = 0;
-    QString workerError;
-    const auto settings = topology_.simulation;
-    const auto invoked = QMetaObject::invokeMethod(
-        eventStore_,
-        [&]
-        {
-            started = eventStore_->beginRun(settings, &workerError);
-            workerRunSerial = eventStore_->runSerial();
-        },
-        Qt::BlockingQueuedConnection);
-    if (!invoked)
-    {
-        workerError = QStringLiteral("无法调用 BMP 事件持久化线程");
-    }
-    if (invoked && started)
-    {
-        eventRunSerial_ = workerRunSerial;
-    }
-    if (error)
-    {
-        *error = workerError;
-    }
-    return invoked && started;
-}
-
 void MainWindow::endEventRun(bool blocking)
 {
     if (!eventStore_ || !eventStoreThread_.isRunning())
@@ -2734,6 +2822,11 @@ void MainWindow::closeEvent(QCloseEvent* event)
         return;
     }
     closing_ = true;
+    if (simulationStartPending_)
+    {
+        simulationStartCancelRequested_ = true;
+        engine_->requestStartupCancellation();
+    }
     stopTopologyLoad();
     ++historyQueryGeneration_;
     ++liveCountRequestId_;

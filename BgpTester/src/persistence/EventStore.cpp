@@ -6,6 +6,7 @@
 #include <QJsonDocument>
 #include <QMetaObject>
 #include <QMutexLocker>
+#include <QSemaphore>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QThread>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <optional>
+#include <vector>
 
 namespace bgptester
 {
@@ -242,10 +244,12 @@ EventStore::EventStore(QObject* parent) : QObject(parent)
 {
     qRegisterMetaType<QVector<SimulationEvent>>();
     connectionName_ = uniqueConnectionName("bgptester-live");
+    encodingPool_.setExpiryTimeout(30000);
 }
 
 EventStore::~EventStore()
 {
+    encodingPool_.waitForDone();
     endRun();
 }
 
@@ -256,6 +260,9 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
     lastInsertedEventId_ = 0;
     committedEventId_ = 0;
     ++runSerial_;
+    const auto hardwareThreads = std::clamp(QThread::idealThreadCount(), 1, 256);
+    const auto requestedThreads = settings.workerThreads > 0 ? settings.workerThreads : hardwareThreads;
+    encodingPool_.setMaxThreadCount(std::clamp(requestedThreads, 1, hardwareThreads));
 
     QDir baseDirectory(settings.logDirectory);
     if (QDir::isRelativePath(settings.logDirectory))
@@ -473,8 +480,6 @@ void EventStore::drainQueue()
 
 void EventStore::persistBatch(QVector<SimulationEvent> events)
 {
-    QByteArray logBuffer;
-    logBuffer.reserve(events.size() * 256);
     for (auto& event : events)
     {
         if (!event.timestamp.isValid())
@@ -489,8 +494,44 @@ void EventStore::persistBatch(QVector<SimulationEvent> events)
         {
             nextId_ = std::max(nextId_, event.id + 1);
         }
+    }
 
-        const auto rawJson = QJsonDocument(eventToJson(event)).toJson(QJsonDocument::Compact);
+    std::vector<QByteArray> rawEvents(static_cast<size_t>(events.size()));
+    const auto taskCount = std::min(encodingPool_.maxThreadCount(), static_cast<int>(events.size()));
+    if (taskCount <= 1)
+    {
+        for (qsizetype index = 0; index < events.size(); ++index)
+        {
+            rawEvents[static_cast<size_t>(index)] = QJsonDocument(eventToJson(events[index])).toJson(QJsonDocument::Compact);
+        }
+    }
+    else
+    {
+        QSemaphore completed;
+        for (int task = 0; task < taskCount; ++task)
+        {
+            const auto begin = events.size() * task / taskCount;
+            const auto end = events.size() * (task + 1) / taskCount;
+            encodingPool_.start(
+                [&events, &rawEvents, &completed, begin, end]
+                {
+                    for (auto index = begin; index < end; ++index)
+                    {
+                        rawEvents[static_cast<size_t>(index)] =
+                            QJsonDocument(EventStore::eventToJson(events[index])).toJson(QJsonDocument::Compact);
+                    }
+                    completed.release();
+                });
+        }
+        completed.acquire(taskCount);
+    }
+
+    QByteArray logBuffer;
+    logBuffer.reserve(events.size() * 256);
+    for (qsizetype index = 0; index < events.size(); ++index)
+    {
+        auto& event = events[index];
+        const auto& rawJson = rawEvents[static_cast<size_t>(index)];
         logBuffer.append(rawJson);
         logBuffer.append('\n');
         if (database_.isOpen())
@@ -611,20 +652,19 @@ bool EventStore::initializeSchema(QString* error)
     const QStringList statements{
         QStringLiteral("PRAGMA journal_mode=WAL"),
         QStringLiteral("PRAGMA synchronous=NORMAL"),
+        QStringLiteral("PRAGMA temp_store=MEMORY"),
+        QStringLiteral("PRAGMA cache_size=-65536"),
+        QStringLiteral("PRAGMA wal_autocheckpoint=16384"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS bmp_events ("
                        "id INTEGER PRIMARY KEY, timestamp TEXT NOT NULL, event TEXT, "
                        "router TEXT, from_peer TEXT, to_peer TEXT, from_as INTEGER, "
                        "to_as INTEGER, msg_type TEXT, action TEXT, sequence INTEGER, "
                        "prefixes TEXT, withdrawn TEXT, next_hop TEXT, as_path TEXT, "
                        "local_pref INTEGER, med INTEGER, raw_json TEXT NOT NULL)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_router ON bmp_events(router)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_from ON bmp_events(from_peer)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_to ON bmp_events(to_peer)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_action ON bmp_events(action)"),
+        // Live UI counts use an exact event predicate. The remaining history
+        // filter is deliberately a multi-column substring scan, so maintaining
+        // seven additional indexes only slows the high-volume write path.
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_event ON bmp_events(event)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_sequence ON bmp_events(sequence)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_from_as ON bmp_events(from_as)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_bmp_to_as ON bmp_events(to_as)"),
     };
     for (const auto& statement : statements)
     {

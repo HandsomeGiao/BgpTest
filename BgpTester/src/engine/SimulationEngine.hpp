@@ -9,6 +9,7 @@
 #include <QSet>
 #include <QTimer>
 
+#include <atomic>
 #include <optional>
 #include <queue>
 #include <vector>
@@ -37,6 +38,8 @@ public:
     RibSnapshot ribSnapshot(const QString& routerId) const;
     QVector<PeerSnapshot> peerSnapshots(const QString& routerId) const;
     QVector<RouterSnapshot> routerSnapshots() const;
+    void prepareStartup() noexcept;
+    void requestStartupCancellation() noexcept;
 
 public slots:
     void startSimulation(bgptester::Topology topology);
@@ -56,11 +59,13 @@ signals:
     void routerSnapshotsChanged(QVector<bgptester::RouterSnapshot> snapshots);
     void ribSnapshotReady(bgptester::RibSnapshot snapshot);
     void peersSnapshotReady(QString routerId, QVector<bgptester::PeerSnapshot> snapshots);
-    void ribChanged(QString routerId);
     void pathReady(QString routerId, QString prefix, QStringList path);
     void routerStateChanged(QString routerId, bool enabled);
     void linkStateChanged(QString a, QString b, bool enabled);
     void statsChanged(bgptester::SimulationStats stats);
+    void startupProgress(QString stage, qint64 completed, qint64 total);
+    void startupCancelled();
+    void routingStateChanged();
     void errorOccurred(QString message);
 
 private slots:
@@ -137,6 +142,7 @@ private:
     qint64 now() const;
     void clearRuntime();
     bool buildRuntime(const Topology& topology, QString* error);
+    bool scheduleInitialOpenMessages();
     void armNextEvent();
     void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
     void publishStats();
@@ -177,6 +183,7 @@ private:
                                  const PathAttributes& withdrawalAttributes, quint64 generation) const;
 
     SimulationEvent messageEvent(const BgpMessage& message) const;
+    void publishEvents(QVector<SimulationEvent> events);
     void recordTopologyEvent(const QString& name, QMap<QString, QString> details = {});
     bool hasRouteReflectorClients(const RouterRuntime& router) const;
 
@@ -196,8 +203,10 @@ private:
     quint64 nextOrder_ = 0;
     quint64 nextGeneration_ = 0;
     quint64 deliveredMessages_ = 0;
-    bool scheduledEventsNeedPruning_ = false;
-    bool routerSnapshotsDirty_ = false;
+    bool routingStateDirty_ = false;
+    QVector<SimulationEvent>* activeEventBatch_ = nullptr;
+    std::atomic_bool startupCancelRequested_{false};
+    bool pluginLifecycleActive_ = false;
     bool running_ = false;
     bool converged_ = false;
 };

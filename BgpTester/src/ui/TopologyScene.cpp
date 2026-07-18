@@ -876,6 +876,20 @@ void TopologyScene::mousePressEvent(QGraphicsSceneMouseEvent* event)
     QGraphicsScene::mousePressEvent(event);
 }
 
+void TopologyScene::setRouterRuntimeStates(QMap<QString, bool> states)
+{
+    runtimeRouterState_ = std::move(states);
+    for (auto it = routerItems_.cbegin(); it != routerItems_.cend(); ++it)
+    {
+        const auto state = runtimeRouterState_.constFind(it.key());
+        it.value()->setRuntimeState(state == runtimeRouterState_.cend() ? std::optional<bool>{} : std::optional<bool>{state.value()});
+    }
+    if (overviewItem_)
+    {
+        overviewItem_->update();
+    }
+}
+
 void TopologyScene::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
 {
     QGraphicsScene::mouseReleaseEvent(event);

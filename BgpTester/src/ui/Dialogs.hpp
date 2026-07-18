@@ -132,6 +132,7 @@ public slots:
 private:
     QLineEdit* nameEdit_ = nullptr;
     QLineEdit* logDirectoryEdit_ = nullptr;
+    QSpinBox* workerThreadsSpin_ = nullptr;
     QSpinBox* quietSpin_ = nullptr;
 };
 

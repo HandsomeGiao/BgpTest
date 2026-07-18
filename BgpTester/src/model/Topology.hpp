@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QJsonObject>
+#include <QHash>
 #include <QMap>
 #include <QMetaType>
 #include <QPointF>
@@ -52,6 +53,7 @@ struct SimulationSettings
 {
     QString name = QStringLiteral("bgp-lab");
     QString logDirectory = QStringLiteral("tmp");
+    int workerThreads = 0;
     int convergenceQuietMs = 1000;
 };
 
@@ -97,6 +99,8 @@ struct NeighborConfig
     bool operator==(const NeighborConfig&) const = default;
 };
 
+using NeighborIndex = QHash<QString, QMap<QString, NeighborConfig>>;
+
 enum class TopologyLoadStage
 {
     ReadingRouters,
@@ -130,6 +134,7 @@ public:
     bool save(const QString& path, QString* error = nullptr) const;
 
     QStringList validate() const;
+    NeighborIndex buildNeighborIndex() const;
     QVector<NeighborConfig> neighborsFor(const QString& routerId) const;
     const LinkConfig* findLink(const QString& a, const QString& b) const;
     LinkConfig* findLink(const QString& a, const QString& b);

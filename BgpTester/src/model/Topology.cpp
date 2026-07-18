@@ -234,7 +234,7 @@ QJsonObject Topology::toJson() const
     QJsonObject simulationObject{
         {QStringLiteral("name"), simulation.name},
         {QStringLiteral("log_dir"), simulation.logDirectory},
-        {QStringLiteral("worker_threads"), 0},
+        {QStringLiteral("worker_threads"), simulation.workerThreads},
         {QStringLiteral("convergence_quiet_ms"), simulation.convergenceQuietMs},
         {QStringLiteral("router_class"), QStringLiteral("BgpRouter")},
     };
@@ -355,6 +355,7 @@ public:
     {
         topology_.simulation.name = object.value(QStringLiteral("name")).toString(QStringLiteral("bgp-lab"));
         topology_.simulation.logDirectory = object.value(QStringLiteral("log_dir")).toString(QStringLiteral("tmp"));
+        topology_.simulation.workerThreads = jsonNonNegativeInt(object, QStringLiteral("worker_threads"), 0);
         topology_.simulation.convergenceQuietMs = jsonNonNegativeInt(object, QStringLiteral("convergence_quiet_ms"), 1000);
     }
 
@@ -1136,6 +1137,10 @@ QStringList Topology::validate() const
     {
         problems.append(QStringLiteral("收敛静默时间不能为负数"));
     }
+    if (simulation.workerThreads < 0 || simulation.workerThreads > 256)
+    {
+        problems.append(QStringLiteral("后台工作线程数必须在 0 到 256 之间"));
+    }
     if (routers.isEmpty())
     {
         problems.append(QStringLiteral("拓扑至少需要一台路由器"));
@@ -1257,6 +1262,41 @@ QVector<NeighborConfig> Topology::neighborsFor(const QString& routerId) const
         });
     }
     std::sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) { return lhs.id < rhs.id; });
+    return result;
+}
+
+NeighborIndex Topology::buildNeighborIndex() const
+{
+    NeighborIndex result;
+    result.reserve(routers.size());
+    for (const auto& link : links)
+    {
+        const auto a = routers.constFind(link.a);
+        const auto b = routers.constFind(link.b);
+        if (a == routers.cend() || b == routers.cend())
+        {
+            continue;
+        }
+        const auto sessionType = a->asn == b->asn ? SessionType::Ibgp : SessionType::Ebgp;
+        result[link.a].insert(link.b, NeighborConfig{
+            .id = link.b,
+            .remoteAsn = b->asn,
+            .sessionType = sessionType,
+            .rrClient = link.rrClientFromA,
+            .enabled = link.enabled,
+            .mraiMs = link.mraiMsFromA,
+            .relationship = neighborRelationshipFor(link, true),
+        });
+        result[link.b].insert(link.a, NeighborConfig{
+            .id = link.a,
+            .remoteAsn = a->asn,
+            .sessionType = sessionType,
+            .rrClient = link.rrClientFromB,
+            .enabled = link.enabled,
+            .mraiMs = link.mraiMsFromB,
+            .relationship = neighborRelationshipFor(link, false),
+        });
+    }
     return result;
 }
 

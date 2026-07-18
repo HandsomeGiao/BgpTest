@@ -71,10 +71,12 @@ private slots:
     void onRunningChanged(bool running);
     void onConvergenceChanged(bool converged);
     void onStatsChanged(const bgptester::SimulationStats& stats);
+    void onStartupProgress(const QString& stage, qint64 completed, qint64 total);
+    void onStartupCancelled();
     void onRouterSnapshots(QVector<bgptester::RouterSnapshot> snapshots);
     void onRibSnapshot(const bgptester::RibSnapshot& snapshot);
     void onPeerSnapshots(const QString& routerId, QVector<bgptester::PeerSnapshot> snapshots);
-    void onRibChanged(const QString& routerId);
+    void onRoutingStateChanged();
     void onPathReady(const QString& routerId, const QString& prefix, const QStringList& path);
     void onRouterRuntimeState(const QString& routerId, bool enabled);
     void onLinkRuntimeState(const QString& a, const QString& b, bool enabled);
@@ -126,7 +128,6 @@ private:
     void rebuildConvergenceHistory(const QVector<SimulationEvent>& events, qint64 totalCount);
     void clearConvergenceHistory(const QString& stateText);
     void refreshRuntimeControls();
-    bool beginEventRun(QString* error);
     void endEventRun(bool blocking = true);
     void flushEventStore();
     static Topology starterTopology();
@@ -137,6 +138,7 @@ private:
     bool simulationRunning_ = false;
     bool simulationConverged_ = false;
     bool simulationStartPending_ = false;
+    bool simulationStartCancelRequested_ = false;
     bool closing_ = false;
 
     TopologyScene* scene_ = nullptr;

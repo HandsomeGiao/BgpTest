@@ -9,6 +9,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QString>
+#include <QThreadPool>
 #include <QVector>
 #include <QWaitCondition>
 
@@ -115,6 +116,7 @@ private:
     quint64 committedEventId_ = 0;
     int pendingTransactionRows_ = 0;
     bool transactionOpen_ = false;
+    QThreadPool encodingPool_;
 
     QMutex queueMutex_;
     QWaitCondition queueNotFull_;
@@ -122,9 +124,9 @@ private:
     bool acceptingEvents_ = false;
     bool drainScheduled_ = false;
 
-    static constexpr qsizetype maxQueuedEvents_ = 8192;
-    static constexpr qsizetype writeBatchSize_ = 512;
-    static constexpr int transactionBatchSize_ = 4096;
+    static constexpr qsizetype maxQueuedEvents_ = 65536;
+    static constexpr qsizetype writeBatchSize_ = 4096;
+    static constexpr int transactionBatchSize_ = 16384;
 };
 
 } // namespace bgptester

@@ -74,25 +74,6 @@ bool RouterPluginRegistry::registerStaticPlugin(RouterNodePlugin* plugin, const 
 RouterNode* RouterPluginRegistry::createRouterNode(const RouterConfig& config, const Topology& topology, QObject* parent,
                                                    QString* error) const
 {
-    if (error)
-    {
-        error->clear();
-    }
-    RouterNodePlugin* factory = nullptr;
-    {
-        QReadLocker locker(&lock_);
-        const auto it = entries_.constFind(config.pluginId);
-        if (it == entries_.cend())
-        {
-            if (error)
-            {
-                *error = QStringLiteral("路由器 %1 使用的插件未注册：%2").arg(config.id, config.pluginId);
-            }
-            return nullptr;
-        }
-        factory = it->factory;
-    }
-
     QMap<QString, NeighborConfig> neighbors;
     for (const auto& neighbor : topology.neighborsFor(config.id))
     {
@@ -103,13 +84,36 @@ RouterNode* RouterPluginRegistry::createRouterNode(const RouterConfig& config, c
         .topologyRouters = topology.routers,
         .neighbors = std::move(neighbors),
     };
+    return createRouterNode(context, parent, error);
+}
+
+RouterNode* RouterPluginRegistry::createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error) const
+{
+    if (error)
+    {
+        error->clear();
+    }
+    RouterNodePlugin* factory = nullptr;
+    {
+        QReadLocker locker(&lock_);
+        const auto it = entries_.constFind(context.config.pluginId);
+        if (it == entries_.cend())
+        {
+            if (error)
+            {
+                *error = QStringLiteral("路由器 %1 使用的插件未注册：%2").arg(context.config.id, context.config.pluginId);
+            }
+            return nullptr;
+        }
+        factory = it->factory;
+    }
 
     try
     {
         auto* node = factory->createRouterNode(context, parent, error);
         if (!node && error && error->isEmpty())
         {
-            *error = QStringLiteral("插件 %1 未能创建路由器 %2").arg(config.pluginId, config.id);
+            *error = QStringLiteral("插件 %1 未能创建路由器 %2").arg(context.config.pluginId, context.config.id);
         }
         return node;
     }
@@ -118,14 +122,15 @@ RouterNode* RouterPluginRegistry::createRouterNode(const RouterConfig& config, c
         if (error)
         {
             *error =
-                QStringLiteral("插件 %1 创建路由器 %2 时发生异常：%3").arg(config.pluginId, config.id, QString::fromUtf8(exception.what()));
+                QStringLiteral("插件 %1 创建路由器 %2 时发生异常：%3")
+                    .arg(context.config.pluginId, context.config.id, QString::fromUtf8(exception.what()));
         }
     }
     catch (...)
     {
         if (error)
         {
-            *error = QStringLiteral("插件 %1 创建路由器 %2 时发生未知异常").arg(config.pluginId, config.id);
+            *error = QStringLiteral("插件 %1 创建路由器 %2 时发生未知异常").arg(context.config.pluginId, context.config.id);
         }
     }
     return nullptr;

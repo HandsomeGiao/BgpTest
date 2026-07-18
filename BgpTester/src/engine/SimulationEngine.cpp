@@ -133,24 +133,55 @@ qint64 SimulationEngine::now() const
     return clock_.isValid() ? clock_.elapsed() : 0;
 }
 
+void SimulationEngine::prepareStartup() noexcept
+{
+    startupCancelRequested_.store(false, std::memory_order_release);
+}
+
+void SimulationEngine::requestStartupCancellation() noexcept
+{
+    startupCancelRequested_.store(true, std::memory_order_release);
+}
+
 void SimulationEngine::startSimulation(Topology topology)
 {
     if (running_)
     {
         stopSimulation();
     }
+    clearRuntime();
+    simulation_ = topology.simulation;
+    emit startupProgress(QStringLiteral("正在校验拓扑"), 0, topology.routers.size() + topology.links.size());
     const auto problems = topology.validate();
     if (!problems.isEmpty())
     {
+        recordTopologyEvent(QStringLiteral("simulation_start_failed"), {{QStringLiteral("error"), problems.join(u'\n')}});
+        clearRuntime();
         emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(problems.join(u'\n')));
         return;
     }
-
-    clearRuntime();
-    simulation_ = topology.simulation;
+    if (startupCancelRequested_.load(std::memory_order_acquire))
+    {
+        recordTopologyEvent(QStringLiteral("simulation_start_cancelled"));
+        clearRuntime();
+        emit startupCancelled();
+        return;
+    }
+    recordTopologyEvent(QStringLiteral("simulation_initializing"),
+                        {{QStringLiteral("name"), simulation_.name},
+                         {QStringLiteral("routers"), QString::number(topology.routers.size())},
+                         {QStringLiteral("links"), QString::number(topology.links.size())}});
     QString pluginError;
     if (!buildRuntime(topology, &pluginError))
     {
+        if (startupCancelRequested_.load(std::memory_order_acquire))
+        {
+            recordTopologyEvent(QStringLiteral("simulation_start_cancelled"));
+            clearRuntime();
+            emit startupCancelled();
+            return;
+        }
+        recordTopologyEvent(QStringLiteral("simulation_start_failed"), {{QStringLiteral("error"), pluginError}});
         clearRuntime();
         emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(pluginError));
         return;
@@ -161,29 +192,43 @@ void SimulationEngine::startSimulation(Topology topology)
     convergenceSequence_ = 0;
     convergenceTriggerEvent_ = QStringLiteral("simulation_started");
     convergenceTriggerContext_ = simulation_.name;
-    running_ = true;
     converged_ = false;
     for (auto& router : routers_)
     {
         router.node->simulationStarted();
         router.node->routerStateChanged(true);
     }
+    pluginLifecycleActive_ = true;
+    if (startupCancelRequested_.load(std::memory_order_acquire))
+    {
+        recordTopologyEvent(QStringLiteral("simulation_start_cancelled"));
+        clearRuntime();
+        emit startupCancelled();
+        return;
+    }
 
+    emit startupProgress(QStringLiteral("正在建立 BGP 会话"), 0, links_.size());
+    if (!scheduleInitialOpenMessages())
+    {
+        recordTopologyEvent(QStringLiteral("simulation_start_cancelled"));
+        clearRuntime();
+        emit startupCancelled();
+        return;
+    }
+    if (startupCancelRequested_.load(std::memory_order_acquire))
+    {
+        recordTopologyEvent(QStringLiteral("simulation_start_cancelled"));
+        clearRuntime();
+        emit startupCancelled();
+        return;
+    }
+
+    running_ = true;
     emit runningChanged(true);
     emit convergenceChanged(false);
     recordTopologyEvent(QStringLiteral("simulation_started"), {{QStringLiteral("name"), simulation_.name},
                                                                {QStringLiteral("routers"), QString::number(routers_.size())},
                                                                {QStringLiteral("links"), QString::number(links_.size())}});
-
-    for (auto it = links_.cbegin(); it != links_.cend(); ++it)
-    {
-        if (!it->enabled)
-        {
-            continue;
-        }
-        sendOpen(it->a, it->b);
-        sendOpen(it->b, it->a);
-    }
 
     statusTimer_->start();
     requestAllSnapshots();
@@ -203,7 +248,6 @@ void SimulationEngine::stopSimulation()
     eventTimer_->stop();
     statusTimer_->stop();
     events_ = {};
-    scheduledEventsNeedPruning_ = false;
     for (auto& router : routers_)
     {
         router.active = false;
@@ -218,6 +262,7 @@ void SimulationEngine::stopSimulation()
         }
         router.node->simulationStopped();
     }
+    pluginLifecycleActive_ = false;
     requestAllSnapshots();
     publishStats();
     emit convergenceChanged(false);
@@ -228,8 +273,16 @@ void SimulationEngine::clearRuntime()
 {
     eventTimer_->stop();
     statusTimer_->stop();
+    activeEventBatch_ = nullptr;
     events_ = {};
-    scheduledEventsNeedPruning_ = false;
+    if (pluginLifecycleActive_)
+    {
+        for (auto& router : routers_)
+        {
+            router.node->simulationStopped();
+        }
+        pluginLifecycleActive_ = false;
+    }
     for (auto& router : routers_)
     {
         delete router.node;
@@ -242,7 +295,7 @@ void SimulationEngine::clearRuntime()
     nextOrder_ = 0;
     nextGeneration_ = 0;
     deliveredMessages_ = 0;
-    routerSnapshotsDirty_ = false;
+    routingStateDirty_ = false;
     convergenceTriggerEvent_.clear();
     convergenceTriggerContext_.clear();
 }
@@ -253,14 +306,35 @@ bool SimulationEngine::buildRuntime(const Topology& topology, QString* error)
     {
         error->clear();
     }
+    emit startupProgress(QStringLiteral("正在构建邻接索引"), 0, topology.links.size());
+    const auto neighborIndex = topology.buildNeighborIndex();
+    if (startupCancelRequested_.load(std::memory_order_acquire))
+    {
+        if (error)
+        {
+            *error = QStringLiteral("仿真启动已取消");
+        }
+        return false;
+    }
+    emit startupProgress(QStringLiteral("正在创建路由器运行时"), 0, topology.routers.size());
+    qint64 completedRouters = 0;
     for (auto it = topology.routers.cbegin(); it != topology.routers.cend(); ++it)
     {
+        if (startupCancelRequested_.load(std::memory_order_acquire))
+        {
+            if (error)
+            {
+                *error = QStringLiteral("仿真启动已取消");
+            }
+            return false;
+        }
         RouterRuntime runtime;
         runtime.config = it.value();
         runtime.active = true;
         runtime.localRoutes.reserve(runtime.config.originatedPrefixes.size());
         runtime.locRib.reserve(runtime.config.originatedPrefixes.size());
-        for (const auto& neighbor : topology.neighborsFor(it.key()))
+        const auto neighbors = neighborIndex.value(it.key());
+        for (const auto& neighbor : neighbors)
         {
             PeerRuntime peer;
             peer.config = neighbor;
@@ -268,7 +342,12 @@ bool SimulationEngine::buildRuntime(const Topology& topology, QString* error)
             runtime.peers.insert(neighbor.id, peer);
         }
         QString creationError;
-        runtime.node = RouterPluginRegistry::instance().createRouterNode(runtime.config, topology, this, &creationError);
+        const RouterNodeContext context{
+            .config = runtime.config,
+            .topologyRouters = topology.routers,
+            .neighbors = neighbors,
+        };
+        runtime.node = RouterPluginRegistry::instance().createRouterNode(context, this, &creationError);
         if (!runtime.node)
         {
             if (error)
@@ -294,11 +373,95 @@ bool SimulationEngine::buildRuntime(const Topology& topology, QString* error)
             runtime.localRoutes.insert(prefix, route);
             runtime.locRib.insert(prefix, route);
         }
-        routers_.insert(it.key(), runtime);
+        routers_.insert(it.key(), std::move(runtime));
+        ++completedRouters;
+        if ((completedRouters & 0xff) == 0 || completedRouters == topology.routers.size())
+        {
+            emit startupProgress(QStringLiteral("正在创建路由器运行时"), completedRouters, topology.routers.size());
+        }
     }
+    emit startupProgress(QStringLiteral("正在建立链路运行时"), 0, topology.links.size());
+    qint64 completedLinks = 0;
     for (const auto& link : topology.links)
     {
+        if (startupCancelRequested_.load(std::memory_order_acquire))
+        {
+            if (error)
+            {
+                *error = QStringLiteral("仿真启动已取消");
+            }
+            return false;
+        }
         links_.insert(Topology::edgeKey(link.a, link.b), link);
+        ++completedLinks;
+        if ((completedLinks & 0x3ff) == 0 || completedLinks == topology.links.size())
+        {
+            emit startupProgress(QStringLiteral("正在建立链路运行时"), completedLinks, topology.links.size());
+        }
+    }
+    return true;
+}
+
+bool SimulationEngine::scheduleInitialOpenMessages()
+{
+    std::vector<ScheduledEvent> initialEvents;
+    initialEvents.reserve(static_cast<size_t>(links_.size()) * 2);
+    const auto scheduledAt = now();
+    const auto appendOpen = [this, scheduledAt, &initialEvents](const QString& from, const QString& to, int delayMs)
+    {
+        auto router = routers_.find(from);
+        if (router == routers_.end() || !router->active)
+        {
+            return;
+        }
+        auto peer = router->peers.find(to);
+        if (peer == router->peers.end() || !peer->config.enabled)
+        {
+            return;
+        }
+        peer->state = PeerState::OpenSent;
+        router->node->peerStateChanged(peer->config, peer->state);
+
+        BgpMessage message;
+        message.type = MessageType::Open;
+        message.from = from;
+        message.to = to;
+        message.sequence = ++nextSequence_;
+        message.openAsn = router->config.asn;
+        message.openRouterId = router->config.routerId;
+        initialEvents.push_back(ScheduledEvent{
+            .dueAt = scheduledAt + std::max(0, delayMs),
+            .order = ++nextOrder_,
+            .kind = ScheduledKind::DeliverMessages,
+            .from = from,
+            .to = to,
+            .sessionEpoch = peer->sessionEpoch,
+            .messages = {std::move(message)},
+        });
+    };
+
+    qint64 completedLinks = 0;
+    for (auto it = links_.cbegin(); it != links_.cend(); ++it)
+    {
+        if (startupCancelRequested_.load(std::memory_order_acquire))
+        {
+            return false;
+        }
+        if (it->enabled)
+        {
+            appendOpen(it->a, it->b, it->delayMs);
+            appendOpen(it->b, it->a, it->delayMs);
+        }
+        ++completedLinks;
+        if ((completedLinks & 0x3ff) == 0 || completedLinks == links_.size())
+        {
+            emit startupProgress(QStringLiteral("正在建立 BGP 会话"), completedLinks, links_.size());
+        }
+    }
+    events_ = decltype(events_)(LaterEvent{}, std::move(initialEvents));
+    if (!events_.empty())
+    {
+        markActivity();
     }
     return true;
 }
@@ -321,7 +484,6 @@ void SimulationEngine::invalidateSession(PeerRuntime& peer)
     clearPendingUpdates(peer);
     peer.flushScheduled = false;
     peer.withdrawalFlushScheduled = false;
-    scheduledEventsNeedPruning_ = true;
 }
 
 void SimulationEngine::clearPendingUpdates(PeerRuntime& peer)
@@ -379,13 +541,11 @@ void SimulationEngine::cancelEmptyFlushes(PeerRuntime& peer)
     {
         peer.flushScheduled = false;
         ++peer.mraiFlushGeneration;
-        scheduledEventsNeedPruning_ = true;
     }
     if (peer.withdrawalFlushScheduled && peer.pendingWithdrawalCount == 0)
     {
         peer.withdrawalFlushScheduled = false;
         ++peer.withdrawalFlushGeneration;
-        scheduledEventsNeedPruning_ = true;
     }
 }
 
@@ -458,23 +618,14 @@ bool SimulationEngine::scheduledEventValid(const ScheduledEvent& event) const
 
 void SimulationEngine::pruneInvalidScheduledEvents()
 {
-    if (!scheduledEventsNeedPruning_)
+    // Invalidated sessions can leave hundreds of thousands of entries in a
+    // large heap.  Rebuilding the complete heap makes a single link change
+    // O(queue_size log queue_size); stale entries are cheaper to discard only
+    // when they reach the head.
+    while (!events_.empty() && !scheduledEventValid(events_.top()))
     {
-        return;
-    }
-
-    decltype(events_) retainedEvents;
-    while (!events_.empty())
-    {
-        auto event = events_.top();
         events_.pop();
-        if (scheduledEventValid(event))
-        {
-            retainedEvents.push(std::move(event));
-        }
     }
-    events_ = std::move(retainedEvents);
-    scheduledEventsNeedPruning_ = false;
 }
 
 void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, const QString& convergenceTriggerContext)
@@ -613,10 +764,13 @@ void SimulationEngine::processDueEvents()
         return;
     }
     int processed = 0;
-    constexpr int maxPerTurn = 512;
-    constexpr qint64 maxTurnMs = 8;
+    constexpr int maxPerTurn = 4096;
+    constexpr qint64 maxTurnMs = 12;
     QElapsedTimer turnTimer;
     turnTimer.start();
+    QVector<SimulationEvent> turnEvents;
+    turnEvents.reserve(maxPerTurn);
+    activeEventBatch_ = &turnEvents;
     pruneInvalidScheduledEvents();
     while (!events_.empty() && events_.top().dueAt <= now() && processed < maxPerTurn && turnTimer.elapsed() < maxTurnMs)
     {
@@ -641,8 +795,12 @@ void SimulationEngine::processDueEvents()
         }
         ++processed;
     }
+    activeEventBatch_ = nullptr;
+    if (!turnEvents.isEmpty())
+    {
+        emit eventsGenerated(std::move(turnEvents));
+    }
     armNextEvent();
-    updateStatus();
 }
 
 void SimulationEngine::deliverMessages(const ScheduledEvent& event)
@@ -687,7 +845,7 @@ void SimulationEngine::deliverMessages(const ScheduledEvent& event)
     }
     if (!recordedEvents.isEmpty())
     {
-        emit eventsGenerated(std::move(recordedEvents));
+        publishEvents(std::move(recordedEvents));
     }
 }
 
@@ -958,7 +1116,7 @@ void SimulationEngine::handleOpen(const BgpMessage& message)
     {
         advertiseTableToPeer(message.to, message.from);
     }
-    emit peersSnapshotReady(message.to, peerSnapshots(message.to));
+    routingStateDirty_ = true;
 }
 
 void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString& sender, const QVector<BgpMessage>& messages)
@@ -1018,7 +1176,6 @@ void SimulationEngine::handleUpdateBatch(const QString& receiver, const QString&
 void SimulationEngine::handleNotification(const BgpMessage& message)
 {
     neighborDown(message.to, message.from);
-    emit peersSnapshotReady(message.to, peerSnapshots(message.to));
 }
 
 void SimulationEngine::neighborDown(const QString& routerId, const QString& peerId)
@@ -1048,6 +1205,7 @@ void SimulationEngine::neighborDown(const QString& routerId, const QString& peer
     {
         runDecision(routerId, affected);
     }
+    routingStateDirty_ = true;
 }
 
 void SimulationEngine::runDecision(const QString& routerId, const QSet<QString>& changedPrefixes)
@@ -1082,8 +1240,7 @@ void SimulationEngine::runDecision(const QString& routerId, const QSet<QString>&
     }
     if (anyChange)
     {
-        emit ribChanged(routerId);
-        routerSnapshotsDirty_ = true;
+        routingStateDirty_ = true;
     }
 }
 
@@ -1193,25 +1350,21 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         if (!hadDelivered)
         {
             removePendingUpdate(*peerIt, prefix);
-            bool generationRemoved = false;
             auto generations = routerIt->outboundGenerations.find(peerId);
             if (generations != routerIt->outboundGenerations.end())
             {
-                generationRemoved = generations->remove(prefix) > 0;
+                generations->remove(prefix);
                 if (generations->isEmpty())
                 {
                     routerIt->outboundGenerations.erase(generations);
                 }
             }
-            scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || generationRemoved;
             cancelEmptyFlushes(*peerIt);
             return;
         }
         const auto generation = ++nextGeneration_;
         auto& generations = routerIt->outboundGenerations[peerId];
-        const auto supersedesQueuedUpdate = generations.contains(prefix);
         generations[prefix] = generation;
-        scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || supersedesQueuedUpdate;
         setPendingUpdate(
             *peerIt, prefix,
             PendingUpdate{.route = std::nullopt, .withdrawalAttributes = std::move(withdrawalAttributes), .generation = generation});
@@ -1226,9 +1379,7 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
 
     const auto generation = ++nextGeneration_;
     auto& generations = routerIt->outboundGenerations[peerId];
-    const auto supersedesQueuedUpdate = generations.contains(prefix);
     generations[prefix] = generation;
-    scheduledEventsNeedPruning_ = scheduledEventsNeedPruning_ || supersedesQueuedUpdate;
     setPendingUpdate(*peerIt, prefix, PendingUpdate{.route = route, .withdrawalAttributes = {}, .generation = generation});
     cancelEmptyFlushes(*peerIt);
     if (!peerIt->flushScheduled)
@@ -1350,7 +1501,7 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
         routerIt->adjRibOut.clear();
         if (!oldPrefixes.isEmpty())
         {
-            emit ribChanged(routerId);
+            routingStateDirty_ = true;
         }
     }
     else
@@ -1466,10 +1617,10 @@ void SimulationEngine::updateStatus()
                                  {QStringLiteral("trigger_context"), convergenceTriggerContext_}});
         }
     }
-    if (routerSnapshotsDirty_)
+    if (routingStateDirty_)
     {
-        routerSnapshotsDirty_ = false;
-        emit routerSnapshotsChanged(routerSnapshots());
+        routingStateDirty_ = false;
+        emit routingStateChanged();
     }
     publishStats();
 }
@@ -1538,7 +1689,6 @@ void SimulationEngine::requestRouterSnapshot(const QString& routerId)
 
 void SimulationEngine::requestAllSnapshots()
 {
-    routerSnapshotsDirty_ = false;
     emit routerSnapshotsChanged(routerSnapshots());
 }
 
@@ -1610,6 +1760,29 @@ SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
     return event;
 }
 
+void SimulationEngine::publishEvents(QVector<SimulationEvent> events)
+{
+    if (events.isEmpty())
+    {
+        return;
+    }
+    if (activeEventBatch_)
+    {
+        const auto requiredCapacity = activeEventBatch_->size() + events.size();
+        if (requiredCapacity > activeEventBatch_->capacity())
+        {
+            const auto grownCapacity = std::max<qsizetype>(4096, activeEventBatch_->capacity() * 2);
+            activeEventBatch_->reserve(std::max(requiredCapacity, grownCapacity));
+        }
+        for (auto& event : events)
+        {
+            activeEventBatch_->append(std::move(event));
+        }
+        return;
+    }
+    emit eventsGenerated(std::move(events));
+}
+
 void SimulationEngine::recordTopologyEvent(const QString& name, QMap<QString, QString> details)
 {
     SimulationEvent event;
@@ -1620,7 +1793,7 @@ void SimulationEngine::recordTopologyEvent(const QString& name, QMap<QString, QS
     event.router = event.details.value(QStringLiteral("router"));
     event.from = event.details.value(QStringLiteral("a"));
     event.to = event.details.value(QStringLiteral("b"));
-    emit eventsGenerated({std::move(event)});
+    publishEvents({std::move(event)});
 }
 
 bool SimulationEngine::hasRouteReflectorClients(const RouterRuntime& router) const

@@ -50,6 +50,7 @@ public:
     bool deleteSelection();
 
     void setRouterRuntimeState(const QString& routerId, bool active);
+    void setRouterRuntimeStates(QMap<QString, bool> states);
     void setLinkRuntimeState(const QString& a, const QString& b, bool enabled);
     void highlightPath(const QStringList& hops);
     void clearRuntimeState();

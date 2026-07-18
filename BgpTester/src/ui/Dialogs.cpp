@@ -20,6 +20,7 @@
 #include <QSet>
 #include <QSpinBox>
 #include <QTextEdit>
+#include <QThread>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -547,12 +548,18 @@ SimulationSettingsDialog::SimulationSettingsDialog(const SimulationSettings& set
     auto* form = new QFormLayout;
     nameEdit_ = new QLineEdit(settings.name, this);
     logDirectoryEdit_ = new QLineEdit(settings.logDirectory, this);
+    workerThreadsSpin_ = new QSpinBox(this);
+    workerThreadsSpin_->setRange(0, std::clamp(QThread::idealThreadCount(), 1, 256));
+    workerThreadsSpin_->setSpecialValueText(QStringLiteral("自动"));
+    workerThreadsSpin_->setValue(settings.workerThreads);
+    workerThreadsSpin_->setToolTip(QStringLiteral("用于 BMP 事件编码等可安全并行的后台工作；0 使用全部逻辑处理器。"));
     quietSpin_ = new QSpinBox(this);
     quietSpin_->setRange(0, 600000);
     quietSpin_->setSuffix(QStringLiteral(" ms"));
     quietSpin_->setValue(settings.convergenceQuietMs);
     form->addRow(QStringLiteral("实验名称"), nameEdit_);
     form->addRow(QStringLiteral("日志目录"), logDirectoryEdit_);
+    form->addRow(QStringLiteral("后台工作线程"), workerThreadsSpin_);
     form->addRow(QStringLiteral("收敛静默窗口"), quietSpin_);
     layout->addLayout(form);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -565,6 +572,7 @@ SimulationSettings SimulationSettingsDialog::settings() const
 {
     return SimulationSettings{.name = nameEdit_->text().trimmed(),
                               .logDirectory = logDirectoryEdit_->text().trimmed(),
+                              .workerThreads = workerThreadsSpin_->value(),
                               .convergenceQuietMs = quietSpin_->value()};
 }
 

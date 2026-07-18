@@ -38,6 +38,7 @@ public:
     bool registerStaticPlugin(RouterNodePlugin* plugin, const QString& source);
 
     RouterNode* createRouterNode(const RouterConfig& config, const Topology& topology, QObject* parent, QString* error = nullptr) const;
+    RouterNode* createRouterNode(const RouterNodeContext& context, QObject* parent, QString* error = nullptr) const;
 
 private:
     RouterPluginRegistry();
