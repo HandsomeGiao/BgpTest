@@ -1,0 +1,105 @@
+{
+    "links": [
+        {
+            "a": "R1",
+            "b": "R3",
+            "delay_ms": 138,
+            "enabled": true,
+            "mrai_ms_from_a": 1861,
+            "mrai_ms_from_b": 1496,
+            "relationship": "a_provider",
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R4",
+            "b": "R3",
+            "delay_ms": 170,
+            "enabled": true,
+            "mrai_ms_from_a": 1850,
+            "mrai_ms_from_b": 1496,
+            "relationship": "a_provider",
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        },
+        {
+            "a": "R4",
+            "b": "R1",
+            "delay_ms": 144,
+            "enabled": true,
+            "mrai_ms_from_a": 1850,
+            "mrai_ms_from_b": 1861,
+            "relationship": "peer",
+            "rr_client_from_a": false,
+            "rr_client_from_b": false
+        }
+    ],
+    "routers": [
+        {
+            "asn": 1,
+            "cluster_id": "10.0.0.1",
+            "id": "R1",
+            "originated_prefixes": [
+                "1.0.0.0/8"
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.tfp-version",
+                "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
+                }
+            },
+            "position": {
+                "x": 356.1781599999999,
+                "y": 66.94522350000001
+            },
+            "router_id": "10.0.0.1"
+        },
+        {
+            "asn": 3,
+            "cluster_id": "10.0.0.3",
+            "id": "R3",
+            "originated_prefixes": [
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.tfp-version",
+                "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
+                }
+            },
+            "position": {
+                "x": 107.90912299999994,
+                "y": 303.90732599999996
+            },
+            "router_id": "10.0.0.3"
+        },
+        {
+            "asn": 4,
+            "cluster_id": "10.0.0.4",
+            "id": "R4",
+            "originated_prefixes": [
+                "4.0.0.0/8"
+            ],
+            "plugin": {
+                "id": "org.bgptester.router.tfp-version",
+                "settings": {
+                    "entity_id": "",
+                    "initial_version": "0"
+                }
+            },
+            "position": {
+                "x": -57.25790200000001,
+                "y": 70.47126399999999
+            },
+            "router_id": "10.0.0.4"
+        }
+    ],
+    "simulation": {
+        "convergence_quiet_ms": 1000,
+        "log_dir": "tmp",
+        "name": "quick-lab",
+        "router_class": "BgpRouter",
+        "worker_threads": 0
+    }
+}
