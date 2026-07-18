@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$BuildDir = Join-Path $ProjectDir "build"
+$BuildDir = Join-Path $ProjectDir ("build\" + $Configuration)
 
 if (-not $QtPrefix) {
     $QMake = Get-Command qmake6 -ErrorAction SilentlyContinue
