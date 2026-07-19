@@ -17,6 +17,7 @@
 - 运行时节点/链路上下线、前缀发布/撤销与收敛状态；
 - 最佳路由、全部路径、Peer 状态检查以及画布逐跳路径高亮；
 - BMP 风格实时事件表、全列过滤、JSON 详情、JSONL 和 SQLite 历史日志；
+- 完整的无 UI `BgpTesterCli`，可用 JSONL/标准输入完成拓扑编辑、仿真扰动、RIB/Peer/路径查询、全量快照与命令审计；
 - 核心回归测试，覆盖 JSON、校验、EBGP、RR、MRAI、源码插件与日志持久化。
 
 ## 构建
@@ -35,6 +36,15 @@ cd BgpTester
 ```
 
 详细依赖、界面操作、仿真语义和 JSON 格式见 [`BgpTester/README.md`](BgpTester/README.md)。
+
+无 UI 示例：
+
+```powershell
+cd BgpTester
+build\Release\bin\BgpTesterCli.exe `
+  --topology topo\sample_topology.json `
+  --script topo\sample_headless_commands.jsonl
+```
 
 ## 目录
 

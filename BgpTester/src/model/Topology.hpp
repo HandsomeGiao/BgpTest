@@ -127,6 +127,7 @@ public:
     QVector<LinkConfig> links;
 
     QJsonObject toJson() const;
+    static Topology starter();
     static std::optional<Topology> fromJson(const QJsonObject& object, QString* error = nullptr);
     // The callback runs in the calling thread; return false to cancel.
     static std::optional<Topology> load(const QString& path, QString* error = nullptr,

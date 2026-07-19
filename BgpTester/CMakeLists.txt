@@ -68,19 +68,37 @@ target_link_libraries(BgpTester
         Qt6::Widgets
 )
 
+# A real console-subsystem executable is kept separate from the WIN32 GUI
+# target. This makes stdin/stdout reliable on Windows and guarantees that the
+# headless mode never constructs QApplication or any QWidget.
+qt_add_executable(BgpTesterCli
+    src/cli/main.cpp
+    src/headless/HeadlessSession.cpp
+    src/headless/HeadlessSession.hpp
+)
+target_sources(BgpTesterCli PRIVATE
+    $<TARGET_OBJECTS:bgptester_router_plugins>
+)
+target_link_libraries(BgpTesterCli
+    PRIVATE
+        bgptester_core
+)
+
 if(MSVC)
     target_compile_options(bgptester_router_plugins PRIVATE /W4 /permissive-)
     target_compile_options(bgptester_core PRIVATE /W4 /permissive-)
     target_compile_options(BgpTester PRIVATE /W4 /permissive-)
+    target_compile_options(BgpTesterCli PRIVATE /W4 /permissive-)
 else()
     target_compile_options(bgptester_router_plugins PRIVATE
         -Wall -Wextra -Wpedantic
     )
     target_compile_options(bgptester_core PRIVATE -Wall -Wextra -Wpedantic)
     target_compile_options(BgpTester PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(BgpTesterCli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-set_target_properties(BgpTester PROPERTIES
+set_target_properties(BgpTester BgpTesterCli PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
@@ -105,6 +123,34 @@ if(BUILD_TESTING)
         target_compile_options(BgpTesterTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME BgpTesterTests COMMAND BgpTesterTests)
+
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cli_test")
+    add_test(NAME BgpTesterCliTests
+        COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXECUTABLE=$<TARGET_FILE:BgpTesterCli>"
+            "-DTOPOLOGY=${CMAKE_CURRENT_SOURCE_DIR}/topo/sample_topology.json"
+            "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/topo/sample_headless_commands.jsonl"
+            "-DWORK_DIR=${CMAKE_BINARY_DIR}/cli_test"
+            "-DSCENARIO=runtime"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyCliScenario.cmake"
+    )
+    set_tests_properties(BgpTesterCliTests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/cli_test"
+        TIMEOUT 60
+    )
+
+    add_test(NAME BgpTesterCliEditTests
+        COMMAND ${CMAKE_COMMAND}
+            "-DCLI_EXECUTABLE=$<TARGET_FILE:BgpTesterCli>"
+            "-DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/topo/sample_headless_edit_commands.jsonl"
+            "-DWORK_DIR=${CMAKE_BINARY_DIR}/cli_test"
+            "-DSCENARIO=edit"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyCliScenario.cmake"
+    )
+    set_tests_properties(BgpTesterCliEditTests PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/cli_test"
+        TIMEOUT 30
+    )
 
     add_executable(BgpTesterUiTests
         tests/UiTests.cpp

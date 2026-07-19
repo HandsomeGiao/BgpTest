@@ -174,8 +174,9 @@ void bmpMonitorContainsConvergenceHistoryPanel()
 
     require(tabs && tabs->count() == 2 && tabs->tabText(1) == QStringLiteral("收敛时间"),
             "BMP monitor does not expose the convergence history tab");
-    require(table && table->columnCount() == 5 && table->rowCount() == 0 &&
-                table->horizontalHeaderItem(1)->text() == QStringLiteral("触发事件"),
+    require(table && table->columnCount() == 6 && table->rowCount() == 0 &&
+                table->horizontalHeaderItem(1)->text() == QStringLiteral("触发事件") &&
+                table->horizontalHeaderItem(5)->text() == QStringLiteral("BGP 报文数"),
             "convergence history table does not expose its trigger-event column");
     require(stateLabel && stateLabel->text().contains(QStringLiteral("尚未开始")), "convergence monitor does not show its initial state");
 }

@@ -112,9 +112,20 @@ if ($Test) {
 
 if ($Deploy) {
     $DeployTool = Join-Path $QtPrefix "bin\windeployqt.exe"
-    $Executable = Join-Path $BuildDir "bin\BgpTester.exe"
+    $ExecutableDirectory = Join-Path $BuildDir "bin\$Configuration"
+    if (-not (Test-Path -LiteralPath (Join-Path $ExecutableDirectory "BgpTester.exe"))) {
+        $ExecutableDirectory = Join-Path $BuildDir "bin"
+    }
+    $Executable = Join-Path $ExecutableDirectory "BgpTester.exe"
+    $CliExecutable = Join-Path $ExecutableDirectory "BgpTesterCli.exe"
     if (-not (Test-Path -LiteralPath $DeployTool)) {
         throw "windeployqt.exe was not found under the selected Qt kit."
     }
-    & $DeployTool --no-translations --compiler-runtime $Executable
+    foreach ($Target in @($Executable, $CliExecutable)) {
+        if (-not (Test-Path -LiteralPath $Target)) {
+            throw "The expected executable was not built: $Target"
+        }
+        & $DeployTool --no-translations --compiler-runtime $Target
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
 }

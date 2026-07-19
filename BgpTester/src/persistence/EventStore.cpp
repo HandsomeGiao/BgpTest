@@ -217,6 +217,26 @@ bool querySingleCount(QSqlDatabase& database, const QString& filter, const std::
     return true;
 }
 
+bool queryMaximumEventId(QSqlDatabase& database, quint64* maxEventId, QString* error,
+                         const std::function<bool()>& cancelled)
+{
+    if (queryCancelled(cancelled, error))
+    {
+        return false;
+    }
+    QSqlQuery query(database);
+    if (!query.exec(QStringLiteral("SELECT COALESCE(MAX(id), 0) FROM bmp_events")) || !query.next())
+    {
+        if (error)
+        {
+            *error = QStringLiteral("查询最终事件 ID 失败：%1").arg(query.lastError().text());
+        }
+        return false;
+    }
+    *maxEventId = query.value(0).toULongLong();
+    return !queryCancelled(cancelled, error);
+}
+
 bool queryEventCounts(QSqlDatabase& database, const QString& filter, const std::optional<quint64>& maxEventId,
                       EventHistoryPage* result, QString* error, const std::function<bool()>& cancelled)
 {
@@ -245,6 +265,7 @@ EventStore::EventStore(QObject* parent) : QObject(parent)
     qRegisterMetaType<QVector<SimulationEvent>>();
     connectionName_ = uniqueConnectionName("bgptester-live");
     encodingPool_.setExpiryTimeout(30000);
+    connect(this, &EventStore::storeError, this, [this](const QString& message) { lastError_ = message; }, Qt::DirectConnection);
 }
 
 EventStore::~EventStore()
@@ -256,6 +277,7 @@ EventStore::~EventStore()
 bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
 {
     endRun();
+    lastError_.clear();
     nextId_ = 1;
     lastInsertedEventId_ = 0;
     committedEventId_ = 0;
@@ -330,6 +352,18 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
         return false;
     }
     transactionOpen_ = database_.transaction();
+    if (!transactionOpen_)
+    {
+        const auto message = QStringLiteral("启动 SQLite 日志事务失败：%1").arg(database_.lastError().text());
+        lastError_ = message;
+        emit storeError(message);
+        if (error)
+        {
+            *error = message;
+        }
+        endRun();
+        return false;
+    }
     pendingTransactionRows_ = 0;
     {
         QMutexLocker locker(&queueMutex_);
@@ -350,7 +384,10 @@ void EventStore::endRun()
     commitTransaction(false);
     if (logFile_.isOpen())
     {
-        logFile_.flush();
+        if (!logFile_.flush())
+        {
+            emit storeError(QStringLiteral("刷新 BMP JSONL 失败：%1").arg(logFile_.errorString()));
+        }
     }
     insertQuery_ = QSqlQuery();
     if (database_.isValid())
@@ -373,7 +410,10 @@ void EventStore::flush()
     commitTransaction(true);
     if (logFile_.isOpen())
     {
-        logFile_.flush();
+        if (!logFile_.flush())
+        {
+            emit storeError(QStringLiteral("刷新 BMP JSONL 失败：%1").arg(logFile_.errorString()));
+        }
     }
 }
 
@@ -554,7 +594,11 @@ void EventStore::persistBatch(QVector<SimulationEvent> events)
     }
     if (logFile_.isOpen() && !logBuffer.isEmpty())
     {
-        logFile_.write(logBuffer);
+        const auto written = logFile_.write(logBuffer);
+        if (written != logBuffer.size())
+        {
+            emit storeError(QStringLiteral("写入 BMP JSONL 失败：%1").arg(logFile_.errorString()));
+        }
     }
     emit eventsStored(runSerial_, std::move(events));
 }
@@ -591,6 +635,16 @@ bool EventStore::commitTransaction(bool restart, QString* error)
 {
     if (!database_.isOpen())
     {
+        if (!logFile_.isOpen() && !transactionOpen_ && pendingTransactionRows_ == 0)
+        {
+            return true;
+        }
+        const auto message = QStringLiteral("SQLite 日志数据库未打开，无法提交");
+        emit storeError(message);
+        if (error)
+        {
+            *error = message;
+        }
         return false;
     }
     if (!transactionOpen_)
@@ -603,9 +657,14 @@ bool EventStore::commitTransaction(bool restart, QString* error)
             return true;
         }
         transactionOpen_ = database_.transaction();
-        if (!transactionOpen_ && error)
+        if (!transactionOpen_)
         {
-            *error = QStringLiteral("启动 SQLite 日志事务失败：%1").arg(database_.lastError().text());
+            const auto message = QStringLiteral("启动 SQLite 日志事务失败：%1").arg(database_.lastError().text());
+            emit storeError(message);
+            if (error)
+            {
+                *error = message;
+            }
         }
         return transactionOpen_;
     }
@@ -767,7 +826,8 @@ EventHistoryPage EventStore::queryDatabase(const QString& path, int limit, const
                     *error = QStringLiteral("无法创建历史日志只读快照：%1").arg(database.lastError().text());
                 }
             }
-            else if (queryEventCounts(database, filter, {}, &result, error, cancelled))
+            else if (queryMaximumEventId(database, &result.maxEventId, error, cancelled) &&
+                     queryEventCounts(database, filter, {}, &result, error, cancelled))
             {
                 const auto rowsToLoad = limit > 0 ? std::min(result.filteredCount, static_cast<qint64>(limit)) : result.filteredCount;
                 const auto continueLoading = !queryCancelled(cancelled, error) &&
@@ -846,6 +906,7 @@ EventHistoryPage EventStore::countDatabase(const QString& path, const QString& f
                                            const std::function<bool()>& cancelled)
 {
     EventHistoryPage result;
+    result.maxEventId = maxEventId;
     if (error)
     {
         error->clear();
@@ -914,7 +975,8 @@ ConvergenceHistoryPage EventStore::queryConvergenceDatabase(const QString& path,
                     *error = QStringLiteral("无法创建收敛历史只读快照：%1").arg(database.lastError().text());
                 }
             }
-            else if (querySingleCount(database, {}, {}, QStringLiteral("converged"), &result.totalCount,
+            else if (queryMaximumEventId(database, &result.maxEventId, error, cancelled) &&
+                     querySingleCount(database, {}, {}, QStringLiteral("converged"), &result.totalCount,
                                       QStringLiteral("统计收敛记录总数"), error, cancelled) &&
                      !queryCancelled(cancelled, error))
             {

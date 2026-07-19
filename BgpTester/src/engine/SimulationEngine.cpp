@@ -145,6 +145,7 @@ void SimulationEngine::requestStartupCancellation() noexcept
 
 void SimulationEngine::startSimulation(Topology topology)
 {
+    lastError_.clear();
     if (running_)
     {
         stopSimulation();
@@ -157,7 +158,8 @@ void SimulationEngine::startSimulation(Topology topology)
     {
         recordTopologyEvent(QStringLiteral("simulation_start_failed"), {{QStringLiteral("error"), problems.join(u'\n')}});
         clearRuntime();
-        emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(problems.join(u'\n')));
+        lastError_ = QStringLiteral("无法启动仿真：\n%1").arg(problems.join(u'\n'));
+        emit errorOccurred(lastError_);
         return;
     }
     if (startupCancelRequested_.load(std::memory_order_acquire))
@@ -183,7 +185,8 @@ void SimulationEngine::startSimulation(Topology topology)
         }
         recordTopologyEvent(QStringLiteral("simulation_start_failed"), {{QStringLiteral("error"), pluginError}});
         clearRuntime();
-        emit errorOccurred(QStringLiteral("无法启动仿真：\n%1").arg(pluginError));
+        lastError_ = QStringLiteral("无法启动仿真：\n%1").arg(pluginError);
+        emit errorOccurred(lastError_);
         return;
     }
     clock_.start();
@@ -239,6 +242,7 @@ void SimulationEngine::startSimulation(Topology topology)
 
 void SimulationEngine::stopSimulation()
 {
+    lastError_.clear();
     if (!running_)
     {
         return;
@@ -652,9 +656,14 @@ void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, cons
 
 void SimulationEngine::publishStats()
 {
+    emit statsChanged(statsSnapshot());
+}
+
+SimulationStats SimulationEngine::statsSnapshot()
+{
     pruneInvalidScheduledEvents();
     const auto elapsedMs = now();
-    emit statsChanged(SimulationStats{
+    return SimulationStats{
         .running = running_,
         .converged = converged_,
         .pendingEvents = static_cast<qsizetype>(events_.size()),
@@ -663,7 +672,7 @@ void SimulationEngine::publishStats()
         .convergenceElapsedMs = running_ && !converged_ ? std::max<qint64>(0, elapsedMs - convergenceStartedAt_) : 0,
         .convergenceTriggerEvent = convergenceTriggerEvent_,
         .convergenceTriggerContext = convergenceTriggerContext_,
-    });
+    };
 }
 
 void SimulationEngine::scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs)
@@ -1419,15 +1428,18 @@ BgpMessage SimulationEngine::makeUpdateMessage(const QString& from, const QStrin
 
 void SimulationEngine::setLinkState(const QString& a, const QString& b, bool enabled)
 {
+    lastError_.clear();
     if (!running_)
     {
-        emit errorOccurred(QStringLiteral("仿真尚未运行"));
+        lastError_ = QStringLiteral("仿真尚未运行");
+        emit errorOccurred(lastError_);
         return;
     }
     auto linkIt = links_.find(Topology::edgeKey(a, b));
     if (linkIt == links_.end())
     {
-        emit errorOccurred(QStringLiteral("链路不存在：%1 - %2").arg(a, b));
+        lastError_ = QStringLiteral("链路不存在：%1 - %2").arg(a, b);
+        emit errorOccurred(lastError_);
         return;
     }
     if (linkIt->enabled == enabled)
@@ -1468,15 +1480,18 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
 
 void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
 {
+    lastError_.clear();
     if (!running_)
     {
-        emit errorOccurred(QStringLiteral("仿真尚未运行"));
+        lastError_ = QStringLiteral("仿真尚未运行");
+        emit errorOccurred(lastError_);
         return;
     }
     auto routerIt = routers_.find(routerId);
     if (routerIt == routers_.end())
     {
-        emit errorOccurred(QStringLiteral("路由器不存在：%1").arg(routerId));
+        lastError_ = QStringLiteral("路由器不存在：%1").arg(routerId);
+        emit errorOccurred(lastError_);
         return;
     }
     if (routerIt->active == enabled)
@@ -1536,21 +1551,25 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
 
 void SimulationEngine::originatePrefix(const QString& routerId, const QString& prefixValue)
 {
+    lastError_.clear();
     const auto prefix = prefixValue.trimmed();
     if (!running_)
     {
-        emit errorOccurred(QStringLiteral("仿真尚未运行"));
+        lastError_ = QStringLiteral("仿真尚未运行");
+        emit errorOccurred(lastError_);
         return;
     }
     if (!validIpv4Prefix(prefix))
     {
-        emit errorOccurred(QStringLiteral("前缀无效：%1").arg(prefix));
+        lastError_ = QStringLiteral("前缀无效：%1").arg(prefix);
+        emit errorOccurred(lastError_);
         return;
     }
     auto routerIt = routers_.find(routerId);
     if (routerIt == routers_.end())
     {
-        emit errorOccurred(QStringLiteral("路由器不存在：%1").arg(routerId));
+        lastError_ = QStringLiteral("路由器不存在：%1").arg(routerId);
+        emit errorOccurred(lastError_);
         return;
     }
     if (!routerIt->config.originatedPrefixes.contains(prefix))
@@ -1570,16 +1589,19 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
 
 void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& prefixValue)
 {
+    lastError_.clear();
     const auto prefix = prefixValue.trimmed();
     if (!running_)
     {
-        emit errorOccurred(QStringLiteral("仿真尚未运行"));
+        lastError_ = QStringLiteral("仿真尚未运行");
+        emit errorOccurred(lastError_);
         return;
     }
     auto routerIt = routers_.find(routerId);
     if (routerIt == routers_.end())
     {
-        emit errorOccurred(QStringLiteral("路由器不存在：%1").arg(routerId));
+        lastError_ = QStringLiteral("路由器不存在：%1").arg(routerId);
+        emit errorOccurred(lastError_);
         return;
     }
     routerIt->config.originatedPrefixes.removeAll(prefix);
@@ -1697,7 +1719,7 @@ void SimulationEngine::requestAllSnapshots()
     emit routerSnapshotsChanged(routerSnapshots());
 }
 
-void SimulationEngine::requestPath(const QString& routerId, const QString& prefix)
+QStringList SimulationEngine::pathSnapshot(const QString& routerId, const QString& prefix) const
 {
     QStringList path;
     QSet<QString> seen;
@@ -1718,7 +1740,12 @@ void SimulationEngine::requestPath(const QString& routerId, const QString& prefi
         }
         current = routeIt->learnedFrom;
     }
-    emit pathReady(routerId, prefix, path);
+    return path;
+}
+
+void SimulationEngine::requestPath(const QString& routerId, const QString& prefix)
+{
+    emit pathReady(routerId, prefix, pathSnapshot(routerId, prefix));
 }
 
 SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const

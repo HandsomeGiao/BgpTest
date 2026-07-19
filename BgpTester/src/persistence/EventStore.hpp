@@ -26,12 +26,14 @@ struct EventHistoryPage
     qint64 filteredCount = 0;
     qint64 messageTotalCount = 0;
     qint64 filteredMessageCount = 0;
+    quint64 maxEventId = 0;
 };
 
 struct ConvergenceHistoryPage
 {
     QVector<SimulationEvent> events;
     qint64 totalCount = 0;
+    quint64 maxEventId = 0;
 };
 
 class EventStore final : public QObject
@@ -65,6 +67,14 @@ public:
     quint64 runSerial() const
     {
         return runSerial_;
+    }
+    quint64 committedEventId() const
+    {
+        return committedEventId_;
+    }
+    QString lastError() const
+    {
+        return lastError_;
     }
     static EventHistoryPage queryDatabase(const QString& path, int limit, const QString& filter = {}, QString* error = nullptr,
                                           const std::function<bool(qsizetype, qsizetype)>& progress = {},
@@ -114,6 +124,7 @@ private:
     quint64 runSerial_ = 0;
     quint64 lastInsertedEventId_ = 0;
     quint64 committedEventId_ = 0;
+    QString lastError_;
     int pendingTransactionRows_ = 0;
     bool transactionOpen_ = false;
     QThreadPool encodingPool_;

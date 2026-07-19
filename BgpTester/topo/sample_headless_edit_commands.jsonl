@@ -1,0 +1,10 @@
+{"command":"add_router","id":"R3","router_id":"10.0.0.3","asn":65003,"prefixes":["198.51.100.0/24"],"x":700,"y":220}
+{"command":"add_link","a":"R2","b":"R3","enabled":true,"delay_ms":15,"mrai_ms_from_a":20,"mrai_ms_from_b":30,"relationship":"peer"}
+{"command":"update_router","id":"R3","new_id":"EDGE3","asn":65002}
+{"command":"move_router","id":"EDGE3","x":725.5,"y":260}
+{"command":"batch_update","router_ids":["R1","EDGE3"],"mrai":{"mode":"random","min_ms":40,"max_ms":45},"delay":{"mode":"random","min_ms":5,"max_ms":8},"seed":12345}
+{"command":"validate"}
+{"command":"save","path":"tmp/cli_edited_topology.json"}
+{"command":"load","path":"tmp/cli_edited_topology.json"}
+{"command":"topology"}
+{"command":"exit"}

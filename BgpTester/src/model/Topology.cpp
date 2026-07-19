@@ -229,6 +229,32 @@ std::optional<NeighborRelationship> neighborRelationshipFromString(const QString
     return std::nullopt;
 }
 
+Topology Topology::starter()
+{
+    Topology topology;
+    topology.simulation.name = QStringLiteral("quick-lab");
+    RouterConfig r1{.id = QStringLiteral("R1"),
+                    .routerId = QStringLiteral("10.0.0.1"),
+                    .asn = 65001,
+                    .clusterId = QStringLiteral("10.0.0.1"),
+                    .originatedPrefixes = {QStringLiteral("10.1.0.0/24")},
+                    .position = QPointF(180, 220),
+                    .pluginId = StandardRouterPluginId,
+                    .pluginSettings = {}};
+    RouterConfig r2{.id = QStringLiteral("R2"),
+                    .routerId = QStringLiteral("10.0.0.2"),
+                    .asn = 65002,
+                    .clusterId = QStringLiteral("10.0.0.2"),
+                    .originatedPrefixes = {QStringLiteral("10.2.0.0/24")},
+                    .position = QPointF(450, 220),
+                    .pluginId = StandardRouterPluginId,
+                    .pluginSettings = {}};
+    topology.routers.insert(r1.id, r1);
+    topology.routers.insert(r2.id, r2);
+    topology.links.append(LinkConfig{.a = r1.id, .b = r2.id, .delayMs = 10});
+    return topology;
+}
+
 QJsonObject Topology::toJson() const
 {
     QJsonObject simulationObject{

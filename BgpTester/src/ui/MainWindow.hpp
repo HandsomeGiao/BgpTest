@@ -132,8 +132,6 @@ private:
     void refreshRuntimeControls();
     void endEventRun(bool blocking = true);
     void flushEventStore();
-    static Topology starterTopology();
-
     Topology topology_;
     QString topologyPath_;
     bool dirty_ = false;

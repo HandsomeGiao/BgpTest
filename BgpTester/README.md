@@ -39,6 +39,108 @@ ctest --test-dir build --output-on-failure
 
 程序位于 `build/bin/BgpTester.exe`。
 
+## 无 UI 命令行模式
+
+构建会同时生成控制台程序 `build/bin/BgpTesterCli.exe`。它使用
+`QCoreApplication`，不创建窗口、不读取 GUI 的 `QSettings`，也不依赖显示
+服务器。CLI 是一个有状态会话：同一进程内可以依次编辑拓扑、启动仿真、
+等待收敛、制造故障、查询 RIB/Peer/路径并导出结果。
+
+最快的完整示例：
+
+```powershell
+cd BgpTester
+build\bin\BgpTesterCli.exe `
+  --topology topo\sample_topology.json `
+  --script topo\sample_headless_commands.jsonl
+```
+
+当使用 `build.ps1` 的分配置输出目录时，可执行文件位于
+`build\Release\bin\BgpTesterCli.exe`。`--script -` 从标准输入读取 JSONL；
+不提供 `--script` 或 `--execute` 时会进入命令行交互模式。无参数命令可直接
+输入 `help`、`status` 或 `exit`，带参数的命令使用一行一个 JSON 对象：
+
+```jsonl
+{"command":"start"}
+{"command":"wait_converged","timeout_ms":30000}
+{"command":"set_link_state","a":"EDGE","b":"ISP","enabled":false}
+{"command":"wait_converged","timeout_ms":30000}
+{"command":"get_rib","router":"C1","prefix":"192.0.2.0/24"}
+{"command":"stop"}
+{"command":"exit"}
+```
+
+脚本文件也可以是由命令对象组成的 JSON 数组。`--execute` 可重复，用于简短
+的一次性会话；例如 `--execute plugins --execute status`。每次有效命令都先输出
+`command_started`，再输出共享同一 `sequence` 的 `command_result`；结果含原命令、
+`ok`、`data/error`、时间戳和耗时。协议解析错误会记录序号、原始输入和来源。
+stdout 始终只输出 JSONL，交互提示与诊断写入 stderr。
+
+### 命令能力
+
+| 类别 | 命令 |
+|---|---|
+| 文件与设置 | `new`、`load`、`save`、`topology`、`validate`、`set_simulation`、`plugins` |
+| 路由器编辑 | `add_router`、`update_router`、`move_router`、`delete_router` |
+| 链路与批量编辑 | `add_link`、`update_link`、`delete_link`、`batch_update` |
+| 仿真控制 | `start`、`stop`、`wait`、`wait_converged`、`status` |
+| 运行时扰动 | `set_router_state`、`toggle_router`、`set_link_state`、`toggle_link`、`advertise_prefix`、`withdraw_prefix` |
+| 状态检查 | `routers`、`rib`、`peers`、`path`、`snapshot` |
+| 日志历史 | `flush_logs`、`query_events`、`query_convergence` |
+
+执行 `--execute help` 可查看每条命令的字段。常用编辑示例：
+
+```jsonl
+{"command":"add_router","id":"R3","router_id":"10.0.0.3","asn":65003,"prefixes":["198.51.100.0/24"],"x":700,"y":220}
+{"command":"add_link","a":"R2","b":"R3","delay_ms":10,"mrai_ms_from_a":100,"mrai_ms_from_b":100,"relationship":"peer"}
+{"command":"update_router","id":"R3","new_id":"EDGE3","asn":65002}
+{"command":"batch_update","router_ids":["R1","EDGE3"],"mrai":{"mode":"random","min_ms":50,"max_ms":100},"delay":{"mode":"fixed","value_ms":10},"seed":12345}
+{"command":"save","path":"tmp/edited_topology.json"}
+```
+
+路由器重命名会同步修改所有链路端点；删除路由器会级联删除相邻链路；ASN
+修改使链路变为 iBGP 时会清除商业关系。`batch_update` 的插件和出站 MRAI
+只作用于 `router_ids`（省略时为全部路由器），链路延迟始终作用于全部链路。
+随机批量操作会返回并记录种子及每个实际值，因此可以重放。
+
+仿真运行期间拓扑编辑会像 GUI 一样锁定。运行时前缀发布、节点/链路状态只
+修改本次引擎状态，不会写回待保存的拓扑。交互模式停在提示符时，
+仿真与 BMP 落盘仍在独立线程中继续运行。画布选择、缩放、平移和 Dock
+布局是纯显示行为；无 UI 模式以显式目标 ID、`move_router` 和 `path` 分别
+替代选择、拖动和路径高亮。
+
+### 数据记录
+
+CLI 保留 GUI 的 BMP 持久化格式。每次 `start` 仍会在
+`<log_dir>/<实验名>_<时间>/` 创建：
+
+- `bmp_collector.log`：完整协议/拓扑/收敛事件 JSONL；
+- `bmp_collector.sqlite`：可过滤查询的完整历史。
+
+此外 CLI 默认创建 `tmp/cli_sessions/bgptester_cli_<时间>.jsonl`，逐条审计
+所有编辑命令、非法命令、幂等操作、查询结果、随机种子和日志绝对路径。
+可用 `--record <path>` 指定一个不存在的新文件，或用 `--no-record` 关闭文件审计；
+stdout 仍保留同一 JSONL 协议。审计、JSONL 或 SQLite 的任一写入/提交失败
+都会传播为命令失败和非零退出码。`snapshot` 会稳定排序并返回所有路由器摘要、
+Loc-RIB、本地 RIB、Adj-RIB-In、Peer、逐跳路径、完整路径属性、运行时链路状态
+和动态起源前缀；其状态与 `committed_event_id` 在引擎暂停的同一临界区内捕获。
+提供 `path` 时还会原子写入独立 JSON 文件。该一致性屏障会在全量复制和日志刷新
+期间短暂暂停引擎，因此推荐先执行 `wait_converged` 再导出大型拓扑。
+
+`query_events` 与 GUI 历史过滤使用同一 SQLite 查询实现，并返回完整事件数、
+过滤后事件数、BGP 报文数及 `database_max_event_id`；查询当前运行时还返回
+`event_run_serial` 和显式刷新的 `committed_event_id`。`query_convergence` 返回每轮触发
+事件、持续时间和 BGP 报文数。推荐脚本显式使用 `wait_converged`，不要依赖
+固定休眠来判定完成。
+
+脚本默认遇到首个失败命令后停止；`--keep-going` 会继续并最终返回非零状态。
+退出码 `0` 表示全部成功，`1` 是 Qt 命令行解析器报告的未知/缺值选项，
+`2` 表示命令、协议或运行期记录失败，`3` 表示互斥/重复拓扑参数或审计文件
+创建失败，`130` 表示 Ctrl+C。正常退出和 Ctrl+C 都会停止仿真并阻塞刷新日志；
+Ctrl+C 也会取消正在构建的大型拓扑运行时。
+在某些终端上，交互提示符处的阻塞输入可能需再按一次 Enter 才能让 Ctrl+C
+进入收尾流程；自动化请优先通过 JSONL 发送 `exit`。
+
 ## 使用
 
 ### 编辑拓扑

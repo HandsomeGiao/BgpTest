@@ -38,6 +38,12 @@ public:
     RibSnapshot ribSnapshot(const QString& routerId) const;
     QVector<PeerSnapshot> peerSnapshots(const QString& routerId) const;
     QVector<RouterSnapshot> routerSnapshots() const;
+    QStringList pathSnapshot(const QString& routerId, const QString& prefix) const;
+    SimulationStats statsSnapshot();
+    QString lastError() const
+    {
+        return lastError_;
+    }
     void prepareStartup() noexcept;
     void requestStartupCancellation() noexcept;
 
@@ -210,6 +216,7 @@ private:
     bool pluginLifecycleActive_ = false;
     bool running_ = false;
     bool converged_ = false;
+    QString lastError_;
 };
 
 } // namespace bgptester
