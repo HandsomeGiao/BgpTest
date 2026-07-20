@@ -955,10 +955,11 @@ void MainWindow::buildEventDock()
     convergenceSummary->addWidget(clearConvergenceButton);
     convergenceLayout->addLayout(convergenceSummary);
 
-    convergenceTable_ = new QTableWidget(0, 6, convergencePage);
+    convergenceTable_ = new QTableWidget(0, 7, convergencePage);
     convergenceTable_->setObjectName(QStringLiteral("convergenceHistoryTable"));
     convergenceTable_->setHorizontalHeaderLabels({QStringLiteral("轮次"), QStringLiteral("触发事件"), QStringLiteral("开始时间"),
-                                                  QStringLiteral("完成时间"), QStringLiteral("持续时间"), QStringLiteral("BGP 报文数")});
+                                                   QStringLiteral("完成时间"), QStringLiteral("协议收敛时间"),
+                                                   QStringLiteral("墙钟确认时间"), QStringLiteral("BGP 报文数")});
     configureDataTable(convergenceTable_);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -966,9 +967,10 @@ void MainWindow::buildEventDock()
     convergenceTable_->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
+    convergenceTable_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
     convergenceLayout->addWidget(convergenceTable_, 1);
     auto* convergenceNote =
-        new QLabel(QStringLiteral("持续时间包含配置的收敛静默窗口；BGP 报文数严格统计本轮的 message_received 事件。"), convergencePage);
+        new QLabel(QStringLiteral("协议收敛时间使用确定性的因果仿真时钟并止于最后路由活动；墙钟确认时间包含日志/机器开销与收敛静默窗口。BGP 报文数严格统计 message_received。"), convergencePage);
     convergenceNote->setStyleSheet(QStringLiteral("color:#6c757d"));
     convergenceLayout->addWidget(convergenceNote);
     monitorTabs->addTab(convergencePage, QStringLiteral("收敛时间"));
@@ -2502,14 +2504,16 @@ void MainWindow::appendConvergenceEvents(const QVector<SimulationEvent>& events)
         }
         const auto sequence =
             positiveDetail(event, QStringLiteral("convergence_sequence")).value_or(static_cast<quint64>(convergenceTable_->rowCount() + 1));
+        const auto wallDurationMs = nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs);
         appendConvergenceRecord(sequence, event.details.value(QStringLiteral("trigger_event")),
                                 event.details.value(QStringLiteral("trigger_context")), event.timestamp, *durationMs,
-                                unsignedDetail(event, QStringLiteral("bgp_message_count")));
+                                wallDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
     }
 }
 
 void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext,
-                                         const QDateTime& completedAt, qint64 durationMs, std::optional<quint64> bgpMessageCount)
+                                         const QDateTime& completedAt, qint64 durationMs, qint64 wallDurationMs,
+                                         std::optional<quint64> bgpMessageCount)
 {
     if (!completedAt.isValid())
     {
@@ -2521,12 +2525,17 @@ void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& trigge
     auto* triggerItem = tableItem(convergenceTriggerText(triggerEvent, triggerContext), Qt::AlignLeft | Qt::AlignVCenter);
     triggerItem->setToolTip(QStringLiteral("事件名称：%1").arg(triggerEvent.isEmpty() ? QStringLiteral("未知") : triggerEvent));
     convergenceTable_->setItem(row, 1, triggerItem);
-    convergenceTable_->setItem(row, 2, tableItem(completedAt.addMSecs(-durationMs).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
+    convergenceTable_->setItem(row, 2,
+                               tableItem(completedAt.addMSecs(-wallDurationMs).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
     convergenceTable_->setItem(row, 3, tableItem(completedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
     auto* durationItem = tableItem(durationText(durationMs));
     durationItem->setData(Qt::UserRole, durationMs);
-    durationItem->setToolTip(QStringLiteral("%1 ms（包含收敛静默窗口）").arg(durationMs));
+    durationItem->setToolTip(QStringLiteral("%1 ms（因果仿真时间，止于最后路由活动）").arg(durationMs));
     convergenceTable_->setItem(row, 4, durationItem);
+    auto* wallDurationItem = tableItem(durationText(wallDurationMs));
+    wallDurationItem->setData(Qt::UserRole, wallDurationMs);
+    wallDurationItem->setToolTip(QStringLiteral("%1 ms（包含机器/日志开销与收敛静默窗口）").arg(wallDurationMs));
+    convergenceTable_->setItem(row, 5, wallDurationItem);
     auto* messageCountItem = tableItem(bgpMessageCount ? QString::number(*bgpMessageCount) : QStringLiteral("—"));
     if (bgpMessageCount)
     {
@@ -2537,7 +2546,7 @@ void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& trigge
     {
         messageCountItem->setToolTip(QStringLiteral("该历史记录未保存 BGP 报文数量"));
     }
-    convergenceTable_->setItem(row, 5, messageCountItem);
+    convergenceTable_->setItem(row, 6, messageCountItem);
     convergenceCountLabel_->setText(QStringLiteral("已记录 %1 次").arg(convergenceTable_->rowCount()));
     convergenceStateLabel_->setText(QStringLiteral("当前：已收敛 · 触发：%1 · 最近 %2")
                                         .arg(convergenceTriggerText(triggerEvent, triggerContext), durationText(durationMs)));
@@ -2574,8 +2583,9 @@ void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& event
                 const auto triggerEvent = event.details.value(QStringLiteral("trigger_event"), inferredTriggerEvent);
                 const auto triggerContext = event.details.value(QStringLiteral("trigger_context"),
                                                                 triggerEvent == inferredTriggerEvent ? inferredTriggerContext : QString{});
+                const auto wallDurationMs = nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs);
                 appendConvergenceRecord(sequence, triggerEvent, triggerContext, event.timestamp, *durationMs,
-                                        unsignedDetail(event, QStringLiteral("bgp_message_count")));
+                                        wallDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
             }
             inferredStart = {};
             inferredTriggerEvent.clear();

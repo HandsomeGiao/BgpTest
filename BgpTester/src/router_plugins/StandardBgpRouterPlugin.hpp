@@ -20,6 +20,14 @@ public:
                                               const std::optional<RouteEntry>& currentBest) override;
     std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) override;
 
+protected:
+    // Shared classic-BGP comparison primitives let derived protocols apply an
+    // eligibility predicate without first copying eligible routes into a
+    // temporary container.
+    static bool primaryRouteBetter(const RouteEntry& lhs, const RouteEntry& rhs);
+    static bool samePrimaryPreference(const RouteEntry& lhs, const RouteEntry& rhs);
+    static bool deterministicRouteBetter(const RouteEntry& lhs, const RouteEntry& rhs);
+
 private:
     bool hasRouteReflectorClients() const;
 };

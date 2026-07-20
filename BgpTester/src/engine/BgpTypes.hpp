@@ -4,6 +4,7 @@
 
 #include <QDateTime>
 #include <QHash>
+#include <QHashFunctions>
 #include <QMap>
 #include <QMetaType>
 #include <QString>
@@ -84,10 +85,16 @@ struct TfpEntity
     }
 };
 
+inline size_t qHash(const TfpEntity& entity, size_t seed = 0) noexcept
+{
+    return qHashMulti(seed, entity.asn, entity.entityId);
+}
+
 using TfpVersionVector = QMap<TfpEntity, quint64>;
 
-// Unified TFP_VERSION_INFO path attribute. It is also carried in the
-// withdrawalAttributes member of a withdrawal-only BgpMessage.
+// Unified TFP_VERSION_INFO path attribute. Route and pending-withdrawal
+// attributes carry it directly. Batched BgpMessages retain one common value
+// when possible and use per-prefix overrides only for real differences.
 struct TfpVersionInfo
 {
     TfpVersionVector dependencyVector;
@@ -135,6 +142,9 @@ struct BgpMessage
     QStringList withdrawn;
     std::optional<RouteEntry> advertisedRoute;
     PathAttributes withdrawalAttributes;
+    // TFP version state is prefix-scoped. This map overrides the common UPDATE
+    // template for differing prefixes without breaking classic aggregation.
+    QMap<QString, TfpVersionInfo> tfpVersionInfoByPrefix;
     int errorCode = 0;
     int errorSubcode = 0;
     QString errorData;

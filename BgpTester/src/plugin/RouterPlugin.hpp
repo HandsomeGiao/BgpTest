@@ -15,7 +15,7 @@
 namespace bgptester
 {
 
-inline constexpr int RouterPluginApiVersion = 4;
+inline constexpr int RouterPluginApiVersion = 5;
 
 struct RouterPluginMetadata
 {
@@ -68,6 +68,9 @@ public:
     virtual void routerStateChanged(bool)
     {
     }
+    virtual void convergenceStateChanged(bool)
+    {
+    }
     virtual void peerStateChanged(const NeighborConfig&, PeerState)
     {
     }
@@ -102,6 +105,16 @@ public:
 
     virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
                                                       const std::optional<RouteEntry>& currentBest) = 0;
+
+    // A stateful plugin can request dissemination even when its selected
+    // RouteEntry is unchanged (for example, to flush prefix-local triggers).
+    virtual bool requiresDissemination(const QString&) const
+    {
+        return false;
+    }
+    virtual void decisionCompleted(const QString&)
+    {
+    }
 
     // Returning std::nullopt filters (or withdraws) the route for this peer.
     virtual std::optional<RouteEntry> exportRoute(const RouteEntry& route, const NeighborConfig& toPeer) = 0;

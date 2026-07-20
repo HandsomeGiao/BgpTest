@@ -175,9 +175,12 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 为避免商业关系产生的 LOCAL_PREF 跨 AS 泄漏，标准与 TFP 路由器向 eBGP 邻居发送时将其归一为 100，接收端再按自己的已配置邻居关系重新设置；
 - 选路顺序：本地起源、LOCAL_PREF、AS_PATH 长度、MED、EBGP 优先、旧路稳定性、确定性 tie-break；
 - 每邻居 MRAI；参考 FRR 的 Adj-RIB-Out 待发送队列聚合 withdrawal，同一前缀的新状态覆盖旧状态；
-- 同一轮中路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；
-- withdrawal 不等待 MRAI，并将本轮待撤销前缀全部聚合到一条报文；generation guard 按前缀过滤，不会误丢同批其他路由；
+- 同一轮中标准共享路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；单前缀或元数据完全相同的 TFP Dependency/Trigger 保留为公共属性，只有不同前缀的元数据真正不同时才提升为 sidecar override，因此不会仅因版本信息不同而拆包；
+- withdrawal 不等待 MRAI，并将本轮待撤销前缀全部聚合到一条报文；TFP 公共属性/sidecar 同样保留逐前缀语义，generation guard 过滤前缀时同步过滤对应元数据，不会误丢或串用同批其他路由；
+- 若某邻居既没有已提交的 Adj-RIB-Out 路由、待发送项，也没有已 flush 但尚未交付的 generation，撤销路径直接跳过；若存在 in-flight UPDATE，则先取消其 generation，防止后续复活已经撤销的幽灵路由；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定。
+- 到期事件按最多 16384 项或 48 ms 的时间片批量处理；大型故障波可减少零延迟定时器重入和日志小批次开销，同时仍给 UI/命令循环保留周期性让出点。
+- 同步派生事件以父事件 `dueAt` 为因果调度基准，不把插件 CPU、日志或机器负载逐跳累加进链路延迟。`converged` 事件的 `duration_ms`（与 `simulated_active_duration_ms` 相同）是止于最后路由活动的确定性协议因果时间；`active_wall_duration_ms` 是触发至最后路由活动的实际处理墙钟，`simulated_duration_ms` 是协议时间加静默窗口，`wall_duration_ms` 则是含实现、日志与静默确认的完整墙钟。
 
 ## 路由器插件
 
@@ -189,6 +192,7 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 带属性 WITHDRAW 的入站处理、真实状态撤销属性和按前缀出口属性；
 - 候选路由的最佳路径选择；
 - 面向每个邻居的出口过滤与属性变换；
+- 公共 TFP 属性/per-prefix override 的生成、导入和瞬态因果消费；
 - 仿真启动/停止及 Peer 状态通知。
 
 ### 添加一个插件
@@ -216,21 +220,53 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 - `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
 - `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
 
-插件 ID 在进程内必须唯一，API 版本当前为 `4`。插件缺失、ID 重复、API
+插件 ID 在进程内必须唯一，API 版本当前为 `5`。插件缺失、ID 重复、API
 版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
+API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` 与
+`decisionCompleted(prefix)` 生命周期钩子，分别用于标记 bootstrap 边界、在经典
+`RouteEntry` 未变化时请求一次因果发布，以及在全部 peer 导出后安全消费本轮因果；
+不需要这些能力的插件可继续使用默认空实现。
 
 ### TFP 路径版本插件
 
 内置源码插件 `org.bgptester.router.tfp-version` 实现路由器级实体版本机制：
 
-- `TFP_VERSION_INFO` 作为显式路径属性保存 `DependencyVector` 与
-  `TriggerVector`，UPDATE 和真实路径撤销均可携带；
-- 每个前缀按 `(ASN, EntityID)` 独立维护最大已知版本，只排除显式依赖较旧
-  版本的候选路径；缺少版本信息的普通 BGP 路径不会被当作版本 `0`；
+- 实验讨论中口语所称的“FTP 路由器”就是该 TFP 插件，不是另一种路由器，也与文件传输协议 FTP 无关；
+- 每前缀 `TFP_VERSION_INFO` 分成稳定的 `DependencyVector` 与瞬态的
+  `TriggerVector`：Dependency 随候选路径保存，Trigger 只作为当前 UPDATE/WITHDRAW
+  的最小因果 delta，接收后从稳定路由剥离；
+- bootstrap（启动至第一次完全收敛）只建立基线依赖，首轮不发送 Trigger；
+  第一次稳定后，`LocalVer` 只在标准 BGP 投影中的最佳路由/发布状态或真实本地
+  起源状态改变时推进，单纯接收、去重或消费 TFP 元数据不会推进版本；
+- 每个前缀按 `(ASN, EntityID)` 独立维护本地 `MaxVer`。它吸收收到的 Dependency
+  与 Trigger 的逐实体最大值，但只用于本地 stale 判断，绝不会整表作为 Trigger 外发；
+- `MaxVer` 使用实体哈希索引；故障期的 stale 前沿与 Trigger 去重水位合并在同一个
+  `TriggerKnowledge` 哈希条目中，避免为相同实体维护两套键和节点；在尚未观察到已知实体版本推进时，
+  bootstrap 选路走经典 BGP 快路径，不反复扫描不可能过期的 Dependency。经典路由
+  等价比较直接忽略 TFP 字段，不复制并清空整组候选向量；
+- 本地 `MaxVer` 不物化无信息增益的版本 `0`，空表使用 const 探测以保持零分配；线路与稳定路由仍保留显式 `(Entity,0)` Dependency，首次正版本会从隐式零基线推进 stale frontier，`initial_version > 0` 也会启用本地旧依赖检查；
+- stale 判定只遍历真正推进过版本的稀疏 `StaleFrontier`，再到候选 Dependency 中
+  查找对应实体；不再为每个候选遍历整条 Dependency 并反复哈希查询完整 `MaxVer`；
+- TFP 在原候选数组上完成 stale 过滤和标准 BGP primary/stickiness/tie-break 扫描，不再构造临时 `filteredCandidates`；常见单 Trigger 通过隐式共享复用入站或本地产生的 canonical 小向量；
+- Trigger 按 `(prefix, Entity, Version)` 去重。首次看到的更高 Trigger 进入待转发
+  因果，即使经典 best 未变，也会携带当前 selected route，沿标准出口策略允许的
+  邻居转发一次最小 delta；它不推进 `LocalVer`，也不是绕过策略的全邻居泛洪。
+  全部 peer 导出完成后消费本轮因果，重复或较旧 Trigger 不再产生 UPDATE；
+- pending 或已 flush、尚未交付的消息被新 generation 覆盖时，非空 Trigger 会迁移到最新状态；引擎只按单次仿真内唯一的 generation 建立稀疏 `generation -> TriggerVector` 保真索引，并在交付、取消、邻居断开或停止时删除，不把向量内联到数百万个普通 outbound generation；
+- 同一 decision 向多个策略允许的 peer 导出时，只构造一次“所选路径 Dependency + 本地实体版本”，各 peer 隐式共享该稳定向量；AS_PATH、NEXT_HOP、RR 和出口策略仍逐 peer 处理，临时缓存由 `decisionCompleted` 清理；
+- 若入站 Trigger 已显式证明旧 best 的 Dependency 过期，由此产生的本地经典变化
+  仍推进 `LocalVer`，但出站只转发该根因，不再逐跳追加冗余的本地 Trigger；新的
+  Dependency 仍携带推进后的本地版本。没有可证明入站根因的真实本地变化照常发布
+  本地 Trigger；
+- 只有显式 Dependency 落后于本地 `MaxVer` 的候选路径会被排除；缺少版本信息的
+  普通 BGP 路径不会被当作版本 `0`；
+- TFP 信息逻辑上按前缀隔离；相同值使用一份公共属性，不同值使用 sidecar override。
+  标准共享路径属性相同的多个 NLRI 仍保持一条 UPDATE/WITHDRAW，前缀过滤和 generation guard 会同步处理其元数据；
+- 纯 Dependency 或其他 TFP 元数据刷新不会推进 `LocalVer`、也不会凭空生成 Trigger；若选中路由的持久 Dependency 发生变化，可随普通聚合 UPDATE 刷新下游路径证明；
 - EBGP、IBGP 与 Route Reflector 继续使用标准插件的传播/选路规则；
 - 仅由出口过滤或 split-horizon 产生的策略撤销不携带版本信息；
-- 64 位本地版本在同一次仿真及节点关闭/恢复期间保持单调，
-  `initial_version` 可为十进制字符串，用来衔接外部持久化版本。
+- 64 位本地版本在同一次仿真及节点关闭/恢复期间保持单调，达到上限后饱和且不回绕；
+  `initial_version` 可为十进制字符串，用来衔接外部持久化版本。部署方应在耗尽前轮换实体标识或迁移持久化基线。
 
 插件配置示例：
 
@@ -244,9 +280,24 @@ CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入�
 }
 ```
 
-`entity_id` 为空时使用 Router ID。消息事件详情会记录
-`tfp_dependency_vector` 与 `tfp_trigger_vector`，便于在实时日志、JSONL 和
-SQLite 历史中检查传播过程。
+`entity_id` 为空时使用 Router ID。稳定 RIB 与快照只保留 Dependency；Trigger
+只出现在仍携带该瞬态因果的报文记录中。Dependency-only bootstrap 报文不额外写入
+逐报文 TFP 明细；小拓扑携带 Trigger 的报文记录摘要，且对不超过 4 项的单前缀
+Trigger 保留可读向量。大型拓扑只保留聚合报文和固定间隔样本的摘要，不展开逐项
+向量，避免诊断日志和 SQLite 背压参与收敛时间。
+
+固定 `misc/caida_topology_layout.json` 的最终 R29 同构建 headless 对照（4005 路由器、5464 链路、
+1000 前缀，断开 `AS141733_C1`—`AS2764_C3`）中，标准与 TFP 的 bootstrap protocol 均为
+219334 ms、报文均为 5398928，active wall 为 219342/219343 ms，wall confirm 为 220363/220346 ms。
+故障后标准的 protocol/active wall/wall confirm 为 197/256/1300 ms，TFP 为 154/208/1263 ms；
+标准为 6785 报文（UPDATE 1047、WITHDRAW 5738），TFP 为 5387 报文（UPDATE 0、WITHDRAW 5387）。
+即 TFP 故障 protocol、active wall、wall confirm 和报文分别减少 21.83%、18.75%、2.85% 和 20.60%。
+TFP bootstrap 峰值工作集为 8.7135 GiB，较优化前 R28 的 15.7753 GiB 下降 44.77%。这里的 UPDATE
+数量是路径探索报文代理，不是直接统计的 Loc-RIB 最佳路由切换次数。两组最终逐路由
+`best_route_count` 映射及目标前缀可达性一致；映射按 Unicode ordinal 排序后，以 UTF-8、LF、无末尾换行的
+`id=best_route_count` 序列计算，SHA-256 均为 `29a3aa96b3684c52a9ecc5d617d0fa6227b4f1df2a6b3a5deabcad7d332550f3`。
+本轮未逐项比较全部 prefix/path/next-hop，因而不据此声明完整 RIB 等价。
+完整实验记录见仓库工作区 `tmp/caida_experiment_summary.md`。
 
 ### 日志
 
@@ -255,7 +306,7 @@ SQLite 历史中检查传播过程。
 - `bmp_collector.log`：JSON Lines；
 - `bmp_collector.sqlite`：带常用查询索引的 SQLite 历史库。
 
-窗口底部的 BMP 监控器提供“事件日志”和“收敛时间”两个页面。事件日志页可通过“显示列”按钮或表头右键菜单选择要显示、隐藏的列，选择会在下次启动时恢复。收敛时间页实时显示当前收敛过程的触发事件与已用时，并保留本次运行中每一轮收敛的触发事件、开始时间、完成时间、持续时间和 BGP 报文数；持续时间包含配置的收敛静默窗口。每轮报文数随 `converged` 事件持久化，因此重新打开日志仍可查看；旧日志未保存该字段时显示“—”。双击事件记录可查看完整 JSON；“打开历史”会在后台查询 SQLite，只把最近 20000 条匹配事件放入表格，并另外显示完整日志中的事件总数、过滤后事件数、BGP 报文总数和过滤后报文数。这里的“报文”严格指 `event=message_received`，不包含拓扑和收敛事件。
+窗口底部的 BMP 监控器提供“事件日志”和“收敛时间”两个页面。事件日志页可通过“显示列”按钮或表头右键菜单选择要显示、隐藏的列，选择会在下次启动时恢复。收敛时间页实时显示当前状态，并为每轮分别显示协议收敛时间和墙钟确认时间：前者使用确定性的因果仿真时钟并止于最后路由活动，后者包含机器/日志开销与配置的收敛静默窗口。每轮 BGP 报文数随 `converged` 事件持久化，因此重新打开日志仍可查看；旧日志未保存该字段时显示“—”。双击事件记录可查看完整 JSON；“打开历史”会在后台查询 SQLite，只把最近 20000 条匹配事件放入表格，并另外显示完整日志中的事件总数、过滤后事件数、BGP 报文总数和过滤后报文数。这里的“报文”严格指 `event=message_received`，不包含拓扑和收敛事件；一条包含多个前缀的聚合 UPDATE/WITHDRAW 仍只计一条报文。
 
 事件持久化运行在独立线程中。仿真线程先把批量事件放入有上限的队列，后台线程批量写入 JSONL 和 SQLite；队列达到上限时会对仿真施加背压，避免以内存无限堆积换取吞吐。GUI 每帧只抽取一批最近事件，实时表最多保留 20000 条，完整历史始终保存在日志文件中。
 

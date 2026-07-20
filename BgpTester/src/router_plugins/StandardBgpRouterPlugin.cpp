@@ -16,43 +16,6 @@ constexpr quint32 DefaultLocalPreference = 100;
 constexpr quint32 PeerLocalPreference = DefaultLocalPreference;
 constexpr quint32 CustomerLocalPreference = 200;
 
-bool primaryBetter(const RouteEntry& lhs, const RouteEntry& rhs)
-{
-    if (lhs.localOrigin != rhs.localOrigin)
-    {
-        return lhs.localOrigin;
-    }
-    if (lhs.attributes.localPref != rhs.attributes.localPref)
-    {
-        return lhs.attributes.localPref > rhs.attributes.localPref;
-    }
-    if (lhs.attributes.asPath.size() != rhs.attributes.asPath.size())
-    {
-        return lhs.attributes.asPath.size() < rhs.attributes.asPath.size();
-    }
-    if (lhs.attributes.med != rhs.attributes.med)
-    {
-        return lhs.attributes.med < rhs.attributes.med;
-    }
-    if (lhs.sourceSession != rhs.sourceSession)
-    {
-        return lhs.sourceSession == SessionType::Ebgp;
-    }
-    return false;
-}
-
-bool samePrimaryPreference(const RouteEntry& lhs, const RouteEntry& rhs)
-{
-    return lhs.localOrigin == rhs.localOrigin && lhs.attributes.localPref == rhs.attributes.localPref &&
-           lhs.attributes.asPath.size() == rhs.attributes.asPath.size() && lhs.attributes.med == rhs.attributes.med &&
-           lhs.sourceSession == rhs.sourceSession;
-}
-
-bool deterministicBetter(const RouteEntry& lhs, const RouteEntry& rhs)
-{
-    return std::tie(lhs.attributes.nextHop, lhs.learnedFrom) < std::tie(rhs.attributes.nextHop, rhs.learnedFrom);
-}
-
 RouteSource routeSourceFor(NeighborRelationship relationship)
 {
     switch (relationship)
@@ -87,6 +50,43 @@ bool businessExportAllowed(RouteSource source, NeighborRelationship destination)
 
 StandardBgpRouterNode::StandardBgpRouterNode(RouterNodeContext context, QObject* parent) : RouterNode(std::move(context), parent)
 {
+}
+
+bool StandardBgpRouterNode::primaryRouteBetter(const RouteEntry& lhs, const RouteEntry& rhs)
+{
+    if (lhs.localOrigin != rhs.localOrigin)
+    {
+        return lhs.localOrigin;
+    }
+    if (lhs.attributes.localPref != rhs.attributes.localPref)
+    {
+        return lhs.attributes.localPref > rhs.attributes.localPref;
+    }
+    if (lhs.attributes.asPath.size() != rhs.attributes.asPath.size())
+    {
+        return lhs.attributes.asPath.size() < rhs.attributes.asPath.size();
+    }
+    if (lhs.attributes.med != rhs.attributes.med)
+    {
+        return lhs.attributes.med < rhs.attributes.med;
+    }
+    if (lhs.sourceSession != rhs.sourceSession)
+    {
+        return lhs.sourceSession == SessionType::Ebgp;
+    }
+    return false;
+}
+
+bool StandardBgpRouterNode::samePrimaryPreference(const RouteEntry& lhs, const RouteEntry& rhs)
+{
+    return lhs.localOrigin == rhs.localOrigin && lhs.attributes.localPref == rhs.attributes.localPref &&
+           lhs.attributes.asPath.size() == rhs.attributes.asPath.size() && lhs.attributes.med == rhs.attributes.med &&
+           lhs.sourceSession == rhs.sourceSession;
+}
+
+bool StandardBgpRouterNode::deterministicRouteBetter(const RouteEntry& lhs, const RouteEntry& rhs)
+{
+    return std::tie(lhs.attributes.nextHop, lhs.learnedFrom) < std::tie(rhs.attributes.nextHop, rhs.learnedFrom);
 }
 
 RouteEntry StandardBgpRouterNode::createOriginatedRoute(const QString&)
@@ -170,7 +170,7 @@ std::optional<RouteEntry> StandardBgpRouterNode::selectBestRoute(const QString&,
     RouteEntry primaryBest = candidates.front();
     for (const auto& candidate : candidates)
     {
-        if (primaryBetter(candidate, primaryBest))
+        if (primaryRouteBetter(candidate, primaryBest))
         {
             primaryBest = candidate;
         }
@@ -185,7 +185,7 @@ std::optional<RouteEntry> StandardBgpRouterNode::selectBestRoute(const QString&,
     RouteEntry result = primaryBest;
     for (const auto& candidate : candidates)
     {
-        if (samePrimaryPreference(candidate, primaryBest) && deterministicBetter(candidate, result))
+        if (samePrimaryPreference(candidate, primaryBest) && deterministicRouteBetter(candidate, result))
         {
             result = candidate;
         }

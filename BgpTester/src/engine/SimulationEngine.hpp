@@ -146,15 +146,17 @@ private:
     };
 
     qint64 now() const;
+    qint64 schedulingTime() const;
     void clearRuntime();
     bool buildRuntime(const Topology& topology, QString* error);
     bool scheduleInitialOpenMessages();
     void armNextEvent();
     void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
+    void notifyConvergenceStateChanged(bool converged);
     void publishStats();
     void invalidateSession(PeerRuntime& peer);
     void clearPendingUpdates(PeerRuntime& peer);
-    void setPendingUpdate(PeerRuntime& peer, const QString& prefix, PendingUpdate update);
+    const PendingUpdate& setPendingUpdate(PeerRuntime& peer, const QString& prefix, PendingUpdate update);
     void removePendingUpdate(PeerRuntime& peer, const QString& prefix);
     void cancelEmptyFlushes(PeerRuntime& peer);
     std::optional<quint64> sessionEpoch(const QString& from, const QString& to) const;
@@ -165,7 +167,7 @@ private:
     void scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs = 0);
     void scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt);
     void scheduleWithdrawalFlush(const QString& from, const QString& to);
-    void deliverMessages(const ScheduledEvent& event);
+    void deliverMessages(ScheduledEvent& event);
     void flushMrai(const QString& from, const QString& to);
     void flushWithdrawals(const QString& from, const QString& to);
     bool messageDeliverable(const QString& from, const QString& to) const;
@@ -180,8 +182,10 @@ private:
     void neighborDown(const QString& routerId, const QString& peerId);
 
     void runDecision(const QString& routerId, const QSet<QString>& changedPrefixes);
-    std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix) const;
-    void disseminate(const QString& routerId, const QString& prefix, const std::optional<RouteEntry>& route);
+    std::optional<RouteEntry> selectBest(const RouterRuntime& router, const QString& prefix,
+                                         const std::optional<RouteEntry>& currentBest,
+                                         QVector<RouteEntry>& candidateScratch) const;
+    void disseminate(const QString& routerId, const QString& prefix, const std::optional<RouteEntry>& route, bool force = false);
     void advertiseTableToPeer(const QString& routerId, const QString& peerId);
     void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route,
                             PathAttributes withdrawalAttributes = {});
@@ -202,6 +206,9 @@ private:
     QTimer* statusTimer_ = nullptr;
     qint64 lastActivityAt_ = 0;
     qint64 convergenceStartedAt_ = 0;
+    qint64 lastSimulationActivityAt_ = 0;
+    qint64 lastProcessedSimulationAt_ = 0;
+    qint64 convergenceStartedSimulationAt_ = 0;
     quint64 convergenceSequence_ = 0;
     quint64 convergenceMessageCount_ = 0;
     QString convergenceTriggerEvent_;
@@ -209,9 +216,13 @@ private:
     quint64 nextSequence_ = 0;
     quint64 nextOrder_ = 0;
     quint64 nextGeneration_ = 0;
+    // Generations are unique within one active simulation. Only generations
+    // carrying an uncommitted Trigger allocate an entry in this sparse index.
+    QHash<quint64, TfpVersionVector> outstandingTriggers_;
     quint64 deliveredMessages_ = 0;
     bool routingStateDirty_ = false;
     QVector<SimulationEvent>* activeEventBatch_ = nullptr;
+    std::optional<qint64> activeSchedulingAt_;
     std::atomic_bool startupCancelRequested_{false};
     bool pluginLifecycleActive_ = false;
     bool running_ = false;
