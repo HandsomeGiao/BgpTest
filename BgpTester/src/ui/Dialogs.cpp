@@ -557,10 +557,14 @@ SimulationSettingsDialog::SimulationSettingsDialog(const SimulationSettings& set
     quietSpin_->setRange(0, 600000);
     quietSpin_->setSuffix(QStringLiteral(" ms"));
     quietSpin_->setValue(settings.convergenceQuietMs);
+    withdrawalIgnoresMraiCheck_ = new QCheckBox(QStringLiteral("忽略 MRAI，立即发送"), this);
+    withdrawalIgnoresMraiCheck_->setChecked(settings.withdrawalIgnoresMrai);
+    withdrawalIgnoresMraiCheck_->setToolTip(QStringLiteral("关闭后，WITHDRAW 与 UPDATE 共用每邻居 MRAI 计时器。"));
     form->addRow(QStringLiteral("实验名称"), nameEdit_);
     form->addRow(QStringLiteral("日志目录"), logDirectoryEdit_);
     form->addRow(QStringLiteral("后台工作线程"), workerThreadsSpin_);
     form->addRow(QStringLiteral("收敛静默窗口"), quietSpin_);
+    form->addRow(QStringLiteral("WITHDRAW 报文"), withdrawalIgnoresMraiCheck_);
     layout->addLayout(form);
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttons, &QDialogButtonBox::accepted, this, &SimulationSettingsDialog::accept);
@@ -573,7 +577,8 @@ SimulationSettings SimulationSettingsDialog::settings() const
     return SimulationSettings{.name = nameEdit_->text().trimmed(),
                               .logDirectory = logDirectoryEdit_->text().trimmed(),
                               .workerThreads = workerThreadsSpin_->value(),
-                              .convergenceQuietMs = quietSpin_->value()};
+                              .convergenceQuietMs = quietSpin_->value(),
+                              .withdrawalIgnoresMrai = withdrawalIgnoresMraiCheck_->isChecked()};
 }
 
 void SimulationSettingsDialog::accept()

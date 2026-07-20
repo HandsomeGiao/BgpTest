@@ -609,7 +609,9 @@ void SimulationEngine::removePendingUpdate(PeerRuntime& peer, const QString& pre
 
 void SimulationEngine::cancelEmptyFlushes(PeerRuntime& peer)
 {
-    if (peer.flushScheduled && peer.pendingAdvertisementCount == 0)
+    const auto pendingMraiCount = peer.pendingAdvertisementCount +
+                                  (simulation_.withdrawalIgnoresMrai ? 0 : peer.pendingWithdrawalCount);
+    if (peer.flushScheduled && pendingMraiCount == 0)
     {
         peer.flushScheduled = false;
         ++peer.mraiFlushGeneration;
@@ -679,7 +681,9 @@ bool SimulationEngine::scheduledEventValid(const ScheduledEvent& event) const
             return std::any_of(event.messages.cbegin(), event.messages.cend(),
                                [this](const auto& message) { return guardedMessageHasCurrentRoutes(message); });
         case ScheduledKind::FlushMrai:
-            return peerIt->state == PeerState::Established && peerIt->flushScheduled && peerIt->pendingAdvertisementCount > 0 &&
+            return peerIt->state == PeerState::Established && peerIt->flushScheduled &&
+                   (peerIt->pendingAdvertisementCount > 0 ||
+                    (!simulation_.withdrawalIgnoresMrai && peerIt->pendingWithdrawalCount > 0)) &&
                    peerIt->mraiFlushGeneration == event.flushGeneration;
         case ScheduledKind::FlushWithdrawals:
             return peerIt->state == PeerState::Established && peerIt->withdrawalFlushScheduled && peerIt->pendingWithdrawalCount > 0 &&
@@ -965,6 +969,7 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
     }
 
     QVector<BgpMessage> messages;
+    QVector<BgpMessage> withdrawalMessages;
     const auto peerGenerations = routerIt->outboundGenerations.constFind(to);
     for (auto pendingIt = peerIt->pending.begin(); pendingIt != peerIt->pending.end();)
     {
@@ -972,6 +977,39 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
         const auto& pending = pendingIt.value();
         if (!pending.route)
         {
+            if (!simulation_.withdrawalIgnoresMrai)
+            {
+                const auto current = peerGenerations == routerIt->outboundGenerations.cend() ? 0 : peerGenerations->value(prefix);
+                if (current == pending.generation)
+                {
+                    if (!withdrawalMessages.isEmpty() &&
+                        pathAttributesTemplateEqual(withdrawalMessages.last().withdrawalAttributes, pending.withdrawalAttributes))
+                    {
+                        const auto keepCommonVersionInfo = withdrawalMessages.last().tfpVersionInfoByPrefix.isEmpty() &&
+                                                           withdrawalMessages.last().withdrawalAttributes.tfpVersionInfo ==
+                                                               pending.withdrawalAttributes.tfpVersionInfo;
+                        if (!keepCommonVersionInfo)
+                        {
+                            promoteCommonTfpVersionInfoToSidecar(withdrawalMessages.last());
+                        }
+                        withdrawalMessages.last().withdrawn.append(prefix);
+                        withdrawalMessages.last().generations.insert(prefix, pending.generation);
+                        if (!keepCommonVersionInfo && pending.withdrawalAttributes.tfpVersionInfo)
+                        {
+                            withdrawalMessages.last().tfpVersionInfoByPrefix.insert(
+                                prefix, *pending.withdrawalAttributes.tfpVersionInfo);
+                        }
+                    }
+                    else
+                    {
+                        withdrawalMessages.append(
+                            makeUpdateMessage(from, to, prefix, std::nullopt, pending.withdrawalAttributes, pending.generation));
+                    }
+                }
+                --peerIt->pendingWithdrawalCount;
+                pendingIt = peerIt->pending.erase(pendingIt);
+                continue;
+            }
             ++pendingIt;
             continue;
         }
@@ -1006,6 +1044,11 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
         }
         --peerIt->pendingAdvertisementCount;
         pendingIt = peerIt->pending.erase(pendingIt);
+    }
+    messages.reserve(messages.size() + withdrawalMessages.size());
+    for (auto& message : withdrawalMessages)
+    {
+        messages.append(std::move(message));
     }
     if (messages.isEmpty())
     {
@@ -1653,10 +1696,18 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         const auto& queued = setPendingUpdate(*peerIt, prefix, std::move(update));
         rememberOutstandingTriggers(generation, queued);
         cancelEmptyFlushes(*peerIt);
-        if (!peerIt->withdrawalFlushScheduled)
+        if (simulation_.withdrawalIgnoresMrai && !peerIt->withdrawalFlushScheduled)
         {
             peerIt->withdrawalFlushScheduled = true;
             scheduleWithdrawalFlush(routerId, peerId);
+        }
+        else if (!simulation_.withdrawalIgnoresMrai && !peerIt->flushScheduled)
+        {
+            peerIt->flushScheduled = true;
+            const auto currentSchedulingTime = schedulingTime();
+            const auto dueAt = peerIt->config.mraiMs <= 0 ? currentSchedulingTime
+                                                          : std::max(currentSchedulingTime, peerIt->nextMraiAt);
+            scheduleMraiFlush(routerId, peerId, dueAt);
         }
         return;
     }

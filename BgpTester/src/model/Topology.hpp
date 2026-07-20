@@ -55,6 +55,7 @@ struct SimulationSettings
     QString logDirectory = QStringLiteral("tmp");
     int workerThreads = 0;
     int convergenceQuietMs = 1000;
+    bool withdrawalIgnoresMrai = true;
 };
 
 struct RouterConfig

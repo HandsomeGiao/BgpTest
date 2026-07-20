@@ -13,7 +13,7 @@
 - Adj-RIB-In、Loc-RIB、Adj-RIB-Out、EBGP、IBGP 和基础 Route Reflector；
 - LOCAL_PREF、AS_PATH、MED、会话类型、旧路径稳定性与确定性 tie-break 选路；
 - 标准与 TFP 路由器按 customer（200）> peer（100）> provider（50）设置 LOCAL_PREF，并对已分类的入站来源和出站邻居执行 valley-free 出口策略；涉及未指定关系的 eBGP 传播保持原有兼容行为；
-- 每邻居 MRAI、FRR 风格 withdrawal 聚合、链路延迟和逐前缀 stale UPDATE generation guard；
+- 每邻居 MRAI、可配置的 withdrawal MRAI 旁路、FRR 风格 withdrawal 聚合、链路延迟和逐前缀 stale UPDATE generation guard；
 - 运行时节点/链路上下线、前缀发布/撤销与收敛状态；
 - 最佳路由、全部路径、Peer 状态检查以及画布逐跳路径高亮；
 - BMP 风格实时事件表、全列过滤、JSON 详情、JSONL 和 SQLite 历史日志；

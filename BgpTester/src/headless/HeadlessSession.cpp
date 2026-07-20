@@ -593,9 +593,9 @@ QJsonArray HeadlessSession::commandHelp() const
         makeCommandDescription(QStringLiteral("topology"), QStringLiteral("返回完整拓扑 JSON")),
         makeCommandDescription(QStringLiteral("validate"), QStringLiteral("执行与 GUI 启动相同的完整校验")),
         makeCommandDescription(QStringLiteral("plugins"), QStringLiteral("列出插件元数据、默认设置和注册错误")),
-        makeCommandDescription(QStringLiteral("set_simulation"), QStringLiteral("修改仿真名称、日志目录、线程数和静默窗口"),
+        makeCommandDescription(QStringLiteral("set_simulation"), QStringLiteral("修改全局仿真设置"),
                                {QStringLiteral("name"), QStringLiteral("log_directory"), QStringLiteral("worker_threads"),
-                                QStringLiteral("convergence_quiet_ms")}),
+                                QStringLiteral("convergence_quiet_ms"), QStringLiteral("withdrawal_ignores_mrai")}),
         makeCommandDescription(QStringLiteral("add_router"), QStringLiteral("添加路由器，未给 ID/Router ID 时自动生成"),
                                {QStringLiteral("id"), QStringLiteral("router_id"), QStringLiteral("asn"),
                                 QStringLiteral("cluster_id"), QStringLiteral("prefixes[]"), QStringLiteral("x/y"),
@@ -993,7 +993,8 @@ HeadlessCommandResult HeadlessSession::setSimulationCommand(const QJsonObject& c
     auto settings = topology_.simulation;
     QString error;
     if (!readOptionalString(command, QStringLiteral("name"), &settings.name, &error) ||
-        !readOptionalString(command, QStringLiteral("log_directory"), &settings.logDirectory, &error))
+        !readOptionalString(command, QStringLiteral("log_directory"), &settings.logDirectory, &error) ||
+        !readOptionalBool(command, QStringLiteral("withdrawal_ignores_mrai"), &settings.withdrawalIgnoresMrai, &error))
     {
         return failure(error);
     }
@@ -1017,7 +1018,8 @@ HeadlessCommandResult HeadlessSession::setSimulationCommand(const QJsonObject& c
     }
     const auto changed = settings.name != topology_.simulation.name || settings.logDirectory != topology_.simulation.logDirectory ||
                          settings.workerThreads != topology_.simulation.workerThreads ||
-                         settings.convergenceQuietMs != topology_.simulation.convergenceQuietMs;
+                         settings.convergenceQuietMs != topology_.simulation.convergenceQuietMs ||
+                         settings.withdrawalIgnoresMrai != topology_.simulation.withdrawalIgnoresMrai;
     topology_.simulation = std::move(settings);
     dirty_ = dirty_ || changed;
     if (changed)

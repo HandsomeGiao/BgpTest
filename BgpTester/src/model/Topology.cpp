@@ -262,6 +262,7 @@ QJsonObject Topology::toJson() const
         {QStringLiteral("log_dir"), simulation.logDirectory},
         {QStringLiteral("worker_threads"), simulation.workerThreads},
         {QStringLiteral("convergence_quiet_ms"), simulation.convergenceQuietMs},
+        {QStringLiteral("withdrawal_ignores_mrai"), simulation.withdrawalIgnoresMrai},
         {QStringLiteral("router_class"), QStringLiteral("BgpRouter")},
     };
 
@@ -383,6 +384,7 @@ public:
         topology_.simulation.logDirectory = object.value(QStringLiteral("log_dir")).toString(QStringLiteral("tmp"));
         topology_.simulation.workerThreads = jsonNonNegativeInt(object, QStringLiteral("worker_threads"), 0);
         topology_.simulation.convergenceQuietMs = jsonNonNegativeInt(object, QStringLiteral("convergence_quiet_ms"), 1000);
+        topology_.simulation.withdrawalIgnoresMrai = object.value(QStringLiteral("withdrawal_ignores_mrai")).toBool(true);
     }
 
     bool addRouter(const QJsonObject& entry, QString* error)

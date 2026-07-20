@@ -94,6 +94,7 @@ stdout 始终只输出 JSONL，交互提示与诊断写入 stderr。
 {"command":"add_router","id":"R3","router_id":"10.0.0.3","asn":65003,"prefixes":["198.51.100.0/24"],"x":700,"y":220}
 {"command":"add_link","a":"R2","b":"R3","delay_ms":10,"mrai_ms_from_a":100,"mrai_ms_from_b":100,"relationship":"peer"}
 {"command":"update_router","id":"R3","new_id":"EDGE3","asn":65002}
+{"command":"set_simulation","withdrawal_ignores_mrai":false}
 {"command":"batch_update","router_ids":["R1","EDGE3"],"mrai":{"mode":"random","min_ms":50,"max_ms":100},"delay":{"mode":"fixed","value_ms":10},"seed":12345}
 {"command":"save","path":"tmp/edited_topology.json"}
 ```
@@ -176,7 +177,7 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 选路顺序：本地起源、LOCAL_PREF、AS_PATH 长度、MED、EBGP 优先、旧路稳定性、确定性 tie-break；
 - 每邻居 MRAI；参考 FRR 的 Adj-RIB-Out 待发送队列聚合 withdrawal，同一前缀的新状态覆盖旧状态；
 - 同一轮中标准共享路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；单前缀或元数据完全相同的 TFP Dependency/Trigger 保留为公共属性，只有不同前缀的元数据真正不同时才提升为 sidecar override，因此不会仅因版本信息不同而拆包；
-- withdrawal 不等待 MRAI，并将本轮待撤销前缀全部聚合到一条报文；TFP 公共属性/sidecar 同样保留逐前缀语义，generation guard 过滤前缀时同步过滤对应元数据，不会误丢或串用同批其他路由；
+- 全局仿真选项 `withdrawal_ignores_mrai` 控制 withdrawal 是否绕过 MRAI，默认为 `true` 以兼容旧拓扑；关闭后 WITHDRAW 与 UPDATE 共用每邻居 MRAI 计时器。两种模式都会聚合本轮属性相同的待撤销前缀；TFP 公共属性/sidecar 同样保留逐前缀语义，generation guard 过滤前缀时同步过滤对应元数据，不会误丢或串用同批其他路由；
 - 若某邻居既没有已提交的 Adj-RIB-Out 路由、待发送项，也没有已 flush 但尚未交付的 generation，撤销路径直接跳过；若存在 in-flight UPDATE，则先取消其 generation，防止后续复活已经撤销的幽灵路由；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定。
 - 到期事件按最多 16384 项或 48 ms 的时间片批量处理；大型故障波可减少零延迟定时器重入和日志小批次开销，同时仍给 UI/命令循环保留周期性让出点。
@@ -314,8 +315,9 @@ TFP bootstrap 峰值工作集为 8.7135 GiB，较优化前 R28 的 15.7753 GiB �
 
 程序使用 `simulation`、`routers`、`links` 三段结构。链路中的方向字段以 `a` / `b` 为基准：
 
+- `simulation.withdrawal_ignores_mrai`：全局布尔开关；`true` 表示 WITHDRAW 绕过 MRAI，`false` 表示 WITHDRAW 与 UPDATE 一同受每邻居 MRAI 约束。字段缺失时默认为 `true`；
 - `rr_client_from_a`：A 把 B 配置为 RR Client；
-- `mrai_ms_from_a`：A 向 B 发送 UPDATE 的 MRAI；
+- `mrai_ms_from_a`：A 向 B 发送路由变更的 MRAI；
 - `rr_client_from_b` / `mrai_ms_from_b`：反方向。
 - `relationship`：eBGP 商业关系，可取 `unspecified`、`peer`、`a_provider` 或 `b_provider`；`a_provider` 表示 A 是 B 的 provider，`b_provider` 表示 B 是 A 的 provider。
 

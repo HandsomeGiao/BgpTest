@@ -134,6 +134,7 @@ private:
     QLineEdit* logDirectoryEdit_ = nullptr;
     QSpinBox* workerThreadsSpin_ = nullptr;
     QSpinBox* quietSpin_ = nullptr;
+    QCheckBox* withdrawalIgnoresMraiCheck_ = nullptr;
 };
 
 } // namespace bgptester
