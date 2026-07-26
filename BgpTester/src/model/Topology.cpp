@@ -1,9 +1,9 @@
 #include "model/Topology.hpp"
+#include "model/StrictIpv4.hpp"
 
 #include <QByteArray>
 #include <QFile>
 #include <QHash>
-#include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
@@ -19,28 +19,6 @@ namespace bgptester
 {
 namespace
 {
-
-bool isIpv4(const QString& value, bool allowZero = true)
-{
-    QHostAddress address;
-    if (!address.setAddress(value) || address.protocol() != QAbstractSocket::IPv4Protocol)
-    {
-        return false;
-    }
-    return allowZero || address.toIPv4Address() != 0;
-}
-
-bool isIpv4Cidr(const QString& value)
-{
-    const auto slash = value.lastIndexOf(u'/');
-    if (slash <= 0 || slash == value.size() - 1)
-    {
-        return false;
-    }
-    bool prefixOk = false;
-    const auto prefixLength = value.sliced(slash + 1).toInt(&prefixOk);
-    return prefixOk && prefixLength >= 0 && prefixLength <= 32 && isIpv4(value.first(slash));
-}
 
 quint32 jsonUint(const QJsonObject& object, const QString& key, quint32 fallback)
 {
@@ -1187,7 +1165,7 @@ QStringList Topology::validate() const
         {
             problems.append(QStringLiteral("路由器映射键与 ID 不一致：%1 / %2").arg(it.key(), router.id));
         }
-        if (!isIpv4(router.routerId, false))
+        if (!isCanonicalIpv4Address(router.routerId, false))
         {
             problems.append(QStringLiteral("%1 的 BGP Router ID 无效：%2").arg(router.id, router.routerId));
         }
@@ -1204,13 +1182,13 @@ QStringList Topology::validate() const
         {
             problems.append(QStringLiteral("%1 的路由器插件 ID 不能为空").arg(router.id));
         }
-        if (!router.clusterId.isEmpty() && !isIpv4(router.clusterId))
+        if (!router.clusterId.isEmpty() && !isCanonicalIpv4Address(router.clusterId))
         {
             problems.append(QStringLiteral("%1 的 Cluster ID 无效：%2").arg(router.id, router.clusterId));
         }
         for (const auto& prefix : router.originatedPrefixes)
         {
-            if (!isIpv4Cidr(prefix))
+            if (!isCanonicalIpv4Prefix(prefix))
             {
                 problems.append(QStringLiteral("%1 的前缀无效：%2").arg(router.id, prefix));
             }

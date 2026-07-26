@@ -13,7 +13,27 @@ namespace bgptester
 namespace
 {
 
-constexpr auto TimestampFormat = "yyyy-MM-dd HH:mm:ss.zzz";
+QDateTime parseLegacyUtcTimestamp(const QString& timestamp)
+{
+    if (timestamp.size() != 23 || timestamp.at(10) != u' ')
+    {
+        return {};
+    }
+    // Legacy logs omitted their offset. Interpret their written calendar
+    // fields as UTC so replay is identical on machines in different zones.
+    auto explicitUtc = timestamp;
+    explicitUtc[10] = u'T';
+    explicitUtc.append(u'Z');
+    return QDateTime::fromString(explicitUtc, Qt::ISODateWithMs);
+}
+
+bool hasExplicitTimeZone(const QString& timestamp)
+{
+    const auto size = timestamp.size();
+    return timestamp.endsWith(u'Z', Qt::CaseInsensitive) ||
+           (size >= 6 && (timestamp.at(size - 6) == u'+' || timestamp.at(size - 6) == u'-') &&
+            timestamp.at(size - 3) == u':');
+}
 
 const QStringList& requiredKeys()
 {
@@ -236,7 +256,7 @@ QJsonObject SimulationEventCodec::toJson(const SimulationEvent& event)
 
     QJsonObject object{
         {QStringLiteral("id"), unsigned64ToJson(event.id)},
-        {QStringLiteral("timestamp"), event.timestamp.toString(QString::fromLatin1(TimestampFormat))},
+        {QStringLiteral("timestamp"), event.timestamp.toUTC().toString(Qt::ISODateWithMs)},
         {QStringLiteral("event"), event.event},
         {QStringLiteral("router"), event.router},
         {QStringLiteral("from"), event.from},
@@ -321,10 +341,11 @@ std::optional<SimulationEvent> SimulationEventCodec::fromJson(const QByteArray& 
         return std::nullopt;
     }
 
-    event.timestamp = QDateTime::fromString(timestamp, QString::fromLatin1(TimestampFormat));
+    event.timestamp = hasExplicitTimeZone(timestamp) ? QDateTime::fromString(timestamp, Qt::ISODateWithMs)
+                                                     : parseLegacyUtcTimestamp(timestamp);
     if (!event.timestamp.isValid())
     {
-        setError(error, QStringLiteral("SimulationEvent JSON 字段 timestamp 不是有效的 wall-clock 时间"));
+        setError(error, QStringLiteral("SimulationEvent JSON 字段 timestamp 不是有效时间"));
         return std::nullopt;
     }
     return event;

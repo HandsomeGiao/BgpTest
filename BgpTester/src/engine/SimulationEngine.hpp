@@ -3,7 +3,6 @@
 #include "engine/BgpTypes.hpp"
 #include "model/Topology.hpp"
 
-#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QSet>
@@ -24,7 +23,11 @@ class SimulationEngine final : public QObject
     Q_OBJECT
 
 public:
-    explicit SimulationEngine(QObject* parent = nullptr);
+    static constexpr qsizetype DefaultProcessingQuantum = 16384;
+    static constexpr quint64 DefaultConvergenceEventBudget = 10'000'000;
+
+    explicit SimulationEngine(QObject* parent = nullptr, qsizetype processingQuantum = DefaultProcessingQuantum,
+                              quint64 convergenceEventBudget = DefaultConvergenceEventBudget);
     ~SimulationEngine() override = default;
 
     bool isRunning() const
@@ -49,6 +52,10 @@ public:
 
 public slots:
     void startSimulation(bgptester::Topology topology);
+    // Deterministically consumes the complete current protocol wave. This is
+    // used by headless control commands to establish a stable mutation
+    // boundary without relying on CPU speed or a wall-clock timeout.
+    [[nodiscard]] bool runUntilConverged();
     void stopSimulation();
     void setLinkState(const QString& a, const QString& b, bool enabled);
     void setRouterState(const QString& routerId, bool enabled);
@@ -76,7 +83,6 @@ signals:
 
 private slots:
     void processDueEvents();
-    void updateStatus();
 
 private:
     struct PendingUpdate
@@ -146,11 +152,15 @@ private:
     };
 
     qint64 now() const;
-    qint64 schedulingTime() const;
+    QDateTime simulationTimestamp() const;
     void clearRuntime();
+    bool rejectReentrantControl(const QString& operation);
     bool buildRuntime(const Topology& topology, QString* error);
     bool scheduleInitialOpenMessages();
     void armNextEvent();
+    qsizetype processEventQuantum(qsizetype maximumEvents);
+    void failConvergenceBudget();
+    void finishConvergenceIfIdle();
     void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
     void notifyConvergenceStateChanged(bool converged);
     void publishStats();
@@ -162,7 +172,7 @@ private:
     std::optional<quint64> sessionEpoch(const QString& from, const QString& to) const;
     bool guardedMessageHasCurrentRoutes(const BgpMessage& message) const;
     bool scheduledEventValid(const ScheduledEvent& event) const;
-    void pruneInvalidScheduledEvents();
+    quint64 pruneInvalidScheduledEvents(quint64 maximumEvents);
 
     void scheduleMessages(const QString& from, const QString& to, QVector<BgpMessage> messages, int extraDelayMs = 0);
     void scheduleMraiFlush(const QString& from, const QString& to, qint64 dueAt);
@@ -201,14 +211,10 @@ private:
     QMap<QString, RouterRuntime> routers_;
     QMap<QString, LinkConfig> links_;
     std::priority_queue<ScheduledEvent, std::vector<ScheduledEvent>, LaterEvent> events_;
-    QElapsedTimer clock_;
     QTimer* eventTimer_ = nullptr;
-    QTimer* statusTimer_ = nullptr;
+    qint64 simulationTimeMs_ = 0;
     qint64 lastActivityAt_ = 0;
     qint64 convergenceStartedAt_ = 0;
-    qint64 lastSimulationActivityAt_ = 0;
-    qint64 lastProcessedSimulationAt_ = 0;
-    qint64 convergenceStartedSimulationAt_ = 0;
     quint64 convergenceSequence_ = 0;
     quint64 convergenceMessageCount_ = 0;
     QString convergenceTriggerEvent_;
@@ -220,9 +226,16 @@ private:
     // carrying an uncommitted Trigger allocate an entry in this sparse index.
     QHash<quint64, TfpVersionVector> outstandingTriggers_;
     quint64 deliveredMessages_ = 0;
+    qsizetype processingQuantum_ = DefaultProcessingQuantum;
+    quint64 convergenceEventBudget_ = DefaultConvergenceEventBudget;
+    quint64 processedEventsInConvergence_ = 0;
     bool routingStateDirty_ = false;
     QVector<SimulationEvent>* activeEventBatch_ = nullptr;
-    std::optional<qint64> activeSchedulingAt_;
+    bool drainingToConvergence_ = false;
+    bool processingEvents_ = false;
+    bool controlOperationActive_ = false;
+    bool eventPumpDeferred_ = false;
+    bool convergenceFailed_ = false;
     std::atomic_bool startupCancelRequested_{false};
     bool pluginLifecycleActive_ = false;
     bool running_ = false;

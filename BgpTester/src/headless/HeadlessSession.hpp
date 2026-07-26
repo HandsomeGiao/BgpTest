@@ -113,6 +113,7 @@ private:
     bool beginEventRun(QString* error);
     bool flushEventRun();
     bool endEventRun();
+    bool stabilizeRuntime(QString* error);
     void refreshRuntimeStatus();
     void refreshEventStoreStatus();
     void updateRuntimeLinks();

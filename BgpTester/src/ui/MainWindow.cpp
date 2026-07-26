@@ -1,6 +1,8 @@
 #include "ui/MainWindow.hpp"
 
 #include "engine/SimulationEngine.hpp"
+#include "model/CanonicalJson.hpp"
+#include "model/DeterministicRandom.hpp"
 #include "persistence/EventStore.hpp"
 #include "ui/Dialogs.hpp"
 #include "ui/EventTableModel.hpp"
@@ -40,7 +42,6 @@
 #include <QProgressDialog>
 #include <QPointer>
 #include <QPushButton>
-#include <QRandomGenerator>
 #include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QSplitter>
@@ -791,6 +792,7 @@ void MainWindow::buildInspectorDock()
     controlLayout->addWidget(linkBox);
 
     auto* prefixBox = new QGroupBox(QStringLiteral("前缀扰动"), control);
+    prefixControlBox_ = prefixBox;
     auto* prefixLayout = new QVBoxLayout(prefixBox);
     prefixEdit_ = new QLineEdit(prefixBox);
     prefixEdit_->setPlaceholderText(QStringLiteral("例如 203.0.113.0/24"));
@@ -957,9 +959,9 @@ void MainWindow::buildEventDock()
 
     convergenceTable_ = new QTableWidget(0, 7, convergencePage);
     convergenceTable_->setObjectName(QStringLiteral("convergenceHistoryTable"));
-    convergenceTable_->setHorizontalHeaderLabels({QStringLiteral("轮次"), QStringLiteral("触发事件"), QStringLiteral("开始时间"),
-                                                   QStringLiteral("完成时间"), QStringLiteral("协议收敛时间"),
-                                                   QStringLiteral("墙钟确认时间"), QStringLiteral("BGP 报文数")});
+    convergenceTable_->setHorizontalHeaderLabels({QStringLiteral("轮次"), QStringLiteral("触发事件"), QStringLiteral("仿真开始"),
+                                                   QStringLiteral("仿真确认"), QStringLiteral("协议活动时间"),
+                                                   QStringLiteral("含静默窗口"), QStringLiteral("BGP 报文数")});
     configureDataTable(convergenceTable_);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -969,8 +971,9 @@ void MainWindow::buildEventDock()
     convergenceTable_->horizontalHeader()->setSectionResizeMode(5, QHeaderView::ResizeToContents);
     convergenceTable_->horizontalHeader()->setSectionResizeMode(6, QHeaderView::ResizeToContents);
     convergenceLayout->addWidget(convergenceTable_, 1);
-    auto* convergenceNote =
-        new QLabel(QStringLiteral("协议收敛时间使用确定性的因果仿真时钟并止于最后路由活动；墙钟确认时间包含日志/机器开销与收敛静默窗口。BGP 报文数严格统计 message_received。"), convergencePage);
+    auto* convergenceNote = new QLabel(
+        QStringLiteral("全部时间均来自离散事件虚拟时钟：协议活动时间止于最后一个有效事件，含静默窗口时间用于确定性确认收敛；机器与日志速度不会进入结果。BGP 报文数严格统计 message_received。"),
+        convergencePage);
     convergenceNote->setStyleSheet(QStringLiteral("color:#6c757d"));
     convergenceLayout->addWidget(convergenceNote);
     monitorTabs->addTab(convergencePage, QStringLiteral("收敛时间"));
@@ -1739,7 +1742,8 @@ void MainWindow::editTopologyBatchProperties()
 {
     const auto selectedRouterIds = scene_->selectedRouterIds();
     const auto selectedRoutersOnly = selectedRouterIds.size() > 1;
-    const auto targetRouterIds = selectedRoutersOnly ? selectedRouterIds : topology_.routers.keys();
+    auto targetRouterIds = selectedRoutersOnly ? selectedRouterIds : topology_.routers.keys();
+    targetRouterIds.sort(Qt::CaseSensitive);
 
     QVector<RouterConfig> targetRouters;
     targetRouters.reserve(targetRouterIds.size());
@@ -1765,6 +1769,27 @@ void MainWindow::editTopologyBatchProperties()
     {
         return;
     }
+
+    auto seedTopology = topology_;
+    seedTopology.simulation.name.clear();
+    seedTopology.simulation.logDirectory.clear();
+    seedTopology.simulation.workerThreads = 0;
+    for (auto& router : seedTopology.routers)
+    {
+        router.position = {};
+    }
+    std::sort(seedTopology.links.begin(), seedTopology.links.end(), [](const LinkConfig& lhs, const LinkConfig& rhs)
+              { return Topology::edgeKey(lhs.a, lhs.b) < Topology::edgeKey(rhs.a, rhs.b); });
+    auto randomSeedMaterial = canonicalJsonEncoding(seedTopology.toJson());
+    QJsonArray targetRouterArray;
+    for (const auto& routerId : targetRouterIds)
+    {
+        targetRouterArray.append(routerId);
+    }
+    randomSeedMaterial.append(canonicalJsonEncoding(targetRouterArray));
+    const auto randomSeed = DeterministicRandom::seedFromBytes(randomSeedMaterial);
+    DeterministicRandom random(randomSeed);
+    bool usedRandomValues = false;
 
     auto changedRouters = 0;
     auto changedLinks = 0;
@@ -1804,10 +1829,10 @@ void MainWindow::editTopologyBatchProperties()
     {
         const auto minimumMraiMs = dialog.minimumMraiMs();
         const auto maximumMraiMs = dialog.maximumMraiMs();
-        const auto valueCount = static_cast<quint32>(maximumMraiMs - minimumMraiMs + 1);
+        usedRandomValues = true;
         for (const auto& routerId : targetRouterIds)
         {
-            mraiByRouter.insert(routerId, minimumMraiMs + static_cast<int>(QRandomGenerator::global()->bounded(valueCount)));
+            mraiByRouter.insert(routerId, random.boundedInclusive(minimumMraiMs, maximumMraiMs));
         }
         appliedOperations.append(QStringLiteral("已将%1的出站 MRAI 按路由器随机设置在 %2–%3 ms 范围内")
                                      .arg(targetDescription)
@@ -1850,10 +1875,10 @@ void MainWindow::editTopologyBatchProperties()
     {
         const auto minimumDelayMs = dialog.minimumDelayMs();
         const auto maximumDelayMs = dialog.maximumDelayMs();
-        const auto valueCount = static_cast<quint32>(maximumDelayMs - minimumDelayMs + 1);
+        usedRandomValues = true;
         for (auto& link : topology_.links)
         {
-            const auto delayMs = minimumDelayMs + static_cast<int>(QRandomGenerator::global()->bounded(valueCount));
+            const auto delayMs = random.boundedInclusive(minimumDelayMs, maximumDelayMs);
             if (link.delayMs != delayMs)
             {
                 link.delayMs = delayMs;
@@ -1864,6 +1889,13 @@ void MainWindow::editTopologyBatchProperties()
                                      .arg(topology_.links.size())
                                      .arg(minimumDelayMs)
                                      .arg(maximumDelayMs));
+    }
+
+    if (usedRandomValues)
+    {
+        appliedOperations.append(QStringLiteral("确定性随机算法 v%1，种子 %2")
+                                     .arg(DeterministicRandom::AlgorithmVersion)
+                                     .arg(randomSeed));
     }
 
     statusBar()->showMessage(
@@ -2137,6 +2169,11 @@ void MainWindow::onRunningChanged(bool running)
     simulationStartPending_ = false;
     simulationStartCancelRequested_ = false;
     simulationRunning_ = running;
+    if (!running)
+    {
+        simulationConverged_ = false;
+        runtimeMutationPending_ = false;
+    }
     scene_->setEditable(!running);
     updateEditorActions();
     if (!running)
@@ -2160,6 +2197,10 @@ void MainWindow::onRunningChanged(bool running)
 void MainWindow::onConvergenceChanged(bool converged)
 {
     simulationConverged_ = converged;
+    if (converged)
+    {
+        runtimeMutationPending_ = false;
+    }
     if (simulationRunning_ && converged)
     {
         simulationStatusLabel_->setText(QStringLiteral("● 已收敛"));
@@ -2172,6 +2213,8 @@ void MainWindow::onConvergenceChanged(bool converged)
         simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
         convergenceStateLabel_->setText(QStringLiteral("当前：收敛中 · 已用时 0 ms"));
     }
+    refreshRuntimeControls();
+    updateEditorActions();
 }
 
 void MainWindow::onStatsChanged(const SimulationStats& stats)
@@ -2333,17 +2376,30 @@ void MainWindow::sceneSelectionChanged(const QString& routerId, const QString& l
 void MainWindow::toggleSelectedRouter()
 {
     const auto id = routerCombo_->currentText();
-    if (!simulationRunning_ || id.isEmpty() || !runtimeRouters_.contains(id))
+    if (id.isEmpty() || !runtimeRouters_.contains(id) || !beginRuntimeMutation())
     {
         return;
     }
     const auto target = !runtimeRouters_.value(id).active;
-    QMetaObject::invokeMethod(engine_, [engine = engine_, id, target] { engine->setRouterState(id, target); }, Qt::QueuedConnection);
+    QPointer<MainWindow> self(this);
+    QMetaObject::invokeMethod(
+        engine_,
+        [engine = engine_, id, target, self]
+        {
+            engine->setRouterState(id, target);
+            if (self)
+            {
+                const auto converged = engine->isConverged();
+                QMetaObject::invokeMethod(self, [self, converged] { if (self) self->completeRuntimeMutation(converged); },
+                                          Qt::QueuedConnection);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::toggleSelectedLink()
 {
-    if (!simulationRunning_ || linkCombo_->currentIndex() < 0)
+    if (linkCombo_->currentIndex() < 0)
     {
         return;
     }
@@ -2353,31 +2409,72 @@ void MainWindow::toggleSelectedLink()
     const auto key = Topology::edgeKey(a, b);
     const auto initial = topology_.findLink(a, b) ? topology_.findLink(a, b)->enabled : false;
     const auto target = !runtimeLinks_.value(key, initial);
-    QMetaObject::invokeMethod(engine_, [engine = engine_, a, b, target] { engine->setLinkState(a, b, target); }, Qt::QueuedConnection);
+    if (!beginRuntimeMutation())
+    {
+        return;
+    }
+    QPointer<MainWindow> self(this);
+    QMetaObject::invokeMethod(
+        engine_,
+        [engine = engine_, a, b, target, self]
+        {
+            engine->setLinkState(a, b, target);
+            if (self)
+            {
+                const auto converged = engine->isConverged();
+                QMetaObject::invokeMethod(self, [self, converged] { if (self) self->completeRuntimeMutation(converged); },
+                                          Qt::QueuedConnection);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::advertisePrefix()
 {
     const auto router = routerCombo_->currentText();
     const auto prefix = prefixEdit_->text().trimmed();
-    if (!simulationRunning_ || router.isEmpty() || prefix.isEmpty())
+    if (router.isEmpty() || prefix.isEmpty() || !beginRuntimeMutation())
     {
         return;
     }
+    QPointer<MainWindow> self(this);
     QMetaObject::invokeMethod(
-        engine_, [engine = engine_, router, prefix] { engine->originatePrefix(router, prefix); }, Qt::QueuedConnection);
+        engine_,
+        [engine = engine_, router, prefix, self]
+        {
+            engine->originatePrefix(router, prefix);
+            if (self)
+            {
+                const auto converged = engine->isConverged();
+                QMetaObject::invokeMethod(self, [self, converged] { if (self) self->completeRuntimeMutation(converged); },
+                                          Qt::QueuedConnection);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::withdrawPrefix()
 {
     const auto router = routerCombo_->currentText();
     const auto prefix = prefixEdit_->text().trimmed();
-    if (!simulationRunning_ || router.isEmpty() || prefix.isEmpty())
+    if (router.isEmpty() || prefix.isEmpty() || !beginRuntimeMutation())
     {
         return;
     }
+    QPointer<MainWindow> self(this);
     QMetaObject::invokeMethod(
-        engine_, [engine = engine_, router, prefix] { engine->withdrawPrefix(router, prefix); }, Qt::QueuedConnection);
+        engine_,
+        [engine = engine_, router, prefix, self]
+        {
+            engine->withdrawPrefix(router, prefix);
+            if (self)
+            {
+                const auto converged = engine->isConverged();
+                QMetaObject::invokeMethod(self, [self, converged] { if (self) self->completeRuntimeMutation(converged); },
+                                          Qt::QueuedConnection);
+            }
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::highlightSelectedRoute()
@@ -2504,15 +2601,17 @@ void MainWindow::appendConvergenceEvents(const QVector<SimulationEvent>& events)
         }
         const auto sequence =
             positiveDetail(event, QStringLiteral("convergence_sequence")).value_or(static_cast<quint64>(convergenceTable_->rowCount() + 1));
-        const auto wallDurationMs = nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs);
+        const auto confirmationDurationMs =
+            nonNegativeDetail(event, QStringLiteral("simulated_duration_ms"))
+                .value_or(nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs));
         appendConvergenceRecord(sequence, event.details.value(QStringLiteral("trigger_event")),
                                 event.details.value(QStringLiteral("trigger_context")), event.timestamp, *durationMs,
-                                wallDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
+                                confirmationDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
     }
 }
 
 void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext,
-                                         const QDateTime& completedAt, qint64 durationMs, qint64 wallDurationMs,
+                                         const QDateTime& completedAt, qint64 durationMs, qint64 confirmationDurationMs,
                                          std::optional<quint64> bgpMessageCount)
 {
     if (!completedAt.isValid())
@@ -2526,16 +2625,17 @@ void MainWindow::appendConvergenceRecord(quint64 sequence, const QString& trigge
     triggerItem->setToolTip(QStringLiteral("事件名称：%1").arg(triggerEvent.isEmpty() ? QStringLiteral("未知") : triggerEvent));
     convergenceTable_->setItem(row, 1, triggerItem);
     convergenceTable_->setItem(row, 2,
-                               tableItem(completedAt.addMSecs(-wallDurationMs).toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
-    convergenceTable_->setItem(row, 3, tableItem(completedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"))));
+                               tableItem(completedAt.addMSecs(-confirmationDurationMs).toString(QStringLiteral("HH:mm:ss.zzz"))));
+    convergenceTable_->setItem(row, 3, tableItem(completedAt.toString(QStringLiteral("HH:mm:ss.zzz"))));
     auto* durationItem = tableItem(durationText(durationMs));
     durationItem->setData(Qt::UserRole, durationMs);
     durationItem->setToolTip(QStringLiteral("%1 ms（因果仿真时间，止于最后路由活动）").arg(durationMs));
     convergenceTable_->setItem(row, 4, durationItem);
-    auto* wallDurationItem = tableItem(durationText(wallDurationMs));
-    wallDurationItem->setData(Qt::UserRole, wallDurationMs);
-    wallDurationItem->setToolTip(QStringLiteral("%1 ms（包含机器/日志开销与收敛静默窗口）").arg(wallDurationMs));
-    convergenceTable_->setItem(row, 5, wallDurationItem);
+    auto* confirmationDurationItem = tableItem(durationText(confirmationDurationMs));
+    confirmationDurationItem->setData(Qt::UserRole, confirmationDurationMs);
+    confirmationDurationItem->setToolTip(
+        QStringLiteral("%1 ms（确定性协议活动时间与收敛静默窗口）").arg(confirmationDurationMs));
+    convergenceTable_->setItem(row, 5, confirmationDurationItem);
     auto* messageCountItem = tableItem(bgpMessageCount ? QString::number(*bgpMessageCount) : QStringLiteral("—"));
     if (bgpMessageCount)
     {
@@ -2583,9 +2683,11 @@ void MainWindow::rebuildConvergenceHistory(const QVector<SimulationEvent>& event
                 const auto triggerEvent = event.details.value(QStringLiteral("trigger_event"), inferredTriggerEvent);
                 const auto triggerContext = event.details.value(QStringLiteral("trigger_context"),
                                                                 triggerEvent == inferredTriggerEvent ? inferredTriggerContext : QString{});
-                const auto wallDurationMs = nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs);
+                const auto confirmationDurationMs =
+                    nonNegativeDetail(event, QStringLiteral("simulated_duration_ms"))
+                        .value_or(nonNegativeDetail(event, QStringLiteral("wall_duration_ms")).value_or(*durationMs));
                 appendConvergenceRecord(sequence, triggerEvent, triggerContext, event.timestamp, *durationMs,
-                                        wallDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
+                                        confirmationDurationMs, unsignedDetail(event, QStringLiteral("bgp_message_count")));
             }
             inferredStart = {};
             inferredTriggerEvent.clear();
@@ -2687,7 +2789,8 @@ void MainWindow::updateEditorActions()
 {
     const auto editable =
         !closing_ && !simulationRunning_ && !simulationStartPending_ && !historyLoadInProgress_ && !topologyLoadInProgress_;
-    const auto runtimeControlsEnabled = !closing_ && simulationRunning_;
+    const auto runtimeControlsEnabled =
+        !closing_ && simulationRunning_ && simulationConverged_ && !runtimeMutationPending_;
     const auto stopEnabled = !closing_ && (simulationRunning_ || simulationStartPending_);
     for (auto* action : {newAction_, openAction_, saveAsAction_, settingsAction_, batchTopologyAction_, selectModeAction_, addRouterAction_,
                          addLinkAction_, deleteAction_})
@@ -2702,6 +2805,10 @@ void MainWindow::updateEditorActions()
     linkBrowseButton_->setEnabled(!closing_ && linkCombo_->count() > 0);
     linkToggleButton_->setEnabled(runtimeControlsEnabled);
     prefixEdit_->setEnabled(runtimeControlsEnabled);
+    if (prefixControlBox_)
+    {
+        prefixControlBox_->setEnabled(runtimeControlsEnabled);
+    }
     eventFilterEdit_->setEnabled(!closing_ && !historyLoadInProgress_ && !simulationStartPending_);
     if (scene_)
     {
@@ -2795,10 +2902,36 @@ void MainWindow::populatePeerTable(const QVector<PeerSnapshot>& snapshots)
     }
 }
 
+bool MainWindow::beginRuntimeMutation()
+{
+    if (!simulationRunning_ || !simulationConverged_ || runtimeMutationPending_)
+    {
+        statusBar()->showMessage(QStringLiteral("请等待当前离散事件波收敛后再提交下一项运行时操作。"), 4000);
+        return false;
+    }
+    runtimeMutationPending_ = true;
+    simulationConverged_ = false;
+    simulationStatusLabel_->setText(QStringLiteral("● 收敛中"));
+    simulationStatusLabel_->setStyleSheet(QStringLiteral("color:#d97706"));
+    convergenceStateLabel_->setText(QStringLiteral("当前：等待运行时操作生效"));
+    refreshRuntimeControls();
+    updateEditorActions();
+    return true;
+}
+
+void MainWindow::completeRuntimeMutation(bool engineConverged)
+{
+    if (engineConverged)
+    {
+        onConvergenceChanged(true);
+    }
+}
+
 void MainWindow::refreshRuntimeControls()
 {
     const auto router = routerCombo_->currentText();
-    if (!simulationRunning_ || !runtimeRouters_.contains(router))
+    const auto stableBoundary = simulationRunning_ && simulationConverged_ && !runtimeMutationPending_;
+    if (!stableBoundary || !runtimeRouters_.contains(router))
     {
         routerStateLabel_->setText(QStringLiteral("—"));
         routerToggleButton_->setEnabled(false);
@@ -2811,7 +2944,7 @@ void MainWindow::refreshRuntimeControls()
         routerToggleButton_->setEnabled(true);
     }
 
-    if (!simulationRunning_ || linkCombo_->currentIndex() < 0)
+    if (!stableBoundary || linkCombo_->currentIndex() < 0)
     {
         linkStateLabel_->setText(QStringLiteral("—"));
         linkToggleButton_->setEnabled(false);
@@ -2827,6 +2960,10 @@ void MainWindow::refreshRuntimeControls()
         linkStateLabel_->setText(enabled ? QStringLiteral("已连接") : QStringLiteral("已断开"));
         linkToggleButton_->setText(enabled ? QStringLiteral("断开链路") : QStringLiteral("恢复链路"));
         linkToggleButton_->setEnabled(true);
+    }
+    if (prefixControlBox_)
+    {
+        prefixControlBox_->setEnabled(stableBoundary);
     }
 }
 

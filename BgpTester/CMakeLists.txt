@@ -34,6 +34,7 @@ target_link_libraries(bgptester_router_plugins PRIVATE
 )
 
 add_library(bgptester_core STATIC
+    src/model/DeterministicRandom.hpp
     src/model/Topology.cpp
     src/engine/SimulationEngine.cpp
     src/plugin/RouterPluginRegistry.cpp
@@ -112,7 +113,11 @@ include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
 
-    add_executable(BgpTesterTests tests/CoreTests.cpp)
+    add_executable(BgpTesterTests
+        tests/CoreTests.cpp
+        src/headless/HeadlessSession.cpp
+        src/headless/HeadlessSession.hpp
+    )
     target_sources(BgpTesterTests PRIVATE
         $<TARGET_OBJECTS:bgptester_router_plugins>
     )
@@ -123,6 +128,13 @@ if(BUILD_TESTING)
         target_compile_options(BgpTesterTests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME BgpTesterTests COMMAND BgpTesterTests)
+
+    add_test(NAME BgpTesterDeterminismTests
+        COMMAND ${CMAKE_COMMAND}
+            "-DTEST_EXECUTABLE=$<TARGET_FILE:BgpTesterTests>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyDeterminism.cmake"
+    )
+    set_tests_properties(BgpTesterDeterminismTests PROPERTIES TIMEOUT 120)
 
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cli_test")
     add_test(NAME BgpTesterCliTests

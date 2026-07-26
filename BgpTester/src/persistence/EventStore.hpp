@@ -76,6 +76,10 @@ public:
     {
         return lastError_;
     }
+    int encodingWorkerCount() const
+    {
+        return encodingPool_.maxThreadCount();
+    }
     static EventHistoryPage queryDatabase(const QString& path, int limit, const QString& filter = {}, QString* error = nullptr,
                                           const std::function<bool(qsizetype, qsizetype)>& progress = {},
                                           const std::function<bool()>& cancelled = {});

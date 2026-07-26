@@ -16,6 +16,8 @@
 namespace bgptester
 {
 
+inline constexpr qint64 SimulationEpochMilliseconds = 946684800000LL; // 2000-01-01T00:00:00.000Z
+
 enum class MessageType
 {
     Open,
@@ -207,6 +209,7 @@ struct SimulationEvent
 
 struct SimulationStats
 {
+    // All elapsed values are virtual simulation milliseconds, never wall time.
     bool running = false;
     bool converged = false;
     qsizetype pendingEvents = 0;

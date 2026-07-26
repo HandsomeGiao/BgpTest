@@ -127,7 +127,7 @@ QVariant EventTableModel::headerData(int section, Qt::Orientation orientation, i
         return QAbstractTableModel::headerData(section, orientation, role);
     }
     static const QStringList headers{
-        QStringLiteral("ID"),   QStringLiteral("时间"),     QStringLiteral("事件"),    QStringLiteral("路由器"),
+        QStringLiteral("ID"),   QStringLiteral("仿真时间"), QStringLiteral("事件"),    QStringLiteral("路由器"),
         QStringLiteral("来源"), QStringLiteral("目的"),     QStringLiteral("来源 AS"), QStringLiteral("目的 AS"),
         QStringLiteral("报文"), QStringLiteral("动作"),     QStringLiteral("序号"),    QStringLiteral("前缀"),
         QStringLiteral("撤销"), QStringLiteral("NEXT_HOP"), QStringLiteral("AS_PATH"), QStringLiteral("LOCAL_PREF"),

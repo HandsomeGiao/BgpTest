@@ -15,6 +15,7 @@ class QActionGroup;
 class QCheckBox;
 class QCloseEvent;
 class QComboBox;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QMenu;
@@ -126,9 +127,11 @@ private:
     void populatePeerTable(const QVector<PeerSnapshot>& snapshots);
     void appendConvergenceEvents(const QVector<SimulationEvent>& events);
     void appendConvergenceRecord(quint64 sequence, const QString& triggerEvent, const QString& triggerContext, const QDateTime& completedAt,
-                                 qint64 durationMs, qint64 wallDurationMs, std::optional<quint64> bgpMessageCount);
+                                 qint64 durationMs, qint64 confirmationDurationMs, std::optional<quint64> bgpMessageCount);
     void rebuildConvergenceHistory(const QVector<SimulationEvent>& events, qint64 totalCount);
     void clearConvergenceHistory(const QString& stateText);
+    bool beginRuntimeMutation();
+    void completeRuntimeMutation(bool engineConverged);
     void refreshRuntimeControls();
     void endEventRun(bool blocking = true);
     void flushEventStore();
@@ -137,6 +140,7 @@ private:
     bool dirty_ = false;
     bool simulationRunning_ = false;
     bool simulationConverged_ = false;
+    bool runtimeMutationPending_ = false;
     bool simulationStartPending_ = false;
     bool simulationStartCancelRequested_ = false;
     bool closing_ = false;
@@ -212,6 +216,7 @@ private:
     QLineEdit* linkSearchEdit_ = nullptr;
     QToolButton* linkBrowseButton_ = nullptr;
     QToolButton* linkToggleButton_ = nullptr;
+    QGroupBox* prefixControlBox_ = nullptr;
     QLineEdit* prefixEdit_ = nullptr;
     QTableView* eventView_ = nullptr;
     QLineEdit* eventFilterEdit_ = nullptr;

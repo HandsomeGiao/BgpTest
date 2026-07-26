@@ -29,7 +29,7 @@ QVector<RegisteredRouterPlugin> RouterPluginRegistry::plugins() const
         result.append(RegisteredRouterPlugin{.metadata = entry.metadata, .source = entry.source});
     }
     std::sort(result.begin(), result.end(),
-              [](const auto& lhs, const auto& rhs) { return lhs.metadata.displayName.localeAwareCompare(rhs.metadata.displayName) < 0; });
+              [](const auto& lhs, const auto& rhs) { return lhs.metadata.id < rhs.metadata.id; });
     return result;
 }
 

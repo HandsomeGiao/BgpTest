@@ -39,6 +39,9 @@ struct RouterNodeContext
 // RouterNode owns the protocol policy for one router. SimulationEngine keeps
 // responsibility for the event queue, links, BGP session transport and RIB
 // storage; plugins control route creation, import, selection and export.
+// Implementations are part of the deterministic simulation state machine:
+// they must not read wall time, machine entropy, thread scheduling state or
+// unordered pointer identities when producing protocol-visible results.
 class RouterNode : public QObject
 {
 public:
@@ -103,6 +106,8 @@ public:
     {
     }
 
+    // candidates is canonical: the local route comes first, followed by
+    // Adj-RIB-In candidates in case-sensitive peer-ID order.
     virtual std::optional<RouteEntry> selectBestRoute(const QString& prefix, const QVector<RouteEntry>& candidates,
                                                       const std::optional<RouteEntry>& currentBest) = 0;
 

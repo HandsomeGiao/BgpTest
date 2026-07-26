@@ -1,11 +1,11 @@
 #include "engine/SimulationEngine.hpp"
 
+#include "model/StrictIpv4.hpp"
 #include "plugin/RouterPluginRegistry.hpp"
 
-#include <QCoreApplication>
-#include <QHostAddress>
+#include <QScopeGuard>
 #include <QScopedValueRollback>
-#include <QThread>
+#include <QTimeZone>
 
 #include <algorithm>
 #include <limits>
@@ -16,41 +16,77 @@ namespace bgptester
 namespace
 {
 
+qint64 saturatingAddMilliseconds(qint64 base, qint64 delay)
+{
+    const auto nonNegativeDelay = std::max<qint64>(0, delay);
+    return base > std::numeric_limits<qint64>::max() - nonNegativeDelay
+               ? std::numeric_limits<qint64>::max()
+               : base + nonNegativeDelay;
+}
+
+class StableFingerprintBuilder final
+{
+public:
+    void addUnsigned(quint64 value)
+    {
+        addByte(0x4e);
+        for (int shift = 0; shift < 64; shift += 8)
+        {
+            addByte(static_cast<quint8>((value >> shift) & 0xffU));
+        }
+    }
+
+    void addString(QStringView value)
+    {
+        addByte(0x53);
+        addUnsigned(static_cast<quint64>(value.size()));
+        for (const auto codeUnit : value)
+        {
+            addByte(static_cast<quint8>(codeUnit.unicode() & 0xffU));
+            addByte(static_cast<quint8>((codeUnit.unicode() >> 8U) & 0xffU));
+        }
+    }
+
+    QPair<quint64, quint64> result() const
+    {
+        return {first_, second_};
+    }
+
+private:
+    void addByte(quint8 value)
+    {
+        first_ = (first_ ^ value) * 0x100000001b3ULL;
+        second_ = (second_ ^ static_cast<quint8>(value + 0x9dU)) * 0x9e3779b185ebca87ULL;
+    }
+
+    quint64 first_ = 0xcbf29ce484222325ULL;
+    quint64 second_ = 0x84222325cbf29ce4ULL;
+};
+
 QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route, const TfpVersionInfo* prefixVersionInfo = nullptr)
 {
-    quint64 first = 0x9e3779b97f4a7c15ULL;
-    quint64 second = 0xc2b2ae3d27d4eb4fULL;
-    const auto mix = [](quint64 state, quint64 value)
-    {
-        value += 0x9e3779b97f4a7c15ULL;
-        value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
-        value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
-        return state ^ ((value ^ (value >> 31U)) + (state << 6U) + (state >> 2U));
-    };
-    const auto add = [&](const auto& value)
-    {
-        first = mix(first, static_cast<quint64>(::qHash(value, static_cast<size_t>(first))));
-        second = mix(second, static_cast<quint64>(::qHash(value, static_cast<size_t>(second))));
-    };
-
-    add(route.attributes.origin);
-    add(route.attributes.nextHop);
-    add(route.attributes.localPref);
-    add(route.attributes.med);
-    add(static_cast<int>(route.source));
-    add(route.attributes.originatorId);
+    StableFingerprintBuilder fingerprint;
+    fingerprint.addString(route.attributes.origin);
+    fingerprint.addString(route.attributes.nextHop);
+    fingerprint.addUnsigned(route.attributes.localPref);
+    fingerprint.addUnsigned(route.attributes.med);
+    fingerprint.addUnsigned(static_cast<quint64>(route.source));
+    fingerprint.addString(route.attributes.originatorId);
+    fingerprint.addUnsigned(static_cast<quint64>(route.attributes.asPath.size()));
     for (const auto asn : route.attributes.asPath)
     {
-        add(asn);
+        fingerprint.addUnsigned(asn);
     }
+    fingerprint.addUnsigned(static_cast<quint64>(route.attributes.clusterList.size()));
     for (const auto& cluster : route.attributes.clusterList)
     {
-        add(cluster);
+        fingerprint.addString(cluster);
     }
+    fingerprint.addUnsigned(static_cast<quint64>(route.attributes.communities.size()));
     for (auto it = route.attributes.communities.cbegin(); it != route.attributes.communities.cend(); ++it)
     {
-        add(it.key());
-        add(it.value());
+        fingerprint.addString(it.key());
+        fingerprint.addString(it.value());
     }
     if (!prefixVersionInfo && route.attributes.tfpVersionInfo)
     {
@@ -58,16 +94,16 @@ QPair<quint64, quint64> advertisedRouteFingerprint(const RouteEntry& route, cons
     }
     if (prefixVersionInfo && !prefixVersionInfo->dependencyVector.isEmpty())
     {
-        add(QStringLiteral("tfp-version-info"));
-        add(QStringLiteral("dependency-vector"));
+        fingerprint.addString(QStringLiteral("tfp-version-info"));
+        fingerprint.addUnsigned(static_cast<quint64>(prefixVersionInfo->dependencyVector.size()));
         for (auto it = prefixVersionInfo->dependencyVector.cbegin(); it != prefixVersionInfo->dependencyVector.cend(); ++it)
         {
-            add(it.key().asn);
-            add(it.key().entityId);
-            add(it.value());
+            fingerprint.addUnsigned(it.key().asn);
+            fingerprint.addString(it.key().entityId);
+            fingerprint.addUnsigned(it.value());
         }
     }
-    return {first, second};
+    return fingerprint.result();
 }
 
 bool pathAttributesTemplateEqual(const PathAttributes& lhs, const PathAttributes& rhs)
@@ -117,20 +153,6 @@ void promoteCommonTfpVersionInfoToSidecar(BgpMessage& message)
     commonVersionInfo->reset();
 }
 
-bool validIpv4Prefix(const QString& prefix)
-{
-    const auto slash = prefix.lastIndexOf(u'/');
-    if (slash <= 0 || slash >= prefix.size() - 1)
-    {
-        return false;
-    }
-    bool lengthOk = false;
-    const auto length = prefix.sliced(slash + 1).toInt(&lengthOk);
-    QHostAddress address;
-    return lengthOk && length >= 0 && length <= 32 && address.setAddress(prefix.first(slash)) &&
-           address.protocol() == QAbstractSocket::IPv4Protocol;
-}
-
 QString tfpVectorText(const TfpVersionVector& vector)
 {
     QStringList entries;
@@ -144,7 +166,9 @@ QString tfpVectorText(const TfpVersionVector& vector)
 
 } // namespace
 
-SimulationEngine::SimulationEngine(QObject* parent) : QObject(parent)
+SimulationEngine::SimulationEngine(QObject* parent, qsizetype processingQuantum, quint64 convergenceEventBudget)
+    : QObject(parent), processingQuantum_(std::max<qsizetype>(1, processingQuantum)),
+      convergenceEventBudget_(std::max<quint64>(1, convergenceEventBudget))
 {
     qRegisterMetaType<Topology>();
     qRegisterMetaType<SimulationEvent>();
@@ -158,25 +182,17 @@ SimulationEngine::SimulationEngine(QObject* parent) : QObject(parent)
     eventTimer_->setSingleShot(true);
     eventTimer_->setTimerType(Qt::PreciseTimer);
     connect(eventTimer_, &QTimer::timeout, this, &SimulationEngine::processDueEvents);
-
-    statusTimer_ = new QTimer(this);
-    statusTimer_->setInterval(50);
-    statusTimer_->setTimerType(Qt::CoarseTimer);
-    connect(statusTimer_, &QTimer::timeout, this, &SimulationEngine::updateStatus);
 }
 
 qint64 SimulationEngine::now() const
 {
-    return clock_.isValid() ? clock_.elapsed() : 0;
+    return simulationTimeMs_;
 }
 
-qint64 SimulationEngine::schedulingTime() const
+QDateTime SimulationEngine::simulationTimestamp() const
 {
-    if (activeSchedulingAt_)
-    {
-        return *activeSchedulingAt_;
-    }
-    return std::max({now(), lastProcessedSimulationAt_, lastSimulationActivityAt_});
+    return QDateTime::fromMSecsSinceEpoch(
+        saturatingAddMilliseconds(SimulationEpochMilliseconds, simulationTimeMs_), QTimeZone::UTC);
 }
 
 void SimulationEngine::prepareStartup() noexcept
@@ -191,12 +207,27 @@ void SimulationEngine::requestStartupCancellation() noexcept
 
 void SimulationEngine::startSimulation(Topology topology)
 {
+    if (rejectReentrantControl(QStringLiteral("startSimulation")))
+    {
+        return;
+    }
     lastError_.clear();
     if (running_)
     {
         stopSimulation();
     }
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
     clearRuntime();
+    lastError_.clear();
     simulation_ = topology.simulation;
     emit startupProgress(QStringLiteral("正在校验拓扑"), 0, topology.routers.size() + topology.links.size());
     const auto problems = topology.validate();
@@ -235,12 +266,9 @@ void SimulationEngine::startSimulation(Topology topology)
         emit errorOccurred(lastError_);
         return;
     }
-    clock_.start();
+    simulationTimeMs_ = 0;
     lastActivityAt_ = 0;
     convergenceStartedAt_ = 0;
-    lastSimulationActivityAt_ = 0;
-    lastProcessedSimulationAt_ = 0;
-    convergenceStartedSimulationAt_ = 0;
     convergenceSequence_ = 0;
     convergenceMessageCount_ = 0;
     convergenceTriggerEvent_ = QStringLiteral("simulation_started");
@@ -284,7 +312,6 @@ void SimulationEngine::startSimulation(Topology topology)
                                                                {QStringLiteral("routers"), QString::number(routers_.size())},
                                                                {QStringLiteral("links"), QString::number(links_.size())}});
 
-    statusTimer_->start();
     requestAllSnapshots();
     armNextEvent();
     publishStats();
@@ -292,10 +319,39 @@ void SimulationEngine::startSimulation(Topology topology)
 
 void SimulationEngine::stopSimulation()
 {
-    lastError_.clear();
-    if (!running_)
+    if (rejectReentrantControl(QStringLiteral("stopSimulation")))
     {
         return;
+    }
+    if (!running_)
+    {
+        lastError_.clear();
+        return;
+    }
+    if (!convergenceFailed_)
+    {
+        lastError_.clear();
+    }
+    // A stop is a graceful deterministic boundary, not a wall-clock sample of
+    // partially processed state. This also makes `start; stop` scripts produce
+    // the same transcript on fast and slow machines.
+    const auto drained = runUntilConverged();
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
+    if (!drained)
+    {
+        recordTopologyEvent(QStringLiteral("simulation_aborted"),
+                            {{QStringLiteral("reason"), lastError_},
+                             {QStringLiteral("processed_events"), QString::number(processedEventsInConvergence_)},
+                             {QStringLiteral("event_budget"), QString::number(convergenceEventBudget_)}});
     }
     recordTopologyEvent(QStringLiteral("simulation_stopped"));
     running_ = false;
@@ -306,7 +362,6 @@ void SimulationEngine::stopSimulation()
         notifyConvergenceStateChanged(false);
     }
     eventTimer_->stop();
-    statusTimer_->stop();
     events_ = {};
     for (auto& router : routers_)
     {
@@ -334,9 +389,10 @@ void SimulationEngine::stopSimulation()
 void SimulationEngine::clearRuntime()
 {
     eventTimer_->stop();
-    statusTimer_->stop();
     activeEventBatch_ = nullptr;
-    activeSchedulingAt_.reset();
+    drainingToConvergence_ = false;
+    eventPumpDeferred_ = false;
+    convergenceFailed_ = false;
     events_ = {};
     if (pluginLifecycleActive_)
     {
@@ -359,13 +415,26 @@ void SimulationEngine::clearRuntime()
     nextGeneration_ = 0;
     outstandingTriggers_.clear();
     deliveredMessages_ = 0;
+    processedEventsInConvergence_ = 0;
     convergenceMessageCount_ = 0;
-    lastSimulationActivityAt_ = 0;
-    lastProcessedSimulationAt_ = 0;
-    convergenceStartedSimulationAt_ = 0;
+    simulationTimeMs_ = 0;
+    lastActivityAt_ = 0;
+    convergenceStartedAt_ = 0;
     routingStateDirty_ = false;
     convergenceTriggerEvent_.clear();
     convergenceTriggerContext_.clear();
+}
+
+bool SimulationEngine::rejectReentrantControl(const QString& operation)
+{
+    if (!processingEvents_ && !controlOperationActive_)
+    {
+        return false;
+    }
+    lastError_ = QStringLiteral("仿真事件或控制回调中不能重入控制操作：%1").arg(operation);
+    const auto message = lastError_;
+    QMetaObject::invokeMethod(this, [this, message] { emit errorOccurred(message); }, Qt::QueuedConnection);
+    return true;
 }
 
 bool SimulationEngine::buildRuntime(const Topology& topology, QString* error)
@@ -474,7 +543,7 @@ bool SimulationEngine::scheduleInitialOpenMessages()
 {
     std::vector<ScheduledEvent> initialEvents;
     initialEvents.reserve(static_cast<size_t>(links_.size()) * 2);
-    const auto scheduledAt = schedulingTime();
+    const auto scheduledAt = now();
     const auto appendOpen = [this, scheduledAt, &initialEvents](const QString& from, const QString& to, int delayMs)
     {
         auto router = routers_.find(from);
@@ -498,7 +567,7 @@ bool SimulationEngine::scheduleInitialOpenMessages()
         message.openAsn = router->config.asn;
         message.openRouterId = router->config.routerId;
         initialEvents.push_back(ScheduledEvent{
-            .dueAt = scheduledAt + std::max(0, delayMs),
+            .dueAt = saturatingAddMilliseconds(scheduledAt, delayMs),
             .order = ++nextOrder_,
             .kind = ScheduledKind::DeliverMessages,
             .from = from,
@@ -536,14 +605,116 @@ bool SimulationEngine::scheduleInitialOpenMessages()
 
 void SimulationEngine::armNextEvent()
 {
-    pruneInvalidScheduledEvents();
-    if (!running_ || events_.empty())
+    if (drainingToConvergence_ || convergenceFailed_ || !running_ || (events_.empty() && converged_))
     {
         eventTimer_->stop();
         return;
     }
-    const auto delay = std::max<qint64>(0, events_.top().dueAt - now());
-    eventTimer_->start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
+    // Wall time only decides when the engine thread gets another turn. The
+    // scheduled due time is consumed by processDueEvents() as virtual time.
+    eventTimer_->start(0);
+}
+
+bool SimulationEngine::runUntilConverged()
+{
+    if (rejectReentrantControl(QStringLiteral("runUntilConverged")))
+    {
+        return false;
+    }
+    if (!running_)
+    {
+        lastError_ = QStringLiteral("仿真尚未运行");
+        return false;
+    }
+    if (converged_)
+    {
+        return true;
+    }
+    if (convergenceFailed_ || drainingToConvergence_)
+    {
+        if (lastError_.isEmpty())
+        {
+            lastError_ = QStringLiteral("仿真无法进入收敛边界");
+        }
+        return false;
+    }
+
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
+    drainingToConvergence_ = true;
+    eventTimer_->stop();
+    while (running_ && !converged_ && !convergenceFailed_)
+    {
+        if (processEventQuantum(processingQuantum_) == 0 && !converged_ && !convergenceFailed_)
+        {
+            lastError_ = QStringLiteral("确定性事件队列没有取得进展");
+            convergenceFailed_ = true;
+            emit errorOccurred(lastError_);
+        }
+    }
+    drainingToConvergence_ = false;
+    armNextEvent();
+    return converged_;
+}
+
+void SimulationEngine::failConvergenceBudget()
+{
+    if (convergenceFailed_)
+    {
+        return;
+    }
+    convergenceFailed_ = true;
+    lastError_ = QStringLiteral("仿真在一个收敛周期内达到确定性事件预算 %1；可能存在协议振荡或插件零延迟循环")
+                     .arg(convergenceEventBudget_);
+    recordTopologyEvent(QStringLiteral("convergence_failed"),
+                        {{QStringLiteral("reason"), QStringLiteral("event_budget_exhausted")},
+                         {QStringLiteral("processed_events"), QString::number(processedEventsInConvergence_)},
+                         {QStringLiteral("event_budget"), QString::number(convergenceEventBudget_)}});
+    emit errorOccurred(lastError_);
+}
+
+void SimulationEngine::finishConvergenceIfIdle()
+{
+    if (!running_ || converged_ || !events_.empty())
+    {
+        return;
+    }
+
+    const auto quietMs = static_cast<qint64>(std::max(0, simulation_.convergenceQuietMs));
+    const auto activeCompletedAt = std::max(simulationTimeMs_, lastActivityAt_);
+    const auto confirmedAt = saturatingAddMilliseconds(activeCompletedAt, quietMs);
+    simulationTimeMs_ = confirmedAt;
+    const auto activeDurationMs = std::max<qint64>(0, activeCompletedAt - convergenceStartedAt_);
+    const auto simulatedDurationMs = std::max<qint64>(0, confirmedAt - convergenceStartedAt_);
+
+    converged_ = true;
+    recordTopologyEvent(QStringLiteral("converged"),
+                        {{QStringLiteral("elapsed_ms"), QString::number(confirmedAt)},
+                         {QStringLiteral("convergence_sequence"), QString::number(++convergenceSequence_)},
+                         {QStringLiteral("started_at_ms"), QString::number(convergenceStartedAt_)},
+                         {QStringLiteral("completed_at_ms"), QString::number(activeCompletedAt)},
+                         {QStringLiteral("confirmed_at_ms"), QString::number(confirmedAt)},
+                         {QStringLiteral("duration_ms"), QString::number(activeDurationMs)},
+                         {QStringLiteral("simulated_active_duration_ms"), QString::number(activeDurationMs)},
+                         {QStringLiteral("simulated_duration_ms"), QString::number(simulatedDurationMs)},
+                         {QStringLiteral("quiet_confirmation_ms"), QString::number(quietMs)},
+                         {QStringLiteral("processed_events"), QString::number(processedEventsInConvergence_)},
+                         {QStringLiteral("bgp_message_count"), QString::number(convergenceMessageCount_)},
+                         {QStringLiteral("trigger_event"), convergenceTriggerEvent_},
+                         {QStringLiteral("trigger_context"), convergenceTriggerContext_}});
+    // Commit the complete convergence record before publishing callbacks.
+    // Direct signal handlers therefore cannot overwrite this cycle's fields
+    // by starting a new control operation reentrantly.
+    notifyConvergenceStateChanged(true);
+    emit convergenceChanged(true);
 }
 
 void SimulationEngine::invalidateSession(PeerRuntime& peer)
@@ -692,29 +863,39 @@ bool SimulationEngine::scheduledEventValid(const ScheduledEvent& event) const
     return false;
 }
 
-void SimulationEngine::pruneInvalidScheduledEvents()
+quint64 SimulationEngine::pruneInvalidScheduledEvents(quint64 maximumEvents)
 {
     // Invalidated sessions can leave hundreds of thousands of entries in a
     // large heap.  Rebuilding the complete heap makes a single link change
     // O(queue_size log queue_size); stale entries are cheaper to discard only
     // when they reach the head.
-    while (!events_.empty() && !scheduledEventValid(events_.top()))
+    const auto remainingBudget = convergenceEventBudget_ -
+                                 std::min(convergenceEventBudget_, processedEventsInConvergence_);
+    const auto limit = std::min(maximumEvents, remainingBudget);
+    quint64 processed = 0;
+    while (!events_.empty() && !scheduledEventValid(events_.top()) && processed < limit)
     {
         events_.pop();
+        ++processed;
+        ++processedEventsInConvergence_;
     }
+    if (running_ && !converged_ && !events_.empty() && processedEventsInConvergence_ >= convergenceEventBudget_)
+    {
+        failConvergenceBudget();
+    }
+    return processed;
 }
 
 void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, const QString& convergenceTriggerContext)
 {
     const auto activityAt = now();
     lastActivityAt_ = activityAt;
-    const auto simulationActivityAt = schedulingTime();
-    lastSimulationActivityAt_ = std::max(lastSimulationActivityAt_, simulationActivityAt);
     if (converged_)
     {
         converged_ = false;
+        convergenceFailed_ = false;
+        processedEventsInConvergence_ = 0;
         convergenceStartedAt_ = activityAt;
-        convergenceStartedSimulationAt_ = simulationActivityAt;
         convergenceMessageCount_ = 0;
         convergenceTriggerEvent_ = convergenceTriggerEvent.isEmpty() ? QStringLiteral("routing_activity") : convergenceTriggerEvent;
         convergenceTriggerContext_ = convergenceTriggerContext;
@@ -725,6 +906,10 @@ void SimulationEngine::markActivity(const QString& convergenceTriggerEvent, cons
     {
         convergenceTriggerEvent_ = convergenceTriggerEvent;
         convergenceTriggerContext_ = convergenceTriggerContext;
+    }
+    if (running_ && !activeEventBatch_ && !eventTimer_->isActive())
+    {
+        eventTimer_->start(0);
     }
 }
 
@@ -746,7 +931,6 @@ void SimulationEngine::publishStats()
 
 SimulationStats SimulationEngine::statsSnapshot()
 {
-    pruneInvalidScheduledEvents();
     const auto elapsedMs = now();
     return SimulationStats{
         .running = running_,
@@ -774,7 +958,7 @@ void SimulationEngine::scheduleMessages(const QString& from, const QString& to, 
         message.sequence = ++nextSequence_;
     }
     constexpr qsizetype maxMessagesPerScheduledEvent = 16;
-    const auto dueAt = schedulingTime() + linkDelay(from, to) + std::max(0, extraDelayMs);
+    const auto dueAt = saturatingAddMilliseconds(saturatingAddMilliseconds(now(), linkDelay(from, to)), extraDelayMs);
     qsizetype offset = 0;
     while (offset < messages.size())
     {
@@ -814,7 +998,7 @@ void SimulationEngine::scheduleMraiFlush(const QString& from, const QString& to,
     }
     const auto flushGeneration = ++peerIt->mraiFlushGeneration;
     events_.push(ScheduledEvent{
-        .dueAt = std::max(schedulingTime(), dueAt),
+        .dueAt = std::max(now(), dueAt),
         .order = ++nextOrder_,
         .kind = ScheduledKind::FlushMrai,
         .from = from,
@@ -841,7 +1025,7 @@ void SimulationEngine::scheduleWithdrawalFlush(const QString& from, const QStrin
     }
     const auto flushGeneration = ++peerIt->withdrawalFlushGeneration;
     events_.push(ScheduledEvent{
-        .dueAt = schedulingTime(),
+        .dueAt = now(),
         .order = ++nextOrder_,
         .kind = ScheduledKind::FlushWithdrawals,
         .from = from,
@@ -856,30 +1040,35 @@ void SimulationEngine::scheduleWithdrawalFlush(const QString& from, const QStrin
 
 void SimulationEngine::processDueEvents()
 {
-    if (!running_)
+    processEventQuantum(processingQuantum_);
+}
+
+qsizetype SimulationEngine::processEventQuantum(qsizetype maximumEvents)
+{
+    if (!running_ || processingEvents_ || convergenceFailed_)
     {
-        return;
+        return 0;
     }
-    int processed = 0;
-    constexpr int maxPerTurn = 16384;
-    constexpr qint64 maxTurnMs = 48;
-    QElapsedTimer turnTimer;
-    turnTimer.start();
+    if (controlOperationActive_ && !drainingToConvergence_)
+    {
+        eventPumpDeferred_ = true;
+        return 0;
+    }
+    QScopedValueRollback processingGuard(processingEvents_, true);
+    qsizetype processed = 0;
+    const auto quantum = std::max<qsizetype>(0, maximumEvents);
     QVector<SimulationEvent> turnEvents;
-    turnEvents.reserve(maxPerTurn);
+    turnEvents.reserve(quantum);
     activeEventBatch_ = &turnEvents;
-    pruneInvalidScheduledEvents();
-    while (!events_.empty() && events_.top().dueAt <= now() && processed < maxPerTurn && turnTimer.elapsed() < maxTurnMs)
+    processed += static_cast<qsizetype>(pruneInvalidScheduledEvents(static_cast<quint64>(quantum)));
+    while (!events_.empty() && processed < quantum && !convergenceFailed_)
     {
         auto event = events_.top();
         events_.pop();
-        if (!scheduledEventValid(event))
-        {
-            ++processed;
-            continue;
-        }
-        const QScopedValueRollback<std::optional<qint64>> schedulingScope(activeSchedulingAt_, event.dueAt);
-        lastProcessedSimulationAt_ = std::max(lastProcessedSimulationAt_, event.dueAt);
+        ++processed;
+        ++processedEventsInConvergence_;
+        Q_ASSERT(scheduledEventValid(event));
+        simulationTimeMs_ = std::max(simulationTimeMs_, event.dueAt);
         switch (event.kind)
         {
             case ScheduledKind::DeliverMessages:
@@ -892,14 +1081,27 @@ void SimulationEngine::processDueEvents()
                 flushWithdrawals(event.from, event.to);
                 break;
         }
-        ++processed;
+        const auto remainingQuantum = static_cast<quint64>(quantum - processed);
+        processed += static_cast<qsizetype>(pruneInvalidScheduledEvents(remainingQuantum));
+    }
+    finishConvergenceIfIdle();
+    if (!converged_ && !events_.empty() && processedEventsInConvergence_ >= convergenceEventBudget_)
+    {
+        failConvergenceBudget();
     }
     activeEventBatch_ = nullptr;
     if (!turnEvents.isEmpty())
     {
         emit eventsGenerated(std::move(turnEvents));
     }
+    if (routingStateDirty_)
+    {
+        routingStateDirty_ = false;
+        emit routingStateChanged();
+    }
+    publishStats();
     armNextEvent();
+    return processed;
 }
 
 void SimulationEngine::deliverMessages(ScheduledEvent& event)
@@ -1052,10 +1254,10 @@ void SimulationEngine::flushMrai(const QString& from, const QString& to)
     }
     if (messages.isEmpty())
     {
-        peerIt->nextMraiAt = schedulingTime();
+        peerIt->nextMraiAt = now();
         return;
     }
-    peerIt->nextMraiAt = schedulingTime() + peerIt->config.mraiMs;
+    peerIt->nextMraiAt = saturatingAddMilliseconds(now(), peerIt->config.mraiMs);
     scheduleMessages(from, to, std::move(messages));
 }
 
@@ -1458,7 +1660,9 @@ void SimulationEngine::runDecision(const QString& routerId, const QSet<QString>&
     QVector<RouteEntry> candidateScratch;
     candidateScratch.reserve(routerIt->adjRibIn.size() + 1);
     bool anyChange = false;
-    for (const auto& prefix : changedPrefixes)
+    auto orderedPrefixes = changedPrefixes.values();
+    orderedPrefixes.sort(Qt::CaseSensitive);
+    for (const auto& prefix : orderedPrefixes)
     {
         const auto oldIt = routerIt->locRib.constFind(prefix);
         const std::optional<RouteEntry> old = oldIt == routerIt->locRib.cend() ? std::nullopt : std::optional<RouteEntry>(oldIt.value());
@@ -1502,10 +1706,13 @@ void SimulationEngine::advertiseTableToPeer(const QString& routerId, const QStri
         return;
     }
     routerIt->outboundGenerations[peerId].reserve(routerIt->locRib.size());
-    for (auto routeIt = routerIt->locRib.cbegin(); routeIt != routerIt->locRib.cend(); ++routeIt)
+    auto prefixes = routerIt->locRib.keys();
+    prefixes.sort(Qt::CaseSensitive);
+    for (const auto& prefix : prefixes)
     {
-        auto outbound = routerIt->node->exportRouteForPrefix(routeIt.key(), routeIt.value(), peerIt->config);
-        queueAdvertisement(routerId, peerId, routeIt.key(), outbound);
+        const auto routeIt = routerIt->locRib.constFind(prefix);
+        auto outbound = routerIt->node->exportRouteForPrefix(prefix, routeIt.value(), peerIt->config);
+        queueAdvertisement(routerId, peerId, prefix, outbound);
     }
 }
 
@@ -1518,8 +1725,11 @@ std::optional<RouteEntry> SimulationEngine::selectBest(const RouterRuntime& rout
     {
         candidates.append(local.value());
     }
-    for (const auto& peerRoutes : router.adjRibIn)
+    auto peerIds = router.adjRibIn.keys();
+    peerIds.sort(Qt::CaseSensitive);
+    for (const auto& peerId : peerIds)
     {
+        const auto& peerRoutes = router.adjRibIn.value(peerId);
         if (const auto route = peerRoutes.constFind(prefix); route != peerRoutes.cend())
         {
             candidates.append(route.value());
@@ -1704,7 +1914,7 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
         else if (!simulation_.withdrawalIgnoresMrai && !peerIt->flushScheduled)
         {
             peerIt->flushScheduled = true;
-            const auto currentSchedulingTime = schedulingTime();
+            const auto currentSchedulingTime = now();
             const auto dueAt = peerIt->config.mraiMs <= 0 ? currentSchedulingTime
                                                           : std::max(currentSchedulingTime, peerIt->nextMraiAt);
             scheduleMraiFlush(routerId, peerId, dueAt);
@@ -1723,7 +1933,7 @@ void SimulationEngine::queueAdvertisement(const QString& routerId, const QString
     if (!peerIt->flushScheduled)
     {
         peerIt->flushScheduled = true;
-        const auto currentSchedulingTime = schedulingTime();
+        const auto currentSchedulingTime = now();
         const auto dueAt = peerIt->config.mraiMs <= 0 ? currentSchedulingTime
                                                       : std::max(currentSchedulingTime, peerIt->nextMraiAt);
         scheduleMraiFlush(routerId, peerId, dueAt);
@@ -1755,6 +1965,24 @@ BgpMessage SimulationEngine::makeUpdateMessage(const QString& from, const QStrin
 
 void SimulationEngine::setLinkState(const QString& a, const QString& b, bool enabled)
 {
+    if (rejectReentrantControl(QStringLiteral("setLinkState")))
+    {
+        return;
+    }
+    if (convergenceFailed_)
+    {
+        return;
+    }
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
     lastError_.clear();
     if (!running_)
     {
@@ -1773,7 +2001,6 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
     {
         return;
     }
-    const QScopedValueRollback<std::optional<qint64>> schedulingScope(activeSchedulingAt_, schedulingTime());
     linkIt->enabled = enabled;
     if (auto router = routers_.find(a); router != routers_.end())
     {
@@ -1808,6 +2035,24 @@ void SimulationEngine::setLinkState(const QString& a, const QString& b, bool ena
 
 void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
 {
+    if (rejectReentrantControl(QStringLiteral("setRouterState")))
+    {
+        return;
+    }
+    if (convergenceFailed_)
+    {
+        return;
+    }
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
     lastError_.clear();
     if (!running_)
     {
@@ -1826,7 +2071,6 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
     {
         return;
     }
-    const QScopedValueRollback<std::optional<qint64>> schedulingScope(activeSchedulingAt_, schedulingTime());
     const auto triggerEvent = enabled ? QStringLiteral("router_up") : QStringLiteral("router_down");
     markActivity(triggerEvent, routerId);
     if (!enabled)
@@ -1880,6 +2124,24 @@ void SimulationEngine::setRouterState(const QString& routerId, bool enabled)
 
 void SimulationEngine::originatePrefix(const QString& routerId, const QString& prefixValue)
 {
+    if (rejectReentrantControl(QStringLiteral("originatePrefix")))
+    {
+        return;
+    }
+    if (convergenceFailed_)
+    {
+        return;
+    }
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
     lastError_.clear();
     const auto prefix = prefixValue.trimmed();
     if (!running_)
@@ -1888,7 +2150,7 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
         emit errorOccurred(lastError_);
         return;
     }
-    if (!validIpv4Prefix(prefix))
+    if (!isCanonicalIpv4Prefix(prefix))
     {
         lastError_ = QStringLiteral("前缀无效：%1").arg(prefix);
         emit errorOccurred(lastError_);
@@ -1909,7 +2171,6 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
     {
         return;
     }
-    const QScopedValueRollback<std::optional<qint64>> schedulingScope(activeSchedulingAt_, schedulingTime());
     auto route = routerIt->node->createOriginatedRoute(prefix);
     routerIt->localRoutes.insert(prefix, route);
     markActivity(QStringLiteral("prefix_advertised"), QStringLiteral("%1 · %2").arg(routerId, prefix));
@@ -1919,6 +2180,24 @@ void SimulationEngine::originatePrefix(const QString& routerId, const QString& p
 
 void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& prefixValue)
 {
+    if (rejectReentrantControl(QStringLiteral("withdrawPrefix")))
+    {
+        return;
+    }
+    if (convergenceFailed_)
+    {
+        return;
+    }
+    QScopedValueRollback controlGuard(controlOperationActive_, true);
+    const auto deferredPumpGuard = qScopeGuard(
+        [this]
+        {
+            if (eventPumpDeferred_)
+            {
+                eventPumpDeferred_ = false;
+                armNextEvent();
+            }
+        });
     lastError_.clear();
     const auto prefix = prefixValue.trimmed();
     if (!running_)
@@ -1939,64 +2218,11 @@ void SimulationEngine::withdrawPrefix(const QString& routerId, const QString& pr
     {
         return;
     }
-    const QScopedValueRollback<std::optional<qint64>> schedulingScope(activeSchedulingAt_, schedulingTime());
     routerIt->node->localRouteWithdrawn(prefix);
     routerIt->localRoutes.remove(prefix);
     markActivity(QStringLiteral("prefix_withdrawn"), QStringLiteral("%1 · %2").arg(routerId, prefix));
     runDecision(routerId, {prefix});
     recordTopologyEvent(QStringLiteral("prefix_withdrawn"), {{QStringLiteral("router"), routerId}, {QStringLiteral("prefix"), prefix}});
-}
-
-void SimulationEngine::updateStatus()
-{
-    if (!running_)
-    {
-        return;
-    }
-    pruneInvalidScheduledEvents();
-    const auto quietMs = std::max(0, simulation_.convergenceQuietMs);
-    const auto isNowConverged = events_.empty() && now() - lastActivityAt_ >= quietMs;
-    if (isNowConverged != converged_)
-    {
-        converged_ = isNowConverged;
-        notifyConvergenceStateChanged(converged_);
-        emit convergenceChanged(converged_);
-        if (converged_)
-        {
-            const auto completedAt = now();
-            const auto wallDurationMs = std::max<qint64>(0, completedAt - convergenceStartedAt_);
-            const auto activeWallDurationMs = std::max<qint64>(0, lastActivityAt_ - convergenceStartedAt_);
-            const auto simulationCompletedAt = std::max(lastProcessedSimulationAt_, lastSimulationActivityAt_);
-            const auto simulatedActiveDurationMs =
-                std::max<qint64>(0, simulationCompletedAt - convergenceStartedSimulationAt_);
-            const auto simulatedDurationMs = simulatedActiveDurationMs + quietMs;
-            recordTopologyEvent(QStringLiteral("converged"),
-                                {{QStringLiteral("elapsed_ms"), QString::number(completedAt)},
-                                 {QStringLiteral("convergence_sequence"), QString::number(++convergenceSequence_)},
-                                 {QStringLiteral("started_at_ms"), QString::number(convergenceStartedAt_)},
-                                 {QStringLiteral("completed_at_ms"), QString::number(completedAt)},
-                                 // duration_ms is the protocol metric shown to
-                                 // users: causal simulated time through the
-                                 // final routing activity. Machine throughput,
-                                 // logging and the confirmation window remain
-                                 // available as separate diagnostics.
-                                 {QStringLiteral("duration_ms"), QString::number(simulatedActiveDurationMs)},
-                                 {QStringLiteral("wall_duration_ms"), QString::number(wallDurationMs)},
-                                 {QStringLiteral("active_wall_duration_ms"), QString::number(activeWallDurationMs)},
-                                 {QStringLiteral("simulated_active_duration_ms"), QString::number(simulatedActiveDurationMs)},
-                                 {QStringLiteral("simulated_duration_ms"), QString::number(simulatedDurationMs)},
-                                 {QStringLiteral("quiet_confirmation_ms"), QString::number(quietMs)},
-                                 {QStringLiteral("bgp_message_count"), QString::number(convergenceMessageCount_)},
-                                 {QStringLiteral("trigger_event"), convergenceTriggerEvent_},
-                                 {QStringLiteral("trigger_context"), convergenceTriggerContext_}});
-        }
-    }
-    if (routingStateDirty_)
-    {
-        routingStateDirty_ = false;
-        emit routingStateChanged();
-    }
-    publishStats();
 }
 
 RibSnapshot SimulationEngine::ribSnapshot(const QString& routerId) const
@@ -2098,7 +2324,7 @@ void SimulationEngine::requestPath(const QString& routerId, const QString& prefi
 SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
 {
     SimulationEvent event;
-    event.timestamp = QDateTime::currentDateTime();
+    event.timestamp = simulationTimestamp();
     event.event = QStringLiteral("message_received");
     event.router = message.to;
     event.from = message.from;
@@ -2180,6 +2406,7 @@ SimulationEvent SimulationEngine::messageEvent(const BgpMessage& message) const
     {
         event.action = toString(message.type);
     }
+    event.details.insert(QStringLiteral("simulation_time_ms"), QString::number(now()));
     return event;
 }
 
@@ -2209,9 +2436,10 @@ void SimulationEngine::publishEvents(QVector<SimulationEvent> events)
 void SimulationEngine::recordTopologyEvent(const QString& name, QMap<QString, QString> details)
 {
     SimulationEvent event;
-    event.timestamp = QDateTime::currentDateTime();
+    event.timestamp = simulationTimestamp();
     event.event = name;
     event.action = QStringLiteral("TOPOLOGY");
+    details.insert(QStringLiteral("simulation_time_ms"), QString::number(now()));
     event.details = std::move(details);
     event.router = event.details.value(QStringLiteral("router"));
     event.from = event.details.value(QStringLiteral("a"));

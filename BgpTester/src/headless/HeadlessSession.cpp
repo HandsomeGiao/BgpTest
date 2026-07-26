@@ -1,6 +1,8 @@
 #include "headless/HeadlessSession.hpp"
 
 #include "engine/SimulationEngine.hpp"
+#include "model/CanonicalJson.hpp"
+#include "model/DeterministicRandom.hpp"
 #include "persistence/EventStore.hpp"
 #include "plugin/RouterPluginRegistry.hpp"
 
@@ -12,16 +14,15 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QRandomGenerator>
 #include <QSaveFile>
 #include <QSet>
+#include <QTimeZone>
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
 #include <memory>
-#include <random>
 #include <thread>
 
 namespace bgptester
@@ -266,7 +267,7 @@ QString topologySha256(const Topology& topology)
     auto canonicalTopology = topology;
     std::sort(canonicalTopology.links.begin(), canonicalTopology.links.end(), [](const LinkConfig& lhs, const LinkConfig& rhs)
               { return Topology::edgeKey(lhs.a, lhs.b) < Topology::edgeKey(rhs.a, rhs.b); });
-    return QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(canonicalTopology.toJson()).toJson(QJsonDocument::Compact),
+    return QString::fromLatin1(QCryptographicHash::hash(canonicalJsonEncoding(canonicalTopology.toJson()),
                                                         QCryptographicHash::Sha256)
                                    .toHex());
 }
@@ -477,6 +478,57 @@ void HeadlessSession::refreshRuntimeStatus()
     simulationConverged_ = stats.converged;
 }
 
+bool HeadlessSession::stabilizeRuntime(QString* error)
+{
+    if (error)
+    {
+        error->clear();
+    }
+    if (!engine_ || !engineThread_.isRunning() || shuttingDown_ || !simulationRunning_)
+    {
+        if (error)
+        {
+            *error = QStringLiteral("仿真尚未运行");
+        }
+        return false;
+    }
+    if (interruptionFlag_ && interruptionFlag_->load(std::memory_order_relaxed))
+    {
+        if (error)
+        {
+            *error = QStringLiteral("操作被中断");
+        }
+        return false;
+    }
+
+    SimulationStats stats;
+    bool drained = false;
+    QString engineError;
+    const auto invoked = QMetaObject::invokeMethod(
+        engine_,
+        [engine = engine_, &drained, &engineError, &stats]
+        {
+            drained = engine->runUntilConverged();
+            engineError = engine->lastError();
+            stats = engine->statsSnapshot();
+        },
+        Qt::BlockingQueuedConnection);
+    latestStats_ = stats;
+    simulationRunning_ = stats.running;
+    simulationConverged_ = stats.converged;
+    if (!invoked || !drained || !stats.running || !stats.converged)
+    {
+        if (error)
+        {
+            *error = !invoked                  ? QStringLiteral("无法进入确定性仿真边界")
+                     : !engineError.isEmpty() ? engineError
+                                               : QStringLiteral("仿真未能到达收敛边界");
+        }
+        return false;
+    }
+    return true;
+}
+
 void HeadlessSession::refreshEventStoreStatus()
 {
     if (!eventStore_ || !eventStoreThread_.isRunning() || !eventRunOpen_)
@@ -618,13 +670,17 @@ QJsonArray HeadlessSession::commandHelp() const
                                 QStringLiteral("delay{mode,value_ms|min_ms,max_ms}"), QStringLiteral("seed")}),
         makeCommandDescription(QStringLiteral("start/stop"), QStringLiteral("创建 BMP JSONL/SQLite 后启动或停止仿真")),
         makeCommandDescription(QStringLiteral("wait"), QStringLiteral("保持事件循环运行指定时间"), {QStringLiteral("milliseconds")}),
-        makeCommandDescription(QStringLiteral("wait_converged"), QStringLiteral("等待当前收敛轮完成"),
-                               {QStringLiteral("timeout_ms=30000")}),
-        makeCommandDescription(QStringLiteral("set_router_state/toggle_router"), QStringLiteral("运行时关闭或恢复节点"),
+        makeCommandDescription(QStringLiteral("wait_converged"),
+                               QStringLiteral("确定性耗尽当前事件波；timeout_ms 仅保留为墙钟诊断"),
+                               {QStringLiteral("timeout_ms=30000（诊断）")}),
+        makeCommandDescription(QStringLiteral("set_router_state/toggle_router"),
+                               QStringLiteral("在自动稳定边界关闭或恢复节点"),
                                {QStringLiteral("router"), QStringLiteral("enabled")}),
-        makeCommandDescription(QStringLiteral("set_link_state/toggle_link"), QStringLiteral("运行时断开或恢复链路"),
+        makeCommandDescription(QStringLiteral("set_link_state/toggle_link"),
+                               QStringLiteral("在自动稳定边界断开或恢复链路"),
                                {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("enabled")}),
-        makeCommandDescription(QStringLiteral("advertise_prefix/withdraw_prefix"), QStringLiteral("运行时发布或撤销 IPv4 前缀"),
+        makeCommandDescription(QStringLiteral("advertise_prefix/withdraw_prefix"),
+                               QStringLiteral("在自动稳定边界发布或撤销 IPv4 前缀"),
                                {QStringLiteral("router"), QStringLiteral("prefix")}),
         makeCommandDescription(QStringLiteral("routers/rib/peers/path"), QStringLiteral("查询与 GUI 检查器对应的完整运行快照")),
         makeCommandDescription(QStringLiteral("snapshot"), QStringLiteral("稳定排序导出所有 Router/RIB/Peer/逐跳路径和统计"),
@@ -672,6 +728,16 @@ QJsonObject HeadlessSession::statusJson() const
 
 HeadlessCommandResult HeadlessSession::statusCommand(const QJsonObject&)
 {
+    QString error;
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        flushEventRun();
+        return failure(error, statusJson());
+    }
+    if (eventRunOpen_ && !flushEventRun())
+    {
+        return failure(lastStoreError_, statusJson());
+    }
     refreshEventStoreStatus();
     return success(statusJson());
 }
@@ -1521,11 +1587,23 @@ HeadlessCommandResult HeadlessSession::batchUpdateCommand(const QJsonObject& com
     {
         return failure(error);
     }
-    const auto seed = hasSeed ? static_cast<quint32>(seedValue) : QRandomGenerator::global()->generate();
-    std::mt19937 generator(seed);
+    auto seedTopology = topology_;
+    seedTopology.simulation.name.clear();
+    seedTopology.simulation.logDirectory.clear();
+    seedTopology.simulation.workerThreads = 0;
+    for (auto& router : seedTopology.routers)
+    {
+        router.position = {};
+    }
+    auto seedMaterial = topologySha256(seedTopology).toUtf8();
+    seedMaterial.append('\0');
+    seedMaterial.append(canonicalJsonEncoding(command));
+    const auto seed = hasSeed ? static_cast<quint32>(seedValue)
+                              : static_cast<quint32>(DeterministicRandom::seedFromBytes(seedMaterial));
+    DeterministicRandom generator(seed);
     const auto randomValue = [&](const BatchInterval& interval)
     {
-        return std::uniform_int_distribution<int>(interval.minimum, interval.maximum)(generator);
+        return generator.boundedInclusive(interval.minimum, interval.maximum);
     };
 
     auto candidate = topology_;
@@ -1611,6 +1689,11 @@ HeadlessCommandResult HeadlessSession::batchUpdateCommand(const QJsonObject& com
                      {QStringLiteral("changed_mrai_directions"), changedMraiDirections},
                      {QStringLiteral("changed_links"), changedLinks},
                      {QStringLiteral("seed"), static_cast<qint64>(seed)},
+                     {QStringLiteral("seed_source"), hasSeed ? QStringLiteral("explicit") : QStringLiteral("derived_from_input")},
+                     {QStringLiteral("random_algorithm"),
+                      QStringLiteral("bgptester-splitmix64-v%1").arg(DeterministicRandom::AlgorithmVersion)},
+                     {QStringLiteral("seed_material_encoding"),
+                      QStringLiteral("bgptester-canonical-json-v%1").arg(CanonicalJsonEncodingVersion)},
                      {QStringLiteral("actual_mrai_by_router"), actualMraiByRouter},
                      {QStringLiteral("actual_delays"), actualDelayByLink}};
     if (changesPlugin)
@@ -1652,6 +1735,11 @@ HeadlessCommandResult HeadlessSession::startCommand(const QJsonObject&)
 {
     if (isRunning())
     {
+        QString stabilizationError;
+        if (!stabilizeRuntime(&stabilizationError))
+        {
+            return failure(stabilizationError, statusJson());
+        }
         return failure(QStringLiteral("仿真已经在运行"), statusJson());
     }
     QString error;
@@ -1736,7 +1824,16 @@ HeadlessCommandResult HeadlessSession::stopCommand(const QJsonObject&)
         return success(data);
     }
     lastEngineError_.clear();
-    QMetaObject::invokeMethod(engine_, &SimulationEngine::stopSimulation, Qt::BlockingQueuedConnection);
+    QString engineError;
+    QMetaObject::invokeMethod(
+        engine_,
+        [engine = engine_, &engineError]
+        {
+            engine->stopSimulation();
+            engineError = engine->lastError();
+        },
+        Qt::BlockingQueuedConnection);
+    lastEngineError_ = std::move(engineError);
     simulationRunning_ = false;
     simulationConverged_ = false;
     refreshRuntimeStatus();
@@ -1746,6 +1843,11 @@ HeadlessCommandResult HeadlessSession::stopCommand(const QJsonObject&)
     }
     auto data = statusJson();
     data.insert(QStringLiteral("changed"), true);
+    data.insert(QStringLiteral("graceful"), lastEngineError_.isEmpty());
+    if (!lastEngineError_.isEmpty())
+    {
+        return failure(lastEngineError_, data);
+    }
     return success(data);
 }
 
@@ -1764,14 +1866,20 @@ HeadlessCommandResult HeadlessSession::waitCommand(const QJsonObject& command)
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
         QThread::msleep(1);
     }
-    refreshRuntimeStatus();
+    QString stabilizationError;
+    const auto stabilized = !isRunning() || stabilizeRuntime(&stabilizationError);
+    if (!isRunning())
+    {
+        refreshRuntimeStatus();
+    }
     const auto data = QJsonObject{{QStringLiteral("requested_ms"), milliseconds},
                                   {QStringLiteral("elapsed_ms"), timer.elapsed()},
                                   {QStringLiteral("running"), isRunning()},
                                   {QStringLiteral("converged"), simulationConverged_},
                                   {QStringLiteral("stats"), statsToJson(latestStats_)}};
     return interruptionFlag_ && interruptionFlag_->load(std::memory_order_relaxed) ? failure(QStringLiteral("操作被中断"), data)
-                                                                                   : success(data);
+           : !stabilized                                                            ? failure(stabilizationError, data)
+                                                                                    : success(data);
 }
 
 HeadlessCommandResult HeadlessSession::waitConvergedCommand(const QJsonObject& command)
@@ -1788,25 +1896,21 @@ HeadlessCommandResult HeadlessSession::waitConvergedCommand(const QJsonObject& c
     }
     QElapsedTimer timer;
     timer.start();
-    while (simulationRunning_ && !simulationConverged_ && timer.elapsed() < timeout &&
-           (!interruptionFlag_ || !interruptionFlag_->load(std::memory_order_relaxed)))
-    {
-        QThread::msleep(5);
-        refreshRuntimeStatus();
-    }
-    refreshRuntimeStatus();
+    QString stabilizationError;
+    const auto stabilized = stabilizeRuntime(&stabilizationError);
     auto data = QJsonObject{{QStringLiteral("converged"), simulationConverged_},
                             {QStringLiteral("elapsed_ms"), timer.elapsed()},
+                            {QStringLiteral("wall_elapsed_ms"), timer.elapsed()},
                             {QStringLiteral("timeout_ms"), timeout},
+                            {QStringLiteral("timeout_clock"), QStringLiteral("diagnostic_wall_clock")},
                             {QStringLiteral("stats"), statsToJson(latestStats_)}};
     if (interruptionFlag_ && interruptionFlag_->load(std::memory_order_relaxed))
     {
         return failure(QStringLiteral("操作被中断"), data);
     }
-    if (!simulationConverged_)
+    if (!stabilized)
     {
-        return failure(simulationRunning_ ? QStringLiteral("等待收敛超时") : QStringLiteral("仿真在收敛前停止"),
-                       data);
+        return failure(stabilizationError, data);
     }
     if (!flushEventRun())
     {
@@ -1842,6 +1946,10 @@ HeadlessCommandResult HeadlessSession::setRouterStateCommand(const QJsonObject& 
         return failure(QStringLiteral("字段 enabled 必须是布尔值"));
     }
     const auto enabled = command.value(QStringLiteral("enabled")).toBool();
+    if (!stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     QVector<RouterSnapshot> snapshots;
     QString engineError;
     SimulationStats stats;
@@ -1886,6 +1994,10 @@ HeadlessCommandResult HeadlessSession::toggleRouterCommand(const QJsonObject& co
             return failure(error);
         }
     }
+    if (!stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     QVector<RouterSnapshot> snapshots;
     QMetaObject::invokeMethod(engine_, [engine = engine_, &snapshots] { snapshots = engine->routerSnapshots(); },
                               Qt::BlockingQueuedConnection);
@@ -1924,6 +2036,10 @@ HeadlessCommandResult HeadlessSession::setLinkStateCommand(const QJsonObject& co
         return failure(QStringLiteral("字段 enabled 必须是布尔值"));
     }
     const auto enabled = command.value(QStringLiteral("enabled")).toBool();
+    if (!stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     const auto key = Topology::edgeKey(a, b);
     const auto changed = runtimeLinks_.value(key, topology_.findLink(a, b)->enabled) != enabled;
     QString engineError;
@@ -1990,6 +2106,10 @@ HeadlessCommandResult HeadlessSession::advertisePrefixCommand(const QJsonObject&
     {
         return failure(QStringLiteral("路由器不存在：%1").arg(router));
     }
+    if (!stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     const auto configChanged = !runtimeOriginatedPrefixes_.value(router).contains(prefix);
     bool routerActive = false;
     bool routePresent = false;
@@ -2043,6 +2163,10 @@ HeadlessCommandResult HeadlessSession::withdrawPrefixCommand(const QJsonObject& 
     if (!topology_.routers.contains(router))
     {
         return failure(QStringLiteral("路由器不存在：%1").arg(router));
+    }
+    if (!stabilizeRuntime(&error))
+    {
+        return failure(error);
     }
     const auto configChanged = runtimeOriginatedPrefixes_.value(router).contains(prefix);
     bool routePresent = false;
@@ -2178,6 +2302,11 @@ QJsonObject HeadlessSession::ribSnapshotToJson(const RibSnapshot& snapshot, cons
 
 HeadlessCommandResult HeadlessSession::routersCommand(const QJsonObject&)
 {
+    QString error;
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     QJsonArray routers;
     if (runtimeAvailable_)
     {
@@ -2220,6 +2349,10 @@ HeadlessCommandResult HeadlessSession::ribCommand(const QJsonObject& command)
     {
         return failure(error);
     }
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     RibSnapshot snapshot;
     QMetaObject::invokeMethod(engine_, [engine = engine_, router, &snapshot] { snapshot = engine->ribSnapshot(router); },
                               Qt::BlockingQueuedConnection);
@@ -2241,6 +2374,10 @@ HeadlessCommandResult HeadlessSession::peersCommand(const QJsonObject& command)
     if (!topology_.routers.contains(router))
     {
         return failure(QStringLiteral("路由器不存在：%1").arg(router));
+    }
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
     }
     QVector<PeerSnapshot> snapshots;
     QMetaObject::invokeMethod(engine_, [engine = engine_, router, &snapshots] { snapshots = engine->peerSnapshots(router); },
@@ -2273,6 +2410,10 @@ HeadlessCommandResult HeadlessSession::pathCommand(const QJsonObject& command)
     {
         return failure(QStringLiteral("路由器不存在：%1").arg(router));
     }
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
     QStringList path;
     bool found = false;
     QMetaObject::invokeMethod(
@@ -2298,7 +2439,11 @@ HeadlessCommandResult HeadlessSession::snapshotCommand(const QJsonObject& comman
     {
         return requireRuntime();
     }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    QString stabilizationError;
+    if (isRunning() && !stabilizeRuntime(&stabilizationError))
+    {
+        return failure(stabilizationError);
+    }
     QVector<RouterSnapshot> routerSnapshots;
     QMap<QString, RibSnapshot> ribs;
     QMap<QString, QVector<PeerSnapshot>> peersByRouter;
@@ -2313,8 +2458,10 @@ HeadlessCommandResult HeadlessSession::snapshotCommand(const QJsonObject& comman
         [engine = engine_, store = eventStore_, canFlushStore, &routerSnapshots, &ribs, &peersByRouter, &pathsByRouter,
          &capturedStats, &capturedAt, &storeError, &committedEventId]
         {
-            capturedAt = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
             capturedStats = engine->statsSnapshot();
+            capturedAt = QDateTime::fromMSecsSinceEpoch(SimulationEpochMilliseconds, QTimeZone::UTC)
+                             .addMSecs(capturedStats.elapsedMs)
+                             .toString(Qt::ISODateWithMs);
             routerSnapshots = engine->routerSnapshots();
             for (const auto& summary : routerSnapshots)
             {
@@ -2396,6 +2543,7 @@ HeadlessCommandResult HeadlessSession::snapshotCommand(const QJsonObject& comman
     }
     QJsonObject snapshot{{QStringLiteral("schema"), QStringLiteral("bgptester-runtime-snapshot-v1")},
                          {QStringLiteral("captured_at"), capturedAt},
+                         {QStringLiteral("captured_simulation_ms"), capturedStats.elapsedMs},
                          {QStringLiteral("topology_path"), topologyPath_},
                          {QStringLiteral("topology"), stableTopology.toJson()},
                          {QStringLiteral("topology_sha256"), topologySha256(stableTopology)},
@@ -2464,7 +2612,15 @@ HeadlessCommandResult HeadlessSession::queryEventsCommand(const QJsonObject& com
     {
         return failure(error);
     }
-    if (database == databasePath_ && !flushEventRun())
+    // A caller can name the active SQLite file through a case variant,
+    // symlink, junction, or hard link. Do not use path-string equality as the
+    // persistence barrier: whenever a run is open, make every database query
+    // observe a fully converged and committed engine/store boundary first.
+    if (eventRunOpen_ && isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
+    if (eventRunOpen_ && !flushEventRun())
     {
         return failure(lastStoreError_, statusJson());
     }
@@ -2519,7 +2675,11 @@ HeadlessCommandResult HeadlessSession::queryConvergenceCommand(const QJsonObject
     {
         return failure(error);
     }
-    if (database == databasePath_ && !flushEventRun())
+    if (eventRunOpen_ && isRunning() && !stabilizeRuntime(&error))
+    {
+        return failure(error);
+    }
+    if (eventRunOpen_ && !flushEventRun())
     {
         return failure(lastStoreError_, statusJson());
     }
@@ -2554,6 +2714,12 @@ HeadlessCommandResult HeadlessSession::flushLogsCommand(const QJsonObject&)
     {
         return failure(QStringLiteral("尚未创建 BMP 日志"));
     }
+    QString error;
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        flushEventRun();
+        return failure(error, statusJson());
+    }
     if (!flushEventRun())
     {
         return failure(lastStoreError_, statusJson());
@@ -2567,7 +2733,22 @@ HeadlessCommandResult HeadlessSession::flushLogsCommand(const QJsonObject&)
 
 HeadlessCommandResult HeadlessSession::exitCommand(const QJsonObject&)
 {
-    auto result = success(statusJson());
+    QString error;
+    HeadlessCommandResult result;
+    if (isRunning() && !stabilizeRuntime(&error))
+    {
+        flushEventRun();
+        result = failure(error, statusJson());
+    }
+    else if (eventRunOpen_ && !flushEventRun())
+    {
+        result = failure(lastStoreError_, statusJson());
+    }
+    else
+    {
+        refreshEventStoreStatus();
+        result = success(statusJson());
+    }
     result.exitRequested = true;
     return result;
 }

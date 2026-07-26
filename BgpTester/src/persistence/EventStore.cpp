@@ -10,6 +10,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QThread>
+#include <QTimeZone>
 #include <QVariant>
 
 #include <algorithm>
@@ -21,6 +22,26 @@ namespace bgptester
 {
 namespace
 {
+
+QDateTime parseLegacyUtcTimestamp(const QString& timestamp)
+{
+    if (timestamp.size() != 23 || timestamp.at(10) != u' ')
+    {
+        return {};
+    }
+    auto explicitUtc = timestamp;
+    explicitUtc[10] = u'T';
+    explicitUtc.append(u'Z');
+    return QDateTime::fromString(explicitUtc, Qt::ISODateWithMs);
+}
+
+bool hasExplicitTimeZone(const QString& timestamp)
+{
+    const auto size = timestamp.size();
+    return timestamp.endsWith(u'Z', Qt::CaseInsensitive) ||
+           (size >= 6 && (timestamp.at(size - 6) == u'+' || timestamp.at(size - 6) == u'-') &&
+            timestamp.at(size - 3) == u':');
+}
 
 // raw_json is the canonical SimulationEvent representation. These columns
 // are indexed/query projections and a compatibility fallback for legacy or
@@ -283,8 +304,8 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
     committedEventId_ = 0;
     ++runSerial_;
     const auto hardwareThreads = std::clamp(QThread::idealThreadCount(), 1, 256);
-    const auto requestedThreads = settings.workerThreads > 0 ? settings.workerThreads : hardwareThreads;
-    encodingPool_.setMaxThreadCount(std::clamp(requestedThreads, 1, hardwareThreads));
+    const auto requestedThreads = settings.workerThreads > 0 ? std::clamp(settings.workerThreads, 1, 256) : hardwareThreads;
+    encodingPool_.setMaxThreadCount(requestedThreads);
 
     QDir baseDirectory(settings.logDirectory);
     if (QDir::isRelativePath(settings.logDirectory))
@@ -318,7 +339,10 @@ bool EventStore::beginRun(const SimulationSettings& settings, QString* error)
     runDirectory_ = QDir(baseDirectory.filePath(leaf)).absolutePath();
     databasePath_ = QDir(runDirectory_).filePath(QStringLiteral("bmp_collector.sqlite"));
     logFile_.setFileName(QDir(runDirectory_).filePath(QStringLiteral("bmp_collector.log")));
-    if (!logFile_.open(QIODevice::WriteOnly | QIODevice::Text))
+    // JSONL is an interoperable deterministic artifact. Keep it in binary
+    // mode so every platform writes the explicit LF appended by persistBatch()
+    // instead of translating it to the host's native line ending.
+    if (!logFile_.open(QIODevice::WriteOnly | QIODevice::Truncate))
     {
         if (error)
         {
@@ -524,7 +548,7 @@ void EventStore::persistBatch(QVector<SimulationEvent> events)
     {
         if (!event.timestamp.isValid())
         {
-            event.timestamp = QDateTime::currentDateTime();
+            event.timestamp = QDateTime::fromMSecsSinceEpoch(SimulationEpochMilliseconds, QTimeZone::UTC);
         }
         if (event.id == 0)
         {
@@ -760,7 +784,7 @@ bool EventStore::insertEvent(const SimulationEvent& event, const QByteArray& raw
 {
     insertQuery_.bindValue(columnIndex(EventSqlColumn::Id), static_cast<qulonglong>(event.id));
     insertQuery_.bindValue(columnIndex(EventSqlColumn::Timestamp),
-                           event.timestamp.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz")));
+                           event.timestamp.toUTC().toString(Qt::ISODateWithMs));
     insertQuery_.bindValue(columnIndex(EventSqlColumn::Event), event.event);
     insertQuery_.bindValue(columnIndex(EventSqlColumn::Router), event.router);
     insertQuery_.bindValue(columnIndex(EventSqlColumn::FromPeer), event.from);
@@ -1038,8 +1062,10 @@ SimulationEvent EventStore::eventFromQuery(const QSqlQuery& query)
     // still restored opportunistically from any usable JSON object.
     SimulationEvent event;
     event.id = eventColumnValue(query, EventSqlColumn::Id).toULongLong();
-    event.timestamp = QDateTime::fromString(eventColumnValue(query, EventSqlColumn::Timestamp).toString(),
-                                            QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+    const auto storedTimestamp = eventColumnValue(query, EventSqlColumn::Timestamp).toString();
+    event.timestamp = hasExplicitTimeZone(storedTimestamp)
+                          ? QDateTime::fromString(storedTimestamp, Qt::ISODateWithMs)
+                          : parseLegacyUtcTimestamp(storedTimestamp);
     event.event = eventColumnValue(query, EventSqlColumn::Event).toString();
     event.router = eventColumnValue(query, EventSqlColumn::Router).toString();
     event.from = eventColumnValue(query, EventSqlColumn::FromPeer).toString();
