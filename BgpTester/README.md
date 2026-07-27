@@ -1,15 +1,18 @@
 # BgpTester
 
-`BgpTester` 是统一完成拓扑编辑与 BGP 测试的 Qt 6 / C++20 桌面程序。拓扑编辑、BGP 仿真、运行时扰动、RIB/Peer 检查、路径高亮和 BMP 风格日志浏览都位于同一窗口。
+`BgpTester` 提供 portable C++20 BGP 仿真核心与完整 JSONL CLI；默认构建不需要 Qt。可选的 Qt 6 桌面程序提供拓扑编辑、运行时扰动、RIB/Peer 检查、路径高亮和 BMP 风格日志浏览。
 
 ## 依赖
 
 - CMake 3.25 或更新版本
 - 支持 C++20 的编译器
-- Qt 6.5 或更新版本，需安装 `Core`、`Gui`、`Widgets`、`Network`、`Sql` 模块、SQLite driver，以及仅回归测试使用的 `Test` 模块
-- 与 Qt kit 匹配的构建工具（MinGW kit 通常使用 `mingw32-make`，其他 kit 可使用 Ninja）
+- 默认 CLI：不需要 Qt；CMake 固定获取 `nlohmann/json` 3.11.3，并优先使用已安装的 SQLite 开发包，未找到时获取 SQLite 3.45.3 amalgamation
+- 可选 GUI：带 Core、Gui、Widgets、Sql 和 SQLite 驱动的 Qt 6.5 或更新版本，以及与 Qt kit 匹配的构建工具；同时启用测试时还需要 Qt Test
 
-工程不使用 vcpkg，也不会自动下载依赖。Qt 与编译器由使用者自行安装；请确保所选编译器与 Qt kit 匹配，并把该 kit 的 `bin` 目录加入 `PATH`。`build.ps1` 会优先按 Qt kit 记录的 GCC 主版本，从 Qt 安装目录的 `Tools` 中选择对应 MinGW，避免误用 PATH 中 ABI 不匹配的编译器。
+工程不要求 vcpkg。默认构建不会探测 `qmake` 或 Qt；Windows 上即使 CMake
+未加入 `PATH`，`build.ps1` 也会尝试使用 Visual Studio 自带的 CMake。只有传入
+`-Gui` 时才解析 Qt kit；MinGW GUI 构建仍会按 kit 记录的 GCC 主版本选择匹配编译器。
+依赖归档尚未缓存时，首次 CMake 配置需要访问 GitHub 和 SQLite 官方下载地址。
 
 ## 构建
 
@@ -20,30 +23,37 @@ cd BgpTester
 .\build.ps1
 ```
 
-构建并复制 Qt 运行库到输出目录：
+在 portable CLI 之外构建 Qt 桌面程序：
 
 ```powershell
-.\build.ps1 -Configuration Release -Deploy
+.\build.ps1 -Gui -QtPrefix C:\path\to\Qt\6.x.x\msvc2022_64
 ```
 
-也可以手动配置：
+构建桌面程序并复制 Qt 运行库到输出目录：
 
 ```powershell
-cmake -S . -B build -G "MinGW Makefiles" `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_PREFIX_PATH="C:\path\to\Qt\6.x.x\mingw_64" `
-  -DCMAKE_CXX_COMPILER="C:\path\to\Qt\Tools\mingwXXXX_64\bin\g++.exe"
-cmake --build build
-ctest --test-dir build --output-on-failure
+.\build.ps1 -Gui -QtPrefix C:\path\to\Qt\6.x.x\msvc2022_64 -Deploy
 ```
 
-程序位于 `build/bin/BgpTester.exe`。
+`-Deploy` 只部署 Qt 桌面程序，因此必须与 `-Gui` 一起使用。运行 CLI 回归测试可执行
+`.\build.ps1 -Test`；GUI 构建的测试另需同时传入 `-Gui -Test`。
+
+也可以手动配置并运行默认 CLI 测试：
+
+```powershell
+cmake -S . -B build -DBGPTESTER_BUILD_GUI=OFF -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
+
+直接以 `build` 为二进制目录时，所有生成器都把可执行文件放在
+`build/bin/`；GUI 构建会同时生成 `BgpTesterCli` 和 `BgpTester`。`build.ps1`
+按配置使用独立二进制目录，因此 Release 产物位于 `build/Release/bin/`。
 
 ## 无 UI 命令行模式
 
-构建会同时生成控制台程序 `build/bin/BgpTesterCli.exe`。它使用
-`QCoreApplication`，不创建窗口、不读取 GUI 的 `QSettings`，也不依赖显示
-服务器。CLI 是一个有状态会话：同一进程内可以依次编辑拓扑、启动仿真、
+默认构建生成控制台程序 `build/bin/BgpTesterCli.exe`。它只链接 portable 核心、
+JSON 与 SQLite，不加载 Qt，也不依赖显示服务器。CLI 是一个有状态会话：同一进程内可以依次编辑拓扑、启动仿真、
 等待收敛、制造故障、查询 RIB/Peer/路径并导出结果。
 
 最快的完整示例：
@@ -105,14 +115,13 @@ stdout 始终只输出 JSONL，交互提示与诊断写入 stderr。
 只作用于 `router_ids`（省略时为全部路由器），链路延迟始终作用于全部链路。
 随机批量操作会返回并记录种子、种子来源、确定性随机算法版本及每个实际值。未给
 `seed` 时，种子由当前规范化拓扑和命令内容经版本化的 `bgptester-canonical-json-v1`
-编码稳定派生，不依赖 Qt JSON 输出格式；显式给出相同 `seed` 时，随机整数映射同样不依赖
+编码稳定派生，不依赖 JSON 库的对象输出顺序；显式给出相同 `seed` 时，随机整数映射同样不依赖
 C++ 标准库实现，因而两种方式都可以跨平台重放。GUI 批量随机
 配置也使用输入派生种子，并在状态栏显示算法版本和种子；实际 MRAI/延迟随拓扑保存。
 
 仿真运行期间拓扑编辑会像 GUI 一样锁定。运行时前缀发布、节点/链路状态只
-修改本次引擎状态，不会写回待保存的拓扑。交互模式停在提示符时，
-仿真与 BMP 落盘仍在独立线程中继续运行。CLI 每条运行时扰动在执行前自动耗尽上一
-个协议事件波，再在收敛边界提交；因此 `start` 后立即扰动和显式先执行
+修改本次引擎状态，不会写回待保存的拓扑。portable CLI 使用同步命令边界：每条运行时扰动在执行前自动耗尽上一
+个协议事件波，在收敛边界提交变更，并在变更后再次收敛再返回；因此 `start` 后立即扰动和显式先执行
 `wait_converged` 具有相同语义。`wait_converged.timeout_ms` 为兼容旧脚本继续接受，
 但只作为返回的墙钟诊断值，不会在慢机器上截断协议执行。`wait` 的等待时长仍是纯墙钟诊断，
 等待结束后返回的协议统计会先进入稳定边界。`status/get_stats`、RIB、Peer、Path、Snapshot 和当前日志查询也会先
@@ -135,9 +144,8 @@ CLI 保留 GUI 的 BMP 持久化格式。每次 `start` 仍会在
 stdout 仍保留同一 JSONL 协议。审计、JSONL 或 SQLite 的任一写入/提交失败
 都会传播为命令失败和非零退出码。`snapshot` 会稳定排序并返回所有路由器摘要、
 Loc-RIB、本地 RIB、Adj-RIB-In、Peer、逐跳路径、完整路径属性、运行时链路状态
-和动态起源前缀；其状态与 `committed_event_id` 在引擎暂停的同一临界区内捕获。
-提供 `path` 时还会原子写入独立 JSON 文件。该一致性屏障会在全量复制和日志刷新
-期间短暂暂停引擎，因此推荐先执行 `wait_converged` 再导出大型拓扑。
+和动态起源前缀；其状态与 `committed_event_id` 在同一个同步稳定边界内捕获。
+提供 `path` 时还会写入独立 JSON 文件。推荐先执行 `wait_converged` 再导出大型拓扑。
 
 `query_events` 与 GUI 历史过滤使用同一 SQLite 查询实现，并返回完整事件数、
 过滤后事件数、BGP 报文数及 `database_max_event_id`；查询当前运行时还返回
@@ -146,14 +154,15 @@ Loc-RIB、本地 RIB、Adj-RIB-In、Peer、逐跳路径、完整路径属性、�
 固定休眠来判定完成。
 
 脚本默认遇到首个失败命令后停止；`--keep-going` 会继续并最终返回非零状态。
-退出码 `0` 表示全部成功，`1` 是 Qt 命令行解析器报告的未知/缺值选项，
-`2` 表示命令、协议或运行期记录失败，`3` 表示互斥/重复拓扑参数或审计文件
+退出码 `0` 表示全部成功，`2` 表示命令、协议或运行期记录失败，`3` 表示命令行参数错误或审计文件
 创建失败，`130` 表示 Ctrl+C。正常退出和 Ctrl+C 都会停止仿真并阻塞刷新日志；
 Ctrl+C 也会取消正在构建的大型拓扑运行时。
 在某些终端上，交互提示符处的阻塞输入可能需再按一次 Enter 才能让 Ctrl+C
 进入收尾流程；自动化请优先通过 JSONL 发送 `exit`。
 
 ## 使用
+
+本节界面操作只适用于通过 `-Gui` 显式构建的可选 Qt 桌面程序。
 
 ### 编辑拓扑
 
@@ -192,26 +201,26 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 若某邻居既没有已提交的 Adj-RIB-Out 路由、待发送项，也没有已 flush 但尚未交付的 generation，撤销路径直接跳过；若存在 in-flight UPDATE，则先取消其 generation，防止后续复活已经撤销的幽灵路由；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定；
 - 引擎使用单一的整数虚拟时钟，从 `0 ms` 开始。事件以 `(dueAt, insertionOrder)` 构成全序；每次弹出事件时虚拟时钟直接推进到其 `dueAt`，绝不读取系统时钟或等待真实时间；
-- 每次事件循环固定处理最多 16384 个事件后让出执行权。批量边界只影响 UI 响应速度，不影响事件顺序、时间或结果；不再使用墙钟预算决定一个批次处理多少事件；
-- 每个收敛波最多弹出 10000000 个队列项，无效/过期项也计数。预算在异步和同步路径中共用且不会因重复调用而重置；最后一个预算内事件恰好清空队列时正常收敛，否则记录 `convergence_failed` 并冻结在该确定性边界，拒绝后续链路、节点和前缀变更，直到 `stop`/重新 `start`，避免振荡插件或零延迟循环永久占用线程；
-- 所有同步派生事件以当前虚拟时间为因果调度基准，插件 CPU、日志背压和机器负载不会逐跳累加进链路延迟。队列为空时，引擎在同一确定性步骤中推进完整静默窗口并确认收敛；
-- 所有来自 `QHash` / `QSet` 的语义遍历都先按稳定的区分大小写 Unicode 顺序规范化；路由指纹使用固定字节编码和固定算法，不依赖 Qt 哈希种子、字长或本机字节序；
+- 每个处理批次固定最多处理 16384 个事件。批量边界只影响调用方重新取得控制权的时机以及 GUI 响应速度，不影响事件顺序、时间或结果；不再使用墙钟预算决定一个批次处理多少事件；
+- 每个收敛波最多弹出 10000000 个队列项，无效/过期项也计数。预算在同一收敛波中共用且不会因重复调用而重置；最后一个预算内事件恰好清空队列时正常收敛，否则记录 `convergence_failed` 并冻结在该确定性边界，拒绝后续链路、节点和前缀变更，直到 `stop`/重新 `start`，避免振荡策略或零延迟循环永久占用调用线程；
+- 所有同步派生事件以当前虚拟时间为因果调度基准，策略计算、持久化耗时和机器负载不会逐跳累加进链路延迟。队列为空时，引擎在同一确定性步骤中推进完整静默窗口并确认收敛；
+- 所有来自无序容器的语义遍历都先按稳定的区分大小写字节顺序规范化；路由指纹使用固定字节编码和固定算法，不依赖标准库哈希种子、字长或本机字节序；
 - IPv4 地址和 CIDR 只接受四段 ASCII 十进制的规范形式（不接受缩写、前导零、符号或带前导零的前缀长度），不把输入边界交给平台网络解析器；
 - 协议事件的 `timestamp` 是固定 UTC 纪元 `2000-01-01T00:00:00Z` 加虚拟毫秒数，`detail.simulation_time_ms` 保存原始整数时间。`converged.duration_ms`（等于 `simulated_active_duration_ms`）止于最后协议活动，`simulated_duration_ms` 包含静默窗口；收敛记录不再混入墙钟字段。
 
-严格一致性的输入边界是：相同拓扑、相同 BgpTester/Qt 构建与内置/第三方插件版本，以及相同顺序的
+严格一致性的输入边界是：相同拓扑、相同 BgpTester portable 核心与内置/第三方策略版本，以及相同顺序的
 运行时操作。CLI 自动把每项操作串行化到稳定边界；GUI 在当前事件波收敛前禁用下一项
 扰动。直接嵌入 `SimulationEngine` 的调用者应使用 `runUntilConverged()` 建立同样的
 边界，或在同一线程中同步提交一个明确有序的批次。日志目录名、CLI 命令耗时等显式
 墙钟诊断不属于协议结果；最终 RIB、协议事件序列、虚拟时间、带 `Z` 的 UTC 持久化
 时间戳、收敛记录和统计计数属于确定性结果。缺少时区的旧日志统一把已写出的日历字段解释为 UTC，
 不再随读取机器的本地时区变化。事件分派及启动、停止、控制信号的直接回调不得重入控制 API；引擎会明确拒绝这类调用，
-不会把操作隐式投递到 Qt 事件队列。
+不会把操作隐式延后到其他队列或回调。
 
-## 路由器插件
+## 路由策略
 
 仿真引擎只管理事件队列、链路、BGP 会话传输和 RIB；每个节点对应一个
-`RouterNode` 插件实例。插件控制以下策略点：
+portable `RouterPolicy` 实例。策略控制以下扩展点：
 
 - 本地起源路由的创建；
 - UPDATE 入站接受、拒绝与属性修改；
@@ -221,48 +230,32 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 公共 TFP 属性/per-prefix override 的生成、导入和瞬态因果消费；
 - 仿真启动/停止及 Peer 状态通知。
 
-插件也是确定性边界的一部分：策略回调不得读取墙钟、系统熵、线程调度顺序、指针
+策略也是确定性边界的一部分：回调不得读取墙钟、系统熵、线程调度顺序、指针
 地址或未排序哈希容器；候选路由顺序由引擎规范为“本地路由优先，其余按区分大小写的
-Peer ID 排序”。同一插件二进制和同一输入必须返回相同输出。事件预算可以终止插件不断
-产生新事件的振荡，但无法抢占一个永不返回的单次插件回调；插件回调仍必须是有限、同步的计算。
+Peer ID 排序”。同一策略实现和同一输入必须返回相同输出。事件预算可以终止策略不断
+产生新事件的振荡，但无法抢占一个永不返回的单次回调；策略回调仍必须是有限、同步的计算。
 
-### 添加一个插件
+### 扩展 portable 策略
 
-公共接口位于 `src/plugin/RouterPlugin.hpp`。新增插件不需要修改任何 CMake
-文件，也不需要生成或复制 DLL：
+公共接口位于 `src/core/RouterPolicy.hpp`。实现 `RouterPolicy`，并在创建
+`SimulationEngine` 前通过 `RouterPolicyRegistry::registerPolicy` 注册工厂即可。
+工厂返回 `std::unique_ptr<RouterPolicy>`，接口只使用标准 C++ 与 portable 核心类型，不包含 Qt 类型。
+新增编译进 CLI 的策略源码时，需要将源文件加入 `bgptester_core` 目标。
 
-1. 在 `src/router_plugins/` 下添加同名的 `.hpp` 和 `.cpp` 文件；
-2. 在头文件中声明一个实现 `RouterNodePlugin` 的工厂类；
-3. `.cpp` 包含 `plugin/RouterPluginRegistry.hpp`，并在文件末尾注册该工厂：
+内置的 Standard BGP、Configurable Export 与 TFP Version 策略已经由 portable
+注册表提供。策略 ID 在进程内必须唯一，API 版本当前为 `5`；策略缺失、ID
+重复、API 版本不匹配或节点配置校验失败时，本次仿真不会启动。
 
-```cpp
-BGPTESTER_REGISTER_ROUTER_PLUGIN(my_namespace::MyRouterPlugin)
-```
-
-4. 正常执行 `build.ps1` 或 `cmake --build build`；
-5. 启动程序，新插件会直接出现在路由器属性的插件列表中。
-
-CMake 使用 `GLOB_RECURSE CONFIGURE_DEPENDS` 自动检测该目录中新加入或删除
-的源码。插件源码会直接编译进 BgpTester，不需要命令行参数、环境变量或
-额外部署步骤。子目录同样会被自动扫描。
-
-完整的两文件示例见：
-
-- `src/router_plugins/ConfigurableExportRouterPlugin.hpp`；
-- `src/router_plugins/ConfigurableExportRouterPlugin.cpp`。
-
-插件 ID 在进程内必须唯一，API 版本当前为 `5`。插件缺失、ID 重复、API
-版本不匹配或节点配置校验失败时，程序会给出错误且不会启动该次仿真。
 API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` 与
 `decisionCompleted(prefix)` 生命周期钩子，分别用于标记 bootstrap 边界、在经典
 `RouteEntry` 未变化时请求一次因果发布，以及在全部 peer 导出后安全消费本轮因果；
-不需要这些能力的插件可继续使用默认空实现。
+不需要这些能力的策略可继续使用默认空实现。
 
-### TFP 路径版本插件
+### TFP 路径版本策略
 
-内置源码插件 `org.bgptester.router.tfp-version` 实现路由器级实体版本机制：
+内置策略 `org.bgptester.router.tfp-version` 实现路由器级实体版本机制：
 
-- 实验讨论中口语所称的“FTP 路由器”就是该 TFP 插件，不是另一种路由器，也与文件传输协议 FTP 无关；
+- 实验讨论中口语所称的“FTP 路由器”就是该 TFP 策略，不是另一种路由器，也与文件传输协议 FTP 无关；
 - 每前缀 `TFP_VERSION_INFO` 分成稳定的 `DependencyVector` 与瞬态的
   `TriggerVector`：Dependency 随候选路径保存，Trigger 只作为当前 UPDATE/WITHDRAW
   的最小因果 delta，接收后从稳定路由剥离；
@@ -294,12 +287,12 @@ API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` �
 - TFP 信息逻辑上按前缀隔离；相同值使用一份公共属性，不同值使用 sidecar override。
   标准共享路径属性相同的多个 NLRI 仍保持一条 UPDATE/WITHDRAW，前缀过滤和 generation guard 会同步处理其元数据；
 - 纯 Dependency 或其他 TFP 元数据刷新不会推进 `LocalVer`、也不会凭空生成 Trigger；若选中路由的持久 Dependency 发生变化，可随普通聚合 UPDATE 刷新下游路径证明；
-- EBGP、IBGP 与 Route Reflector 继续使用标准插件的传播/选路规则；
+- EBGP、IBGP 与 Route Reflector 继续使用标准策略的传播/选路规则；
 - 仅由出口过滤或 split-horizon 产生的策略撤销不携带版本信息；
 - 64 位本地版本在同一次仿真及节点关闭/恢复期间保持单调，达到上限后饱和且不回绕；
   `initial_version` 可为十进制字符串，用来衔接外部持久化版本。部署方应在耗尽前轮换实体标识或迁移持久化基线。
 
-插件配置示例：
+拓扑中的策略配置示例（为兼容现有格式，字段名仍为 `plugin`）：
 
 ```json
 "plugin": {
@@ -315,7 +308,7 @@ API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` �
 只出现在仍携带该瞬态因果的报文记录中。Dependency-only bootstrap 报文不额外写入
 逐报文 TFP 明细；小拓扑携带 Trigger 的报文记录摘要，且对不超过 4 项的单前缀
 Trigger 保留可读向量。大型拓扑只保留聚合报文和固定间隔样本的摘要，不展开逐项
-向量，避免诊断日志和 SQLite 背压参与收敛时间。
+向量，避免诊断日志和 SQLite 写入耗时参与收敛时间。
 
 以下数据是墙钟驱动版本 R29 的历史性能基线，不可与当前纯离散事件引擎直接比较。
 固定 `misc/caida_topology_layout.json` 的最终 R29 同构建 headless 对照（4005 路由器、5464 链路、
@@ -340,7 +333,7 @@ TFP bootstrap 峰值工作集为 8.7135 GiB，较优化前 R28 的 15.7753 GiB �
 
 窗口底部的 BMP 监控器提供“事件日志”和“收敛时间”两个页面。事件日志页可通过“显示列”按钮或表头右键菜单选择要显示、隐藏的列，选择会在下次启动时恢复。收敛时间页实时显示当前状态，并为每轮分别显示协议活动时间和包含静默窗口的仿真确认时间；二者都来自确定性的虚拟时钟，不包含机器或日志耗时。每轮 BGP 报文数随 `converged` 事件持久化，因此重新打开日志仍可查看；旧日志未保存该字段时显示“—”。双击事件记录可查看完整 JSON；“打开历史”会在后台查询 SQLite，只把最近 20000 条匹配事件放入表格，并另外显示完整日志中的事件总数、过滤后事件数、BGP 报文总数和过滤后报文数。这里的“报文”严格指 `event=message_received`，不包含拓扑和收敛事件；一条包含多个前缀的聚合 UPDATE/WITHDRAW 仍只计一条报文。
 
-事件持久化运行在独立线程中。仿真线程先把批量事件放入有上限的队列，后台线程批量写入 JSONL 和 SQLite；队列达到上限时会对仿真施加背压，避免以内存无限堆积换取吞吐。GUI 每帧只抽取一批最近事件，实时表最多保留 20000 条，完整历史始终保存在日志文件中。
+portable CLI 的事件持久化在命令调用线程中同步写入 JSONL 和 SQLite，不依赖 Qt。可选 Qt GUI 保留旧的独立持久化线程与有界队列；GUI 每帧只抽取一批最近事件，实时表最多保留 20000 条，完整历史始终保存在日志文件中。
 
 ## JSON
 
@@ -356,8 +349,9 @@ TFP bootstrap 峰值工作集为 8.7135 GiB，较优化前 R28 的 15.7753 GiB �
 
 旧 `neighbors[].relationship` 使用本地路由器视角，可取 `unspecified`、`peer`、`provider` 或 `customer`。当 `links` 未显式给出 `enabled` 时，双向旧邻居条目的 `enabled` 按逻辑 AND 合并，即任一端为 `false` 时链路停用；双向 `relationship` 换算到链路视角后若互相矛盾，加载器会拒绝该拓扑。旧拓扑缺少商业关系字段时按 `unspecified` 处理，以保留原有普通 eBGP 行为。
 
-每台路由器可使用独立插件；旧拓扑未提供 `plugin` 时自动使用内置标准
-BGP 插件：
+每台路由器可选择独立策略；为兼容既有拓扑，JSON 字段名仍为 `plugin`。portable
+核心将其映射到 `RouterPolicyRegistry` 中已注册的策略，可选 Qt GUI 则映射到旧源码
+插件；旧拓扑未提供该字段时自动使用内置 Standard BGP：
 
 ```json
 "plugin": {
