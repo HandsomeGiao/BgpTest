@@ -16,6 +16,40 @@
 
 ## 构建
 
+### Linux CLI
+
+CLI 支持 Linux，使用标准 C++20、JSON 和 SQLite，不需要 Qt 或显示服务器。
+除上述依赖外，构建脚本需要 Bash，以及 Make 或 Ninja。建议安装系统 SQLite
+开发包（Debian/Ubuntu 的 `libsqlite3-dev`、Fedora 的 `sqlite-devel`）；未安装时
+CMake 会自动下载并编译 SQLite。
+
+```bash
+cd BgpTester
+./build.sh
+```
+
+脚本默认构建 Release，输出为 `build/Release/bin/BgpTesterCli`，并显式关闭
+GUI 和测试。脚本按自身位置定位工程，因此也可从仓库根目录执行
+`./BgpTester/build.sh`。常用参数：
+
+```bash
+./build.sh --config Debug --jobs 2
+./build.sh --generator Ninja
+./build.sh --help
+```
+
+`--config` 支持 `Debug`、`Release`、`RelWithDebInfo` 和 `MinSizeRel`；默认并行
+任务数读取 `CMAKE_BUILD_PARALLEL_LEVEL`，未设置时使用 CPU 数量，`--jobs` 可覆盖。
+默认生成器由 CMake 选择或沿用已有缓存；同一配置目录更换生成器或编译器前，
+需先移走该目录。`--` 后的参数传给 CMake 配置步骤，例如
+`./build.sh -- -DCMAKE_CXX_COMPILER=clang++`；也可传入
+`-DFETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON=/absolute/path/to/json` 使用预先解压的
+JSON 源码。离线构建还需预装 SQLite 开发包，或通过
+`-DFETCHCONTENT_SOURCE_DIR_SQLITE_AMALGAMATION=/absolute/path/to/sqlite-amalgamation`
+指定预先解压的 SQLite 源码。
+
+### Windows
+
 在 PowerShell 中：
 
 ```powershell
@@ -47,16 +81,26 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 直接以 `build` 为二进制目录时，所有生成器都把可执行文件放在
-`build/bin/`；GUI 构建会同时生成 `BgpTesterCli` 和 `BgpTester`。`build.ps1`
+`build/bin/`；GUI 构建会同时生成 `BgpTesterCli` 和 `BgpTester`。`build.ps1` 和 `build.sh`
 按配置使用独立二进制目录，因此 Release 产物位于 `build/Release/bin/`。
 
 ## 无 UI 命令行模式
 
-默认构建生成控制台程序 `build/bin/BgpTesterCli.exe`。它只链接 portable 核心、
+CLI 可执行文件在 Linux 上名为 `BgpTesterCli`，Windows 上名为 `BgpTesterCli.exe`。
+它只链接 portable 核心、
 JSON 与 SQLite，不加载 Qt，也不依赖显示服务器。CLI 是一个有状态会话：同一进程内可以依次编辑拓扑、启动仿真、
 等待收敛、制造故障、查询 RIB/Peer/路径并导出结果。
 
-最快的完整示例：
+使用 `build.sh` 构建后的 Linux 示例：
+
+```bash
+cd BgpTester
+./build/Release/bin/BgpTesterCli \
+  --topology topo/sample_topology.json \
+  --script topo/sample_headless_commands.jsonl
+```
+
+Windows 直接以 `build` 为二进制目录构建后的示例：
 
 ```powershell
 cd BgpTester

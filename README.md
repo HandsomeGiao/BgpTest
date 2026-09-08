@@ -27,6 +27,22 @@
 `nlohmann/json`；SQLite 优先使用系统开发包，未找到时自动获取官方
 amalgamation。依赖尚未缓存时，首次配置需要访问这些下载地址。
 
+Linux 的 CLI 已支持无 Qt、无显示服务器构建和运行。安装 CMake 3.25+、
+支持 C++20 的 C/C++ 工具链及 Make 或 Ninja 后，在 Bash 中执行：
+
+```bash
+cd BgpTester
+./build.sh
+./build/Release/bin/BgpTesterCli \
+  --topology topo/sample_topology.json \
+  --script topo/sample_headless_commands.jsonl
+```
+
+`build.sh` 默认构建 Release CLI，关闭 GUI 和测试；可用 `--config Debug`
+选择配置、`--jobs 2` 限制并行任务数，更多参数见 `./build.sh --help`。
+
+Windows 在 PowerShell 中执行：
+
 ```powershell
 cd BgpTester
 .\build.ps1
