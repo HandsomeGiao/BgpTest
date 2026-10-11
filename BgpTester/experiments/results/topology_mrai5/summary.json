@@ -1,0 +1,232 @@
+{
+  "raw_sha256": "346e489133291b4f5123e58c8b365eff21b7500570291c61c448d23c3d24cec7",
+  "runs": 544,
+  "phases": 1056,
+  "topologies": 28,
+  "scenarios": 34,
+  "mrai_ms": [
+    5000
+  ],
+  "failures": 0,
+  "all_phase_pairs": 264,
+  "disruption_pairs": 136,
+  "all_phase_comparisons": {
+    "network_intermediate_paths": {
+      "lower": 94,
+      "equal": 168,
+      "higher": 2
+    },
+    "network_invalid_as_path_selections": {
+      "lower": 92,
+      "equal": 172,
+      "higher": 0
+    },
+    "observer_intermediate_paths": {
+      "lower": 92,
+      "equal": 170,
+      "higher": 2
+    },
+    "observer_path_changes": {
+      "lower": 84,
+      "equal": 166,
+      "higher": 14
+    },
+    "observer_last_path_change_ms": {
+      "lower": 84,
+      "equal": 178,
+      "higher": 2
+    },
+    "convergence_ms": {
+      "lower": 26,
+      "equal": 24,
+      "higher": 214
+    },
+    "updates_sent": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 264
+    },
+    "announcements_sent": {
+      "lower": 24,
+      "equal": 128,
+      "higher": 112
+    },
+    "withdrawals_sent": {
+      "lower": 16,
+      "equal": 136,
+      "higher": 112
+    },
+    "control_updates_sent": {
+      "lower": 0,
+      "equal": 4,
+      "higher": 260
+    },
+    "proxy_unreachable_ms": {
+      "lower": 72,
+      "equal": 158,
+      "higher": 34
+    },
+    "proxy_no_route_ms": {
+      "lower": 8,
+      "equal": 214,
+      "higher": 42
+    },
+    "proxy_unreachable_while_origin_connected_ms": {
+      "lower": 56,
+      "equal": 202,
+      "higher": 6
+    },
+    "estimated_extension_bytes": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 264
+    }
+  },
+  "disruption_comparisons": {
+    "network_intermediate_paths": {
+      "lower": 94,
+      "equal": 42,
+      "higher": 0
+    },
+    "network_invalid_as_path_selections": {
+      "lower": 92,
+      "equal": 44,
+      "higher": 0
+    },
+    "observer_intermediate_paths": {
+      "lower": 92,
+      "equal": 44,
+      "higher": 0
+    },
+    "observer_path_changes": {
+      "lower": 84,
+      "equal": 44,
+      "higher": 8
+    },
+    "observer_last_path_change_ms": {
+      "lower": 84,
+      "equal": 50,
+      "higher": 2
+    },
+    "convergence_ms": {
+      "lower": 26,
+      "equal": 0,
+      "higher": 110
+    },
+    "updates_sent": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    },
+    "announcements_sent": {
+      "lower": 24,
+      "equal": 84,
+      "higher": 28
+    },
+    "withdrawals_sent": {
+      "lower": 16,
+      "equal": 28,
+      "higher": 92
+    },
+    "control_updates_sent": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    },
+    "proxy_unreachable_ms": {
+      "lower": 72,
+      "equal": 30,
+      "higher": 34
+    },
+    "proxy_no_route_ms": {
+      "lower": 8,
+      "equal": 86,
+      "higher": 42
+    },
+    "proxy_unreachable_while_origin_connected_ms": {
+      "lower": 56,
+      "equal": 74,
+      "higher": 6
+    },
+    "estimated_extension_bytes": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    }
+  },
+  "initial_observer_path_mismatches": 0,
+  "initial_network_path_mismatches": 0,
+  "same_initial_network_disruption_comparisons": {
+    "network_intermediate_paths": {
+      "lower": 94,
+      "equal": 42,
+      "higher": 0
+    },
+    "network_invalid_as_path_selections": {
+      "lower": 92,
+      "equal": 44,
+      "higher": 0
+    },
+    "observer_intermediate_paths": {
+      "lower": 92,
+      "equal": 44,
+      "higher": 0
+    },
+    "observer_path_changes": {
+      "lower": 84,
+      "equal": 44,
+      "higher": 8
+    },
+    "observer_last_path_change_ms": {
+      "lower": 84,
+      "equal": 50,
+      "higher": 2
+    },
+    "convergence_ms": {
+      "lower": 26,
+      "equal": 0,
+      "higher": 110
+    },
+    "updates_sent": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    },
+    "announcements_sent": {
+      "lower": 24,
+      "equal": 84,
+      "higher": 28
+    },
+    "withdrawals_sent": {
+      "lower": 16,
+      "equal": 28,
+      "higher": 92
+    },
+    "control_updates_sent": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    },
+    "proxy_unreachable_ms": {
+      "lower": 72,
+      "equal": 30,
+      "higher": 34
+    },
+    "proxy_no_route_ms": {
+      "lower": 8,
+      "equal": 86,
+      "higher": 42
+    },
+    "proxy_unreachable_while_origin_connected_ms": {
+      "lower": 56,
+      "equal": 74,
+      "higher": 6
+    },
+    "estimated_extension_bytes": {
+      "lower": 0,
+      "equal": 0,
+      "higher": 136
+    }
+  },
+  "note": "Constructed mechanism tests and fixed delay permutations; not independent statistical samples or Internet averages."
+}

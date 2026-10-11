@@ -1,0 +1,36 @@
+{
+  "matrix_runs": 544,
+  "matrix_phases": 1056,
+  "failures": 0,
+  "matrix_replay": {
+    "matched_runs": 544,
+    "note": "All measurements match the first run; phase_start_ms and invalid_as_path_applicable were added as diagnostics afterward."
+  },
+  "trace_replay": {
+    "matched_runs": 12,
+    "independently_reconstructed_network_path_sequence_phases": 22
+  },
+  "quick_option_check": {
+    "runs": 12,
+    "mrai_ms": [
+      5000
+    ],
+    "exactly_matches_regular_run": true
+  },
+  "compressed_archive_recreates_csv_tables_summary": true,
+  "input_and_result_sha256_verified": true,
+  "ctest": {
+    "passed": 7,
+    "failed": 0,
+    "tests": [
+      "BgpTesterCliTests",
+      "BgpTesterCliEditTests",
+      "BgpTesterTests",
+      "BgpTesterDeterminismTests",
+      "BgpTesterVersionedTests",
+      "BgpTesterVersionedScenarios",
+      "BgpTesterVersionedMatrix"
+    ]
+  },
+  "raw_sha256": "346e489133291b4f5123e58c8b365eff21b7500570291c61c448d23c3d24cec7"
+}

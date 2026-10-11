@@ -1,0 +1,291 @@
+{
+  "simulation": {
+    "name": "grid-3x3",
+    "log_dir": "tmp",
+    "convergence_quiet_ms": 0,
+    "withdrawal_ignores_mrai": true
+  },
+  "routers": [
+    {
+      "id": "O",
+      "router_id": "10.0.0.1",
+      "asn": 65001,
+      "originated_prefixes": [
+        "192.0.2.0/24",
+        "198.51.100.0/24"
+      ],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 80,
+        "y": 80
+      }
+    },
+    {
+      "id": "G10",
+      "router_id": "10.0.0.2",
+      "asn": 65002,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 310,
+        "y": 80
+      }
+    },
+    {
+      "id": "G20",
+      "router_id": "10.0.0.3",
+      "asn": 65003,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 540,
+        "y": 80
+      }
+    },
+    {
+      "id": "G01",
+      "router_id": "10.0.0.4",
+      "asn": 65004,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 80,
+        "y": 310
+      }
+    },
+    {
+      "id": "G11",
+      "router_id": "10.0.0.5",
+      "asn": 65005,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 310,
+        "y": 310
+      }
+    },
+    {
+      "id": "G21",
+      "router_id": "10.0.0.6",
+      "asn": 65006,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 540,
+        "y": 310
+      }
+    },
+    {
+      "id": "G02",
+      "router_id": "10.0.0.7",
+      "asn": 65007,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 80,
+        "y": 540
+      }
+    },
+    {
+      "id": "G12",
+      "router_id": "10.0.0.8",
+      "asn": 65008,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 310,
+        "y": 540
+      }
+    },
+    {
+      "id": "G22",
+      "router_id": "10.0.0.9",
+      "asn": 65009,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 540,
+        "y": 540
+      }
+    }
+  ],
+  "links": [
+    {
+      "a": "O",
+      "b": "G10",
+      "enabled": true,
+      "delay_ms": 4,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "G01",
+      "enabled": true,
+      "delay_ms": 8,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G10",
+      "b": "G20",
+      "enabled": true,
+      "delay_ms": 5,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G10",
+      "b": "G11",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G20",
+      "b": "G21",
+      "enabled": true,
+      "delay_ms": 12,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G01",
+      "b": "G11",
+      "enabled": true,
+      "delay_ms": 7,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G01",
+      "b": "G02",
+      "enabled": true,
+      "delay_ms": 9,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G11",
+      "b": "G21",
+      "enabled": true,
+      "delay_ms": 8,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G11",
+      "b": "G12",
+      "enabled": true,
+      "delay_ms": 11,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G21",
+      "b": "G22",
+      "enabled": true,
+      "delay_ms": 13,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G02",
+      "b": "G12",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "G12",
+      "b": "G22",
+      "enabled": true,
+      "delay_ms": 11,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    }
+  ]
+}

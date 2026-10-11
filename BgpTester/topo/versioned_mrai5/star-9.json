@@ -1,0 +1,247 @@
+{
+  "simulation": {
+    "name": "star-9",
+    "log_dir": "tmp",
+    "convergence_quiet_ms": 0,
+    "withdrawal_ignores_mrai": true
+  },
+  "routers": [
+    {
+      "id": "O",
+      "router_id": "10.0.0.1",
+      "asn": 65001,
+      "originated_prefixes": [
+        "192.0.2.0/24",
+        "198.51.100.0/24"
+      ],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 420
+      }
+    },
+    {
+      "id": "R1",
+      "router_id": "10.0.0.2",
+      "asn": 65002,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 657.47,
+        "y": 619.26
+      }
+    },
+    {
+      "id": "R2",
+      "router_id": "10.0.0.3",
+      "asn": 65003,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 473.83,
+        "y": 725.29
+      }
+    },
+    {
+      "id": "R3",
+      "router_id": "10.0.0.4",
+      "asn": 65004,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 265.0,
+        "y": 688.47
+      }
+    },
+    {
+      "id": "R4",
+      "router_id": "10.0.0.5",
+      "asn": 65005,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 128.7,
+        "y": 526.03
+      }
+    },
+    {
+      "id": "R5",
+      "router_id": "10.0.0.6",
+      "asn": 65006,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 128.7,
+        "y": 313.97
+      }
+    },
+    {
+      "id": "R6",
+      "router_id": "10.0.0.7",
+      "asn": 65007,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 265.0,
+        "y": 151.53
+      }
+    },
+    {
+      "id": "R7",
+      "router_id": "10.0.0.8",
+      "asn": 65008,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 473.83,
+        "y": 114.71
+      }
+    },
+    {
+      "id": "R8",
+      "router_id": "10.0.0.9",
+      "asn": 65009,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 657.47,
+        "y": 220.74
+      }
+    }
+  ],
+  "links": [
+    {
+      "a": "O",
+      "b": "R1",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R2",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R3",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R4",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R5",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R6",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R7",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "O",
+      "b": "R8",
+      "enabled": true,
+      "delay_ms": 10,
+      "relationship": "unspecified",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    }
+  ]
+}

@@ -1,0 +1,1281 @@
+{
+  "schema": "bgptester-versioned-scenarios-v1",
+  "mrai_ms": [
+    5000
+  ],
+  "modes": [
+    "standard",
+    "path_only",
+    "local",
+    "full"
+  ],
+  "delay_scales": [
+    1,
+    3
+  ],
+  "withdrawal_ignores_mrai": [
+    true,
+    false
+  ],
+  "scenarios": [
+    {
+      "name": "shared_loss",
+      "topology": "../topo/versioned_mrai5/shared-dependency.json",
+      "family": "shared_dependency",
+      "description": "共同依赖失效，有独立备用",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "local_link_loss",
+      "topology": "../topo/versioned_mrai5/shared-dependency.json",
+      "family": "shared_dependency",
+      "description": "单条分支链路失效，另一分支仍可用",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "A",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "A",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "export_only",
+      "topology": "../topo/versioned_mrai5/shared-dependency.json",
+      "family": "shared_dependency",
+      "description": "仅撤销 A 对 X 的导出，保留共享状态",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "filter",
+          "actions": [
+            {
+              "kind": "export",
+              "at_ms": 0,
+              "router": "A",
+              "peer": "X",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "export",
+              "at_ms": 0,
+              "router": "A",
+              "peer": "X",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "rapid_recovery",
+      "topology": "../topo/versioned_mrai5/shared-dependency.json",
+      "family": "shared_dependency",
+      "description": "共享依赖断开后 3 ms 恢复",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "flap",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            },
+            {
+              "kind": "link",
+              "at_ms": 3,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "origin_withdraw",
+      "topology": "../topo/versioned_mrai5/shared-dependency.json",
+      "family": "shared_dependency",
+      "description": "唯一源撤销目标前缀，另一前缀继续发布",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "reroute",
+      "topology": "../topo/versioned_mrai5/reroute.json",
+      "family": "reroute",
+      "description": "共同依赖节点自身绕行",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "metadata_gap",
+      "topology": "../topo/versioned_mrai5/reroute-without-independent-backup.json",
+      "family": "metadata_gap",
+      "description": "退役事实先到，新正向声明等待 MRAI",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "flap",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            },
+            {
+              "kind": "link",
+              "at_ms": 3,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "multi_origin",
+      "topology": "../topo/versioned_mrai5/multiple-origins.json",
+      "family": "multi_origin",
+      "description": "撤销双起源中的一个",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw_one_origin",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "restore_origin",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ibgp_border",
+      "topology": "../topo/versioned_mrai5/ibgp-border.json",
+      "family": "ibgp",
+      "description": "同 AS 多边界，经普通 iBGP 传播",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ibgp_origin",
+      "topology": "../topo/versioned_mrai5/ibgp-origin.json",
+      "family": "ibgp",
+      "description": "空 AS_PATH 的 iBGP 本地起源",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "BIN",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "BIN",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout",
+      "topology": "../topo/versioned_mrai5/eight-shared-branches.json",
+      "family": "fanout",
+      "description": "8 分支引用相同旧依赖",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "mrai_cascade",
+      "topology": "../topo/versioned_mrai5/mrai-exploration-cascade.json",
+      "family": "cascade",
+      "description": "中间路径发布触发下游一轮 MRAI",
+      "delay_seed": null,
+      "observer": "Y",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "chain_withdraw",
+      "topology": "../topo/versioned_mrai5/chain-8.json",
+      "family": "chain",
+      "description": "8 节点链，唯一传播路径",
+      "delay_seed": null,
+      "observer": "R7",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "star_withdraw",
+      "topology": "../topo/versioned_mrai5/star-9.json",
+      "family": "star",
+      "description": "单中心 8 叶节点，无替代路径",
+      "delay_seed": null,
+      "observer": "R8",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "tree_withdraw",
+      "topology": "../topo/versioned_mrai5/tree-15.json",
+      "family": "tree",
+      "description": "15 节点二叉树，分叉但不重汇合",
+      "delay_seed": null,
+      "observer": "R14",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "independent_failure",
+      "topology": "../topo/versioned_mrai5/independent-diamond.json",
+      "family": "independent",
+      "description": "首选分支断开，独立备用有效",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "A",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "A",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ring_withdraw",
+      "topology": "../topo/versioned_mrai5/ring-8.json",
+      "family": "ring",
+      "description": "8 节点环，唯一源撤销",
+      "delay_seed": null,
+      "observer": "R3",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ring_failure",
+      "topology": "../topo/versioned_mrai5/ring-8.json",
+      "family": "ring",
+      "description": "8 节点环单边断开，可反向绕行",
+      "delay_seed": null,
+      "observer": "R3",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "O",
+              "b": "R1",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "O",
+              "b": "R1",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "grid_withdraw",
+      "topology": "../topo/versioned_mrai5/grid-3x3.json",
+      "family": "grid",
+      "description": "3×3 网格，多个重叠替代路径",
+      "delay_seed": null,
+      "observer": "G22",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "grid_failure",
+      "topology": "../topo/versioned_mrai5/grid-3x3.json",
+      "family": "grid",
+      "description": "3×3 网格，起源的一条邻边失效",
+      "delay_seed": null,
+      "observer": "G20",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "O",
+              "b": "G10",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "O",
+              "b": "G10",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "clique6_withdraw",
+      "topology": "../topo/versioned_mrai5/clique-6.json",
+      "family": "clique",
+      "description": "6 节点全互联，唯一源撤销",
+      "delay_seed": null,
+      "observer": "R5",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "clique8_withdraw",
+      "topology": "../topo/versioned_mrai5/clique-8.json",
+      "family": "clique",
+      "description": "8 节点全互联，唯一源撤销",
+      "delay_seed": null,
+      "observer": "R7",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "clique_cut",
+      "topology": "../topo/versioned_mrai5/clique-shared-neck.json",
+      "family": "clique",
+      "description": "6 节点全互联经单一出口接起源，出口断开",
+      "delay_seed": null,
+      "observer": "R5",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": false,
+          "unaffected_prefix_reachable": false
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "tiered_failure",
+      "topology": "../topo/versioned_mrai5/tiered-policy.json",
+      "family": "tiered",
+      "description": "双上游加 peer，执行商业偏好与 valley-free",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "P1",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "P1",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "layered_failure",
+      "topology": "../topo/versioned_mrai5/layered-3x3.json",
+      "family": "layered",
+      "description": "两层 3×3 分支反复合流，共享出口断开",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout2",
+      "topology": "../topo/versioned_mrai5/fanout-2-ordered.json",
+      "family": "fanout",
+      "description": "2 分支，退役按偏好先后到达",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout4",
+      "topology": "../topo/versioned_mrai5/fanout-4-ordered.json",
+      "family": "fanout",
+      "description": "4 分支，退役按偏好先后到达",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout16",
+      "topology": "../topo/versioned_mrai5/fanout-16-ordered.json",
+      "family": "fanout",
+      "description": "16 分支，退役按偏好先后到达",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout32",
+      "topology": "../topo/versioned_mrai5/fanout-32-ordered.json",
+      "family": "fanout",
+      "description": "32 分支，退役按偏好先后到达",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout8_reverse",
+      "topology": "../topo/versioned_mrai5/fanout-8-reverse.json",
+      "family": "fanout_order",
+      "description": "8 分支延迟排列 reverse",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout8_equal",
+      "topology": "../topo/versioned_mrai5/fanout-8-equal.json",
+      "family": "fanout_order",
+      "description": "8 分支延迟排列 equal",
+      "delay_seed": null,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout8_shuffled_7",
+      "topology": "../topo/versioned_mrai5/fanout-8-shuffled-7.json",
+      "family": "fanout_order",
+      "description": "8 分支延迟排列 shuffled，seed=7",
+      "delay_seed": 7,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout8_shuffled_19",
+      "topology": "../topo/versioned_mrai5/fanout-8-shuffled-19.json",
+      "family": "fanout_order",
+      "description": "8 分支延迟排列 shuffled，seed=19",
+      "delay_seed": 19,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout8_shuffled_42",
+      "topology": "../topo/versioned_mrai5/fanout-8-shuffled-42.json",
+      "family": "fanout_order",
+      "description": "8 分支延迟排列 shuffled，seed=42",
+      "delay_seed": 42,
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,470 @@
+{
+  "simulation": {
+    "name": "fanout-8-shuffled-19",
+    "log_dir": "tmp",
+    "convergence_quiet_ms": 0,
+    "withdrawal_ignores_mrai": true
+  },
+  "routers": [
+    {
+      "id": "O",
+      "router_id": "10.1.0.100",
+      "asn": 65001,
+      "originated_prefixes": [
+        "192.0.2.0/24",
+        "198.51.100.0/24"
+      ],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 50,
+        "y": 250
+      }
+    },
+    {
+      "id": "D",
+      "router_id": "10.1.0.101",
+      "asn": 65002,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 200,
+        "y": 250
+      }
+    },
+    {
+      "id": "R00",
+      "router_id": "10.1.0.102",
+      "asn": 65003,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 30.0
+      }
+    },
+    {
+      "id": "R01",
+      "router_id": "10.1.0.103",
+      "asn": 65004,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 122.86
+      }
+    },
+    {
+      "id": "R02",
+      "router_id": "10.1.0.104",
+      "asn": 65005,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 215.71
+      }
+    },
+    {
+      "id": "R03",
+      "router_id": "10.1.0.105",
+      "asn": 65006,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 308.57
+      }
+    },
+    {
+      "id": "R04",
+      "router_id": "10.1.0.106",
+      "asn": 65007,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 401.43
+      }
+    },
+    {
+      "id": "R05",
+      "router_id": "10.1.0.107",
+      "asn": 65008,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 494.29
+      }
+    },
+    {
+      "id": "R06",
+      "router_id": "10.1.0.108",
+      "asn": 65009,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 587.14
+      }
+    },
+    {
+      "id": "R07",
+      "router_id": "10.1.0.109",
+      "asn": 65010,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 420,
+        "y": 680.0
+      }
+    },
+    {
+      "id": "X",
+      "router_id": "10.1.0.110",
+      "asn": 65011,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 640,
+        "y": 250
+      }
+    },
+    {
+      "id": "C",
+      "router_id": "10.1.0.111",
+      "asn": 65012,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 490,
+        "y": 750
+      }
+    },
+    {
+      "id": "E",
+      "router_id": "10.1.0.112",
+      "asn": 65013,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 330,
+        "y": 750
+      }
+    },
+    {
+      "id": "F",
+      "router_id": "10.1.0.113",
+      "asn": 65014,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 180,
+        "y": 750
+      }
+    }
+  ],
+  "links": [
+    {
+      "a": "D",
+      "b": "O",
+      "enabled": true,
+      "delay_ms": 5,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R00",
+      "enabled": true,
+      "delay_ms": 51,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R00",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R01",
+      "enabled": true,
+      "delay_ms": 21,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R01",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R02",
+      "enabled": true,
+      "delay_ms": 31,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R02",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R03",
+      "enabled": true,
+      "delay_ms": 11,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R03",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R04",
+      "enabled": true,
+      "delay_ms": 71,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R04",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R05",
+      "enabled": true,
+      "delay_ms": 41,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R05",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R06",
+      "enabled": true,
+      "delay_ms": 61,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R06",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "D",
+      "b": "R07",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "R07",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "C",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "E",
+      "b": "C",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "F",
+      "b": "E",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "F",
+      "b": "O",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    }
+  ]
+}

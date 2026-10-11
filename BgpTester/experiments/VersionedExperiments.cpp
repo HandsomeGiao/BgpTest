@@ -87,7 +87,49 @@ struct PhaseMetrics
     std::uint64_t sent = 0, received = 0, announces = 0, withdrawals = 0, controls = 0, extensionBytes = 0;
     std::uint64_t choices = 0, unusableChoices = 0, metadataSelections = 0;
     Json sequence = Json::array();
+    // Count changes in the advertised path even when learnedFrom is unchanged.
+    // Version-only refreshes do not count as path exploration.
+    std::map<std::string, Json> previousPaths;
+    Json pathSequences = Json::object();
 };
+
+Json selectedPath(const SimulationEngine& engine, const std::string& router, const std::string& prefix)
+{
+    const auto rib = engine.ribSnapshot(qs(router));
+    const auto route = rib.locRib.constFind(qs(prefix));
+    if (route == rib.locRib.cend()) return {{"present", false}, {"peer", ""}, {"as_path", Json::array()}};
+    return {{"present", true}, {"peer", jsonValue(route->learnedFrom)}, {"as_path", jsonValue(route->attributes.asPath)}};
+}
+
+// A necessary AS-adjacency/origin check, not a forwarding or freshness oracle.
+// Only defined for one-router-per-AS fixtures: hidden iBGP support is ambiguous.
+Json invalidAsPath(const SimulationEngine& engine, const Topology& topology,
+                   const std::string& router, const std::string& prefix, const Json& path)
+{
+    std::map<std::string, quint32> asns;
+    std::set<quint32> unique;
+    for (const auto& node : topology.routers)
+    {
+        if (!unique.insert(node.asn).second) return nullptr;
+        asns[node.id.toStdString()] = node.asn;
+    }
+    if (!path.at("present").get<bool>()) return false;
+    std::vector<quint32> sequence{asns.at(router)};
+    for (const auto& asn : path.at("as_path"))
+        if (sequence.back() != asn.get<quint32>()) sequence.push_back(asn.get<quint32>());
+    for (std::size_t i = 1; i < sequence.size(); ++i)
+    {
+        bool adjacent = false;
+        for (const auto& edge : topology.links)
+            if (edge.enabled && ((asns.at(edge.a.toStdString()) == sequence[i-1] && asns.at(edge.b.toStdString()) == sequence[i]) ||
+                                 (asns.at(edge.b.toStdString()) == sequence[i-1] && asns.at(edge.a.toStdString()) == sequence[i])))
+                adjacent = true;
+        if (!adjacent) return true;
+    }
+    for (const auto& node : topology.routers)
+        if (node.asn == sequence.back() && engine.ribSnapshot(node.id).localRoutes.contains(qs(prefix))) return false;
+    return true;
+}
 
 void validateForest(const Json& graph)
 {
@@ -186,6 +228,22 @@ Json run(const Json& scenario, const fs::path& suiteDirectory, const std::string
             }
             if (event.event == "message_received" && event.messageType == "UPDATE") ++metrics.received;
             require(event.event != "versioned_withdrawal_rejected", "withdrawal binding mismatch in valid traffic");
+            if (event.event == "route_selected" && event.details.value("prefix") == qs(prefix))
+            {
+                const auto router = event.router.toStdString();
+                const auto peer = event.details.value("learned_from").toStdString();
+                const auto asPath = Json::parse(event.details.value("as_path").toStdString());
+                const bool present = !peer.empty() || !asPath.empty() || engine.ribSnapshot(event.router).localRoutes.contains(qs(prefix));
+                const Json path{{"present", present}, {"peer", peer}, {"as_path", asPath}};
+                if (metrics.previousPaths.at(router) != path)
+                {
+                    metrics.previousPaths[router] = path;
+                    if (!metrics.pathSequences.contains(router)) metrics.pathSequences[router] = Json::array();
+                    metrics.pathSequences[router].push_back({
+                        {"at_ms", event.timestamp.toMSecsSinceEpoch() - SimulationEpochMilliseconds - metrics.start},
+                        {"path", path}, {"invalid_as_path", invalidAsPath(engine, topology, router, prefix, path)}});
+                }
+            }
             if (event.event == "route_selected" && event.router == qs(observer) && event.details.value("prefix") == qs(prefix))
             {
                 ++metrics.metadataSelections;
@@ -218,11 +276,20 @@ Json run(const Json& scenario, const fs::path& suiteDirectory, const std::string
         metrics = {};
         metrics.active = true;
         metrics.start = metrics.lastAt = metrics.lastChoiceAt = engine.statsSnapshot().elapsedMs;
+        if (trace.is_open())
+            trace << Json{{"event", "experiment_phase_started"}, {"phase", phase.at("name")}, {"time_ms", metrics.start}}.dump() << '\n';
         metrics.previousStatus = forwardingProxy(engine, topology, observer, prefix);
         metrics.previousOriginConnected = originConnected(engine, topology, observer, prefix);
         const auto initialRib = engine.ribSnapshot(qs(observer));
         if (initialRib.locRib.contains(qs(prefix))) metrics.previousPeer = initialRib.locRib.value(qs(prefix)).learnedFrom.toStdString();
         const auto initialPeer = metrics.previousPeer;
+        Json initialPaths = Json::object();
+        for (const auto& router : topology.routers)
+        {
+            const auto id = router.id.toStdString();
+            initialPaths[id] = selectedPath(engine, id, prefix);
+            metrics.previousPaths[id] = initialPaths[id];
+        }
         for (const auto& action : phase.at("actions"))
         {
             const auto at = metrics.start + action.at("at_ms").get<std::int64_t>();
@@ -252,8 +319,37 @@ Json run(const Json& scenario, const fs::path& suiteDirectory, const std::string
         require(converged, "phase " + phase.at("name").get<std::string>() + ": " + engine.lastError().toStdString());
         const auto status = forwardingProxy(engine, topology, observer, prefix);
         require((status == "reachable") == phase.at("observer_reachable").get<bool>(), "unexpected final reachability");
-        require(forwardingProxy(engine, topology, observer, scenario.at("unaffected_prefix")) == "reachable",
-                "unrelated prefix lost");
+        require((forwardingProxy(engine, topology, observer, scenario.at("unaffected_prefix")) == "reachable") ==
+                phase.value("unaffected_prefix_reachable", true), "unexpected unrelated-prefix reachability");
+        Json finalPaths = Json::object();
+        std::uint64_t pathChanges = 0, intermediate = 0, invalid = 0;
+        std::uint64_t observerPathChanges = 0, observerIntermediate = 0, observerInvalid = 0;
+        std::int64_t observerLastPathChange = 0;
+        for (const auto& router : topology.routers)
+        {
+            const auto id = router.id.toStdString();
+            const auto finalPath = selectedPath(engine, id, prefix);
+            finalPaths[id] = finalPath;
+            require(finalPath == metrics.previousPaths.at(id), "path sequence does not match final RIB");
+            if (finalPath.at("present").get<bool>())
+                require(forwardingProxy(engine, topology, id, prefix) == "reachable", "stable route has a broken forwarding proxy at " + id);
+            if (!metrics.pathSequences.contains(id)) continue;
+            for (const auto& choice : metrics.pathSequences.at(id))
+            {
+                ++pathChanges;
+                const bool isIntermediate = choice.at("path").at("present").get<bool>() && choice.at("path") != finalPath;
+                const bool isInvalid = choice.at("invalid_as_path") == true;
+                intermediate += isIntermediate;
+                invalid += isInvalid;
+                if (id == observer)
+                {
+                    ++observerPathChanges;
+                    observerIntermediate += isIntermediate;
+                    observerInvalid += isInvalid;
+                    observerLastPathChange = choice.at("at_ms").get<std::int64_t>();
+                }
+            }
+        }
         Json graph = Json::object();
         std::uint64_t historicalNodes = 0, watermarks = 0;
         if (mode != "standard")
@@ -273,11 +369,18 @@ Json run(const Json& scenario, const fs::path& suiteDirectory, const std::string
             graph = engine.ribSnapshot(qs(observer)).policyDiagnostics.at("prefixes").at(prefix);
         }
         phases.push_back({
-            {"name", phase.at("name")}, {"convergence_ms", engine.statsSnapshot().elapsedMs - metrics.start},
+            {"name", phase.at("name")}, {"phase_start_ms", metrics.start},
+            {"convergence_ms", engine.statsSnapshot().elapsedMs - metrics.start},
             {"observer_last_change_ms", metrics.lastChoiceAt - metrics.start},
             {"initial_peer", initialPeer}, {"final_peer", metrics.previousPeer}, {"final_status", status},
             {"observer_changes", metrics.choices}, {"observer_metadata_selections", metrics.metadataSelections},
             {"observer_unusable_selections", metrics.unusableChoices},
+            {"observer_path_changes", observerPathChanges}, {"observer_last_path_change_ms", observerLastPathChange},
+            {"observer_intermediate_paths", observerIntermediate}, {"observer_invalid_as_path_selections", observerInvalid},
+            {"network_path_changes", pathChanges}, {"network_intermediate_paths", intermediate},
+            {"network_invalid_as_path_selections", invalid}, {"initial_paths", initialPaths}, {"final_paths", finalPaths},
+            {"invalid_as_path_applicable", !invalidAsPath(engine, topology, observer, prefix, finalPaths.at(observer)).is_null()},
+            {"network_path_sequences", metrics.pathSequences},
             {"proxy_no_route_ms", metrics.durations["no_route"]}, {"proxy_broken_ms", metrics.durations["broken"]},
             {"proxy_loop_ms", metrics.durations["loop"]},
             {"proxy_unreachable_while_origin_connected_ms", metrics.durations["connected_but_unreachable"]},
@@ -286,6 +389,9 @@ Json run(const Json& scenario, const fs::path& suiteDirectory, const std::string
             {"estimated_extension_bytes", metrics.extensionBytes}, {"observer_choices", metrics.sequence},
             {"historical_nodes_all_prefixes", historicalNodes}, {"watermarks_all_prefixes", watermarks},
             {"observer_graph", graph}});
+        if (trace.is_open())
+            trace << Json{{"event", "experiment_phase_finished"}, {"phase", phase.at("name")},
+                          {"time_ms", engine.statsSnapshot().elapsedMs}}.dump() << '\n';
         metrics.active = false;
     }
     engine.stopSimulation();
@@ -314,13 +420,22 @@ int main(int argc, char** argv)
         require(input.good(), "cannot open suite");
         Json suite; input >> suite;
         Json results = Json::array(), errors = Json::array();
+        const auto mrais = suite.value("mrai_ms", std::vector<int>{1000,5000,30000});
+        require(!mrais.empty(), "empty MRAI matrix");
         for (const auto& scenario : suite.at("scenarios"))
-            for (const auto& mode : {"standard", "path_only", "local", "full"})
-                for (int mrai : quick ? std::vector<int>{1000} : suite.value("mrai_ms", std::vector<int>{1000,5000,30000}))
-                    for (int scale : quick ? std::vector<int>{1} : std::vector<int>{1,3})
-                    for (bool bypass : {true, false})
+        {
+            std::cerr << "Running " << scenario.at("name").get<std::string>() << '\n';
+            for (const auto& mode : suite.value("modes", std::vector<std::string>{"standard", "path_only", "local", "full"}))
+                for (int mrai : quick ? std::vector<int>{mrais.front()} : mrais)
+                    for (int scale : quick ? std::vector<int>{1} : suite.value("delay_scales", std::vector<int>{1,3}))
+                    for (bool bypass : suite.value("withdrawal_ignores_mrai", std::vector<bool>{true, false}))
                     {
-                        try { results.push_back(run(scenario, suitePath.parent_path(), mode, mrai, scale, bypass, traces)); }
+                        try
+                        {
+                            require(mode == "standard" || mode == "path_only" || mode == "local" || mode == "full", "unknown mode");
+                            require(mrai >= 0 && scale > 0, "invalid timing configuration");
+                            results.push_back(run(scenario, suitePath.parent_path(), mode, mrai, scale, bypass, traces));
+                        }
                         catch (const std::exception& error)
                         {
                             errors.push_back({{"scenario",scenario.at("name")},{"mode",mode},{"mrai_ms",mrai},
@@ -328,12 +443,15 @@ int main(int argc, char** argv)
                             std::cerr << errors.back().dump() << '\n';
                         }
                     }
+        }
         if (!outputPath.parent_path().empty()) fs::create_directories(outputPath.parent_path());
         std::ofstream output(outputPath);
         output << Json{{"schema","bgptester-versioned-results-v1"}, {"runs",results}, {"errors",errors}, {"engine","Qt RouterNodePlugin"},
                        {"forwarding_metric","learnedFrom control-plane proxy; no packet/IGP/FIB simulation"},
                        {"byte_metric","estimated extension payload, not serialized BGP/TCP wire bytes"},
                        {"control_scheduling","retirement records bypass MRAI, route UPDATEs retain configured MRAI"},
+                       {"path_metric","changes of (presence, learnedFrom, AS_PATH); excludes version-only refreshes; intermediate means nonempty and different from final path"},
+                       {"invalid_path_metric","missing active AS adjacency or originating AS at selection time; only one-router-per-AS topologies; not a forwarding oracle"},
                        {"transport","generation guards before transmission; in-flight messages remain ordered"}}.dump(2) << '\n';
         output.flush();
         require(output.good(), "cannot write results");

@@ -361,6 +361,21 @@ python3 BgpTester/experiments/summarize_versioned_results.py \
 
 诊断使用沿 `learnedFrom` 的控制面转发代理，不模拟真实数据包、IGP 或 FIB。大原始 JSON 与轨迹由命令生成且不纳入版本控制。实验启用详细追踪，计数选择 `message_sent`，避免同时统计发送与接收事件。图快照包含候选引用、后继、污染标记、最高版本和历史节点数。
 
+#### 固定 5 秒 MRAI 的多拓扑对照
+
+新增的[实验报告](experiments/results/topology_mrai5/REPORT.md)覆盖 **28 个拓扑、34 个场景、544 组运行、1056 个阶段**，包括链、星、树、独立菱形、环、网格、全互联、商业分层、两层汇合、2–32 分支共享依赖、多起源和普通 iBGP。所有生成拓扑的双向 MRAI 均为 5000 ms；另测两档链路延迟、两种撤销调度及分支延迟排列。
+
+```bash
+# 在 BgpTest 目录，使用上节构建的 Qt 插件实验程序
+python3 BgpTester/experiments/run_topology_sweep.py \
+  --binary BgpTester/build/versioned/bin/BgpTesterExperiments
+# 安装 Matplotlib 后可加 --plots 生成 PNG/PDF
+```
+
+完整实现把 8 节点全互联起源撤销的全网中间路径选择从 75 次降到 0 次，队列清空从 15.138 秒降到 0.080 秒；32 分支从 31 次降到 0 次，但 UPDATE 从 64 条增至 4484 条。退役先到的快速恢复仍有 4.987 秒无路由反例。以上是延迟倍率 1、撤销旁路开启的构造结果。
+
+[场景矩阵](experiments/topology_sweep_mrai5.json)、[全部数据表](experiments/results/topology_mrai5/TABLES.md)、[CSV](experiments/results/topology_mrai5/phases.csv)和[压缩原始结果](experiments/results/topology_mrai5/raw_results.json.gz)可用于复核。本轮新增的统计覆盖下一跳不变而 AS_PATH 改变的探索，区分观察点与全网，并排除纯版本刷新。汇总脚本仅需 Python 标准库，绘图另需 Matplotlib。`--quick` 取输入矩阵的首个 MRAI，因此新矩阵仍为 5 秒，旧矩阵为 1 秒。
+
 ### TFP 路径版本策略
 
 以下 TFP 历史性能记录来自当时版本；Qt 引擎的 generation guard 现已移至发送点，旧数值不是当前实现的复测结果。新插件使用上节秒级矩阵，portable `src/core` 未作修改。

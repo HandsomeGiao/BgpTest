@@ -33,7 +33,7 @@ def main():
         writer = csv.DictWriter(output, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: json.dumps(v, separators=(",", ":"), sort_keys=True) if isinstance(v, list) else v
+            writer.writerow({k: json.dumps(v, separators=(",", ":"), sort_keys=True) if isinstance(v, (list, dict)) else v
                              for k, v in row.items()})
 
     keys = ("scenario", "phase", "mrai_ms", "delay_scale", "withdrawal_ignores_mrai")

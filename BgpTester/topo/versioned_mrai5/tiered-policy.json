@@ -1,0 +1,210 @@
+{
+  "simulation": {
+    "name": "tiered-policy",
+    "log_dir": "tmp",
+    "convergence_quiet_ms": 0,
+    "withdrawal_ignores_mrai": true
+  },
+  "routers": [
+    {
+      "id": "O",
+      "router_id": "10.0.0.1",
+      "asn": 65001,
+      "originated_prefixes": [
+        "192.0.2.0/24",
+        "198.51.100.0/24"
+      ],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 350,
+        "y": 60
+      }
+    },
+    {
+      "id": "P1",
+      "router_id": "10.0.0.2",
+      "asn": 65002,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 160,
+        "y": 220
+      }
+    },
+    {
+      "id": "P2",
+      "router_id": "10.0.0.3",
+      "asn": 65003,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 530,
+        "y": 220
+      }
+    },
+    {
+      "id": "C1",
+      "router_id": "10.0.0.4",
+      "asn": 65004,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 160,
+        "y": 430
+      }
+    },
+    {
+      "id": "C2",
+      "router_id": "10.0.0.5",
+      "asn": 65005,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 530,
+        "y": 430
+      }
+    },
+    {
+      "id": "X",
+      "router_id": "10.0.0.6",
+      "asn": 65006,
+      "originated_prefixes": [],
+      "plugin": {
+        "id": "org.bgptester.router.versioned-path",
+        "settings": {
+          "mode": "full"
+        }
+      },
+      "position": {
+        "x": 350,
+        "y": 610
+      }
+    }
+  ],
+  "links": [
+    {
+      "a": "P1",
+      "b": "O",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P2",
+      "b": "O",
+      "enabled": true,
+      "delay_ms": 30,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P1",
+      "b": "C1",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P1",
+      "b": "C2",
+      "enabled": true,
+      "delay_ms": 30,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P2",
+      "b": "C1",
+      "enabled": true,
+      "delay_ms": 25,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P2",
+      "b": "C2",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "C1",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "C2",
+      "b": "X",
+      "enabled": true,
+      "delay_ms": 1,
+      "relationship": "a_provider",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    },
+    {
+      "a": "P1",
+      "b": "P2",
+      "enabled": true,
+      "delay_ms": 5,
+      "relationship": "peer",
+      "mrai_ms_from_a": 5000,
+      "mrai_ms_from_b": 5000,
+      "rr_client_from_a": false,
+      "rr_client_from_b": false
+    }
+  ]
+}
