@@ -8,6 +8,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BGPTESTER_BUILD_GUI "Build the optional Qt 6 desktop application" OFF)
 
+option(BGPTESTER_BUILD_ROUTER_EXPERIMENTS "Build source-router plugin tests and experiments (Qt Core/Sql, no GUI)" OFF)
+
 include(FetchContent)
 
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
@@ -93,8 +95,8 @@ add_custom_command(TARGET BgpTesterCli POST_BUILD
         "$<TARGET_FILE_DIR:BgpTesterCli>/topo"
 )
 
-if(BGPTESTER_BUILD_GUI)
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Sql)
+if(BGPTESTER_BUILD_GUI OR BGPTESTER_BUILD_ROUTER_EXPERIMENTS)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Core Sql)
 
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTOUIC ON)
@@ -119,6 +121,7 @@ if(BGPTESTER_BUILD_GUI)
     target_link_libraries(bgptester_qt_router_plugins PRIVATE
         Qt6::Core
         Qt6::Sql
+        nlohmann_json::nlohmann_json
     )
     bgptester_enable_warnings(bgptester_qt_router_plugins)
 
@@ -137,9 +140,19 @@ if(BGPTESTER_BUILD_GUI)
         PUBLIC
             Qt6::Core
             Qt6::Sql
+            nlohmann_json::nlohmann_json
     )
     bgptester_enable_warnings(bgptester_qt_core)
 
+    add_executable(BgpTesterExperiments experiments/VersionedExperiments.cpp)
+    target_sources(BgpTesterExperiments PRIVATE $<TARGET_OBJECTS:bgptester_qt_router_plugins>)
+    target_link_libraries(BgpTesterExperiments PRIVATE bgptester_qt_core)
+    bgptester_enable_warnings(BgpTesterExperiments)
+    bgptester_set_runtime_output(BgpTesterExperiments)
+endif()
+
+if(BGPTESTER_BUILD_GUI)
+    find_package(Qt6 6.5 REQUIRED COMPONENTS Gui Widgets)
     qt_add_executable(BgpTester WIN32
         src/main.cpp
         src/ui/Dialogs.cpp
@@ -197,8 +210,7 @@ if(BUILD_TESTING)
         TIMEOUT 30
     )
 
-    if(BGPTESTER_BUILD_GUI)
-        find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+    if(BGPTESTER_BUILD_GUI OR BGPTESTER_BUILD_ROUTER_EXPERIMENTS)
 
         add_executable(BgpTesterTests
             tests/CoreTests.cpp
@@ -219,6 +231,28 @@ if(BUILD_TESTING)
         )
         set_tests_properties(BgpTesterDeterminismTests PROPERTIES TIMEOUT 120)
 
+    endif()
+
+    if(BGPTESTER_BUILD_GUI OR BGPTESTER_BUILD_ROUTER_EXPERIMENTS)
+        add_executable(BgpTesterVersionedTests tests/VersionedPathTests.cpp)
+        target_sources(BgpTesterVersionedTests PRIVATE $<TARGET_OBJECTS:bgptester_qt_router_plugins>)
+        target_link_libraries(BgpTesterVersionedTests PRIVATE bgptester_qt_core)
+        bgptester_enable_warnings(BgpTesterVersionedTests)
+        bgptester_set_runtime_output(BgpTesterVersionedTests)
+        add_test(NAME BgpTesterVersionedTests COMMAND BgpTesterVersionedTests)
+        add_test(NAME BgpTesterVersionedScenarios COMMAND BgpTesterExperiments
+            "${CMAKE_CURRENT_SOURCE_DIR}/experiments/versioned_scenarios.json"
+            "${CMAKE_BINARY_DIR}/versioned_quick_results.json" --quick)
+        add_test(NAME BgpTesterVersionedMatrix COMMAND ${CMAKE_COMMAND}
+            "-DEXPERIMENT_EXECUTABLE=$<TARGET_FILE:BgpTesterExperiments>"
+            "-DSUITE=${CMAKE_CURRENT_SOURCE_DIR}/experiments/versioned_scenarios.json"
+            "-DRESULTS=${CMAKE_BINARY_DIR}/versioned_matrix_results.json"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyVersionedMatrix.cmake")
+        set_tests_properties(BgpTesterVersionedScenarios BgpTesterVersionedMatrix PROPERTIES TIMEOUT 180)
+    endif()
+
+    if(BGPTESTER_BUILD_GUI)
+        find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
         add_executable(BgpTesterUiTests
             tests/UiTests.cpp
             src/ui/Dialogs.cpp

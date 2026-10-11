@@ -9,6 +9,7 @@
 - JSON 拓扑加载、保存与旧拓扑方向字段读取；
 - portable 核心通过 `RouterPolicyRegistry` 注册节点级策略，内置 Standard BGP、Configurable Export 与 TFP Version；拓扑继续使用 `plugin` 字段保存策略 ID 和私有 JSON 配置；
 - 可选 Qt 桌面目标保留旧源码插件的编译期自动发现；
+- 版本化路径依赖图路由器：可达通告与 WITHDRAW 均携带版本，按共享依赖批量排除旧候选，使用 `src/router_plugins` 插件接口，附带 8 种拓扑、12 个场景的可复现实验；
 - 路由器级 TFP 路径版本策略通过依赖/触发向量提前排除必然失效的旧路径；
 - 事件驱动 BGP OPEN、UPDATE、NOTIFICATION 仿真；
 - Adj-RIB-In、Loc-RIB、Adj-RIB-Out、EBGP、IBGP 和基础 Route Reflector；
@@ -20,6 +21,8 @@
 - BMP 风格实时事件表、全列过滤、JSON 详情、JSONL 和 SQLite 历史日志；
 - 完整的无 UI `BgpTesterCli`，可用 JSONL/标准输入完成拓扑编辑、仿真扰动、RIB/Peer/路径查询、全量快照与命令审计；
 - 默认无 Qt 的 CLI 场景回归测试；启用 GUI 后另有旧 Qt 核心与界面测试。
+
+版本化路径插件的配置、1/5/30 秒 MRAI 下的 576 组实验及可用性反例见 [实验说明](BgpTester/README.md#版本化路径依赖图实验)。该路由器使用 Qt 源码插件机制；无界面实验也运行同一插件，portable `src/core` 保持原样。
 
 ## 构建
 

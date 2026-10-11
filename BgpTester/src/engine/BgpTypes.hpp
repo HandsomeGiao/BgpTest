@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/Topology.hpp"
+#include "engine/VersionedPathAttributes.hpp"
 
 #include <QDateTime>
 #include <QHash>
@@ -116,6 +117,7 @@ struct PathAttributes
     QStringList clusterList;
     QMap<QString, QString> communities;
     std::optional<TfpVersionInfo> tfpVersionInfo;
+    std::optional<VersionedPath> versionedPath;
 
     bool operator==(const PathAttributes&) const = default;
 };
@@ -140,6 +142,9 @@ struct BgpMessage
 
     quint32 openAsn = 0;
     QString openRouterId;
+    bool versionedPathCapability = false;
+    QMap<QString, WithdrawalBinding> versionedWithdrawals;
+    std::vector<StateRecord> stateRecords;
     QStringList nlri;
     QStringList withdrawn;
     std::optional<RouteEntry> advertisedRoute;
@@ -183,6 +188,7 @@ struct RibSnapshot
     QHash<QString, RouteEntry> localRoutes;
     QHash<QString, RouteEntry> locRib;
     QHash<QString, QHash<QString, RouteEntry>> adjRibIn;
+    nlohmann::json policyDiagnostics = nlohmann::json::object();
 };
 
 struct SimulationEvent

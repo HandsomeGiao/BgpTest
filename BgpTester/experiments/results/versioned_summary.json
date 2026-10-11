@@ -1,0 +1,6934 @@
+{
+  "comparison_note": "Counts describe this constructed suite only; phases are not statistical samples.",
+  "delay_scales": [
+    1,
+    3
+  ],
+  "failures": 0,
+  "full_vs_standard_phase_counts": {
+    "convergence_ms": {
+      "equal": 12,
+      "higher": 240,
+      "lower": 12
+    },
+    "observer_changes": {
+      "equal": 162,
+      "higher": 36,
+      "lower": 66
+    },
+    "observer_last_change_ms": {
+      "equal": 162,
+      "higher": 36,
+      "lower": 66
+    },
+    "proxy_no_route_ms": {
+      "equal": 216,
+      "higher": 48,
+      "lower": 0
+    },
+    "proxy_unreachable_ms": {
+      "equal": 156,
+      "higher": 48,
+      "lower": 60
+    },
+    "updates_sent": {
+      "equal": 0,
+      "higher": 264,
+      "lower": 0
+    }
+  },
+  "measurement": {
+    "byte_metric": "estimated extension payload, not serialized BGP/TCP wire bytes",
+    "control_scheduling": "retirement records bypass MRAI, route UPDATEs retain configured MRAI",
+    "engine": "Qt RouterNodePlugin",
+    "forwarding_metric": "learnedFrom control-plane proxy; no packet/IGP/FIB simulation",
+    "transport": "generation guards before transmission; in-flight messages remain ordered"
+  },
+  "modes": [
+    "full",
+    "local",
+    "path_only",
+    "standard"
+  ],
+  "mrai_seconds": [
+    1.0,
+    5.0,
+    30.0
+  ],
+  "phases": 1056,
+  "representative_phases": [
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 4,
+      "updates_sent": 4,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 81,
+      "convergence_seconds": 0.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 336,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 8,
+      "updates_sent": 8,
+      "watermarks_all_prefixes": 52,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 12,
+      "convergence_ms": 160,
+      "convergence_seconds": 0.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 58,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "shared_loss",
+      "updates_received": 20,
+      "updates_sent": 20,
+      "watermarks_all_prefixes": 62,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 36,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4080,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 56,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "shared_loss",
+      "updates_received": 44,
+      "updates_sent": 44,
+      "watermarks_all_prefixes": 98,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 1081,
+      "convergence_seconds": 1.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 1081,
+      "convergence_seconds": 1.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 5081,
+      "convergence_seconds": 5.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 5081,
+      "convergence_seconds": 5.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 30081,
+      "convergence_seconds": 30.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 11,
+      "control_updates_sent": 0,
+      "convergence_ms": 30081,
+      "convergence_seconds": 30.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 81,
+      "observer_last_change_seconds": 0.081,
+      "observer_metadata_selections": 3,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 13,
+      "updates_sent": 13,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 2
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 1081,
+      "convergence_seconds": 1.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 1081,
+      "convergence_seconds": 1.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 5081,
+      "convergence_seconds": 5.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 5081,
+      "convergence_seconds": 5.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 30081,
+      "convergence_seconds": 30.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 0,
+      "convergence_ms": 30081,
+      "convergence_seconds": 30.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1328,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 90,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 0,
+      "proxy_broken_seconds": 0.0,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 0,
+      "proxy_unreachable_seconds": 0.0,
+      "proxy_unreachable_while_origin_connected_ms": 0,
+      "proxy_unreachable_while_origin_connected_seconds": 0.0,
+      "scenario": "metadata_gap",
+      "updates_received": 26,
+      "updates_sent": 26,
+      "watermarks_all_prefixes": 46,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 1160,
+      "convergence_seconds": 1.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 1002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 1002,
+      "observer_last_change_seconds": 1.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 974,
+      "proxy_no_route_seconds": 0.974,
+      "proxy_unreachable_ms": 976,
+      "proxy_unreachable_seconds": 0.976,
+      "proxy_unreachable_while_origin_connected_ms": 976,
+      "proxy_unreachable_while_origin_connected_seconds": 0.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 2081,
+      "convergence_seconds": 2.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 2002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 2002,
+      "observer_last_change_seconds": 2.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 1974,
+      "proxy_no_route_seconds": 1.974,
+      "proxy_unreachable_ms": 1976,
+      "proxy_unreachable_seconds": 1.976,
+      "proxy_unreachable_while_origin_connected_ms": 1976,
+      "proxy_unreachable_while_origin_connected_seconds": 1.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 5160,
+      "convergence_seconds": 5.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 5002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 5002,
+      "observer_last_change_seconds": 5.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 4974,
+      "proxy_no_route_seconds": 4.974,
+      "proxy_unreachable_ms": 4976,
+      "proxy_unreachable_seconds": 4.976,
+      "proxy_unreachable_while_origin_connected_ms": 4976,
+      "proxy_unreachable_while_origin_connected_seconds": 4.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 10081,
+      "convergence_seconds": 10.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 10002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 10002,
+      "observer_last_change_seconds": 10.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 9974,
+      "proxy_no_route_seconds": 9.974,
+      "proxy_unreachable_ms": 9976,
+      "proxy_unreachable_seconds": 9.976,
+      "proxy_unreachable_while_origin_connected_ms": 9976,
+      "proxy_unreachable_while_origin_connected_seconds": 9.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 30160,
+      "convergence_seconds": 30.16,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 30002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 30002,
+      "observer_last_change_seconds": 30.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 29974,
+      "proxy_no_route_seconds": 29.974,
+      "proxy_unreachable_ms": 29976,
+      "proxy_unreachable_seconds": 29.976,
+      "proxy_unreachable_while_origin_connected_ms": 29976,
+      "proxy_unreachable_while_origin_connected_seconds": 29.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 22,
+      "control_updates_sent": 36,
+      "convergence_ms": 60081,
+      "convergence_seconds": 60.081,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 4148,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 94,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 6,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 81,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        },
+        {
+          "as_path": [],
+          "at_ms": 94,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 60002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 60002,
+      "observer_last_change_seconds": 60.002,
+      "observer_metadata_selections": 6,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 59974,
+      "proxy_no_route_seconds": 59.974,
+      "proxy_unreachable_ms": 59976,
+      "proxy_unreachable_seconds": 59.976,
+      "proxy_unreachable_while_origin_connected_ms": 59976,
+      "proxy_unreachable_while_origin_connected_seconds": 59.976,
+      "scenario": "metadata_gap",
+      "updates_received": 66,
+      "updates_sent": 66,
+      "watermarks_all_prefixes": 54,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 1163,
+      "convergence_seconds": 1.163,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 1002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 1002,
+      "observer_last_change_seconds": 1.002,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 987,
+      "proxy_no_route_seconds": 0.987,
+      "proxy_unreachable_ms": 988,
+      "proxy_unreachable_seconds": 0.988,
+      "proxy_unreachable_while_origin_connected_ms": 988,
+      "proxy_unreachable_while_origin_connected_seconds": 0.988,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 2002,
+      "convergence_seconds": 2.002,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "B",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 1081,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        }
+      ],
+      "observer_last_change_ms": 1081,
+      "observer_last_change_seconds": 1.081,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 1066,
+      "proxy_no_route_seconds": 1.066,
+      "proxy_unreachable_ms": 1067,
+      "proxy_unreachable_seconds": 1.067,
+      "proxy_unreachable_while_origin_connected_ms": 1067,
+      "proxy_unreachable_while_origin_connected_seconds": 1.067,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 5163,
+      "convergence_seconds": 5.163,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 5002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 5002,
+      "observer_last_change_seconds": 5.002,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 4987,
+      "proxy_no_route_seconds": 4.987,
+      "proxy_unreachable_ms": 4988,
+      "proxy_unreachable_seconds": 4.988,
+      "proxy_unreachable_while_origin_connected_ms": 4988,
+      "proxy_unreachable_while_origin_connected_seconds": 4.988,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 10002,
+      "convergence_seconds": 10.002,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "B",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 5081,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        }
+      ],
+      "observer_last_change_ms": 5081,
+      "observer_last_change_seconds": 5.081,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 5066,
+      "proxy_no_route_seconds": 5.066,
+      "proxy_unreachable_ms": 5067,
+      "proxy_unreachable_seconds": 5.067,
+      "proxy_unreachable_while_origin_connected_ms": 5067,
+      "proxy_unreachable_while_origin_connected_seconds": 5.067,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 30163,
+      "convergence_seconds": 30.163,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "A",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65001
+          ],
+          "at_ms": 30002,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        }
+      ],
+      "observer_last_change_ms": 30002,
+      "observer_last_change_seconds": 30.002,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 29987,
+      "proxy_no_route_seconds": 29.987,
+      "proxy_unreachable_ms": 29988,
+      "proxy_unreachable_seconds": 29.988,
+      "proxy_unreachable_while_origin_connected_ms": 29988,
+      "proxy_unreachable_while_origin_connected_seconds": 29.988,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 20,
+      "control_updates_sent": 132,
+      "convergence_ms": 60002,
+      "convergence_seconds": 60.002,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 10824,
+      "final_peer": "B",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 86,
+      "initial_peer": "A",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 2,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65003,
+            65002,
+            65009,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "A"
+        },
+        {
+          "as_path": [],
+          "at_ms": 15,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 30081,
+          "forwarding_proxy": "reachable",
+          "peer": "B"
+        }
+      ],
+      "observer_last_change_ms": 30081,
+      "observer_last_change_seconds": 30.081,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 0,
+      "phase": "flap",
+      "proxy_broken_ms": 1,
+      "proxy_broken_seconds": 0.001,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 30066,
+      "proxy_no_route_seconds": 30.066,
+      "proxy_unreachable_ms": 30067,
+      "proxy_unreachable_seconds": 30.067,
+      "proxy_unreachable_while_origin_connected_ms": 30067,
+      "proxy_unreachable_while_origin_connected_seconds": 30.067,
+      "scenario": "metadata_gap",
+      "updates_received": 160,
+      "updates_sent": 160,
+      "watermarks_all_prefixes": 72,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 16,
+      "updates_sent": 16,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 16
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 0,
+      "convergence_ms": 72,
+      "convergence_seconds": 0.072,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1344,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 32,
+      "updates_sent": 32,
+      "watermarks_all_prefixes": 100,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 96,
+      "convergence_ms": 142,
+      "convergence_seconds": 0.142,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 7168,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 118,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 8,
+      "observer_choices": [
+        {
+          "as_path": [
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "broken",
+          "peer": "R1"
+        },
+        {
+          "as_path": [
+            65005,
+            65002,
+            65001
+          ],
+          "at_ms": 12,
+          "forwarding_proxy": "broken",
+          "peer": "R2"
+        },
+        {
+          "as_path": [
+            65006,
+            65002,
+            65001
+          ],
+          "at_ms": 22,
+          "forwarding_proxy": "broken",
+          "peer": "R3"
+        },
+        {
+          "as_path": [
+            65007,
+            65002,
+            65001
+          ],
+          "at_ms": 32,
+          "forwarding_proxy": "broken",
+          "peer": "R4"
+        },
+        {
+          "as_path": [
+            65008,
+            65002,
+            65001
+          ],
+          "at_ms": 42,
+          "forwarding_proxy": "broken",
+          "peer": "R5"
+        },
+        {
+          "as_path": [
+            65009,
+            65002,
+            65001
+          ],
+          "at_ms": 52,
+          "forwarding_proxy": "broken",
+          "peer": "R6"
+        },
+        {
+          "as_path": [
+            65010,
+            65002,
+            65001
+          ],
+          "at_ms": 62,
+          "forwarding_proxy": "broken",
+          "peer": "R7"
+        },
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 72,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 72,
+      "observer_last_change_seconds": 0.072,
+      "observer_metadata_selections": 8,
+      "observer_unusable_selections": 7,
+      "phase": "failure",
+      "proxy_broken_ms": 72,
+      "proxy_broken_seconds": 0.072,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 72,
+      "proxy_unreachable_seconds": 0.072,
+      "proxy_unreachable_while_origin_connected_ms": 72,
+      "proxy_unreachable_while_origin_connected_seconds": 0.072,
+      "scenario": "fanout",
+      "updates_received": 128,
+      "updates_sent": 128,
+      "watermarks_all_prefixes": 134,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 1143,
+      "inter_phase_idle_seconds": 1.143,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 5143,
+      "inter_phase_idle_seconds": 5.143,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 0,
+      "control_updates_sent": 324,
+      "convergence_ms": 77,
+      "convergence_seconds": 0.077,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 24120,
+      "final_peer": "C",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 104,
+      "initial_peer": "R0",
+      "inter_phase_idle_ms": 30143,
+      "inter_phase_idle_seconds": 30.143,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 1,
+      "observer_choices": [
+        {
+          "as_path": [
+            65012,
+            65013,
+            65014,
+            65001
+          ],
+          "at_ms": 2,
+          "forwarding_proxy": "reachable",
+          "peer": "C"
+        }
+      ],
+      "observer_last_change_ms": 2,
+      "observer_last_change_seconds": 0.002,
+      "observer_metadata_selections": 1,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "fanout",
+      "updates_received": 356,
+      "updates_sent": 356,
+      "watermarks_all_prefixes": 326,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 32
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 1003,
+      "convergence_seconds": 1.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 1003,
+      "convergence_seconds": 1.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "standard",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 5003,
+      "convergence_seconds": 5.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 5003,
+      "convergence_seconds": 5.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "standard",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 30003,
+      "convergence_seconds": 30.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 0,
+      "convergence_ms": 30003,
+      "convergence_seconds": 30.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 0,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 0,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "standard",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 6,
+      "updates_sent": 6,
+      "watermarks_all_prefixes": 0,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 4
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 1003,
+      "convergence_seconds": 1.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 1003,
+      "convergence_seconds": 1.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "path_only",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 5003,
+      "convergence_seconds": 5.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 5003,
+      "convergence_seconds": 5.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "path_only",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 30003,
+      "convergence_seconds": 30.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 0,
+      "convergence_ms": 30003,
+      "convergence_seconds": 30.003,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 632,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "path_only",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 0,
+      "observer_choices": [],
+      "observer_last_change_ms": 0,
+      "observer_last_change_seconds": 0.0,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 81,
+      "proxy_unreachable_seconds": 0.081,
+      "proxy_unreachable_while_origin_connected_ms": 81,
+      "proxy_unreachable_while_origin_connected_seconds": 0.081,
+      "scenario": "mrai_cascade",
+      "updates_received": 12,
+      "updates_sent": 12,
+      "watermarks_all_prefixes": 70,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 1004,
+      "convergence_seconds": 1.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 1003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 1003,
+      "observer_last_change_seconds": 1.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 921,
+      "proxy_no_route_seconds": 0.921,
+      "proxy_unreachable_ms": 1002,
+      "proxy_unreachable_seconds": 1.002,
+      "proxy_unreachable_while_origin_connected_ms": 1002,
+      "proxy_unreachable_while_origin_connected_seconds": 1.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 1004,
+      "convergence_seconds": 1.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "local",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 1003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 1003,
+      "observer_last_change_seconds": 1.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 921,
+      "proxy_no_route_seconds": 0.921,
+      "proxy_unreachable_ms": 1002,
+      "proxy_unreachable_seconds": 1.002,
+      "proxy_unreachable_while_origin_connected_ms": 1002,
+      "proxy_unreachable_while_origin_connected_seconds": 1.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 5004,
+      "convergence_seconds": 5.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 5003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 5003,
+      "observer_last_change_seconds": 5.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 4921,
+      "proxy_no_route_seconds": 4.921,
+      "proxy_unreachable_ms": 5002,
+      "proxy_unreachable_seconds": 5.002,
+      "proxy_unreachable_while_origin_connected_ms": 5002,
+      "proxy_unreachable_while_origin_connected_seconds": 5.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 5004,
+      "convergence_seconds": 5.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "local",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 5003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 5003,
+      "observer_last_change_seconds": 5.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 4921,
+      "proxy_no_route_seconds": 4.921,
+      "proxy_unreachable_ms": 5002,
+      "proxy_unreachable_seconds": 5.002,
+      "proxy_unreachable_while_origin_connected_ms": 5002,
+      "proxy_unreachable_while_origin_connected_seconds": 5.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 30004,
+      "convergence_seconds": 30.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 30003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 30003,
+      "observer_last_change_seconds": 30.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 29921,
+      "proxy_no_route_seconds": 29.921,
+      "proxy_unreachable_ms": 30002,
+      "proxy_unreachable_seconds": 30.002,
+      "proxy_unreachable_while_origin_connected_ms": 30002,
+      "proxy_unreachable_while_origin_connected_seconds": 30.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 4,
+      "control_updates_sent": 18,
+      "convergence_ms": 30004,
+      "convergence_seconds": 30.004,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 1880,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 88,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "local",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 4,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65004,
+            65002,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "broken",
+          "peer": "X"
+        },
+        {
+          "as_path": [],
+          "at_ms": 82,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 30003,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 30003,
+      "observer_last_change_seconds": 30.003,
+      "observer_metadata_selections": 4,
+      "observer_unusable_selections": 1,
+      "phase": "failure",
+      "proxy_broken_ms": 81,
+      "proxy_broken_seconds": 0.081,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 29921,
+      "proxy_no_route_seconds": 29.921,
+      "proxy_unreachable_ms": 30002,
+      "proxy_unreachable_seconds": 30.002,
+      "proxy_unreachable_while_origin_connected_ms": 30002,
+      "proxy_unreachable_while_origin_connected_seconds": 30.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 30,
+      "updates_sent": 30,
+      "watermarks_all_prefixes": 82,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 1161,
+      "inter_phase_idle_seconds": 1.161,
+      "mode": "full",
+      "mrai_ms": 1000,
+      "mrai_seconds": 1.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 5161,
+      "inter_phase_idle_seconds": 5.161,
+      "mode": "full",
+      "mrai_ms": 5000,
+      "mrai_seconds": 5.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": true,
+      "withdrawals_sent": 8
+    },
+    {
+      "announcements_sent": 2,
+      "control_updates_sent": 75,
+      "convergence_ms": 86,
+      "convergence_seconds": 0.086,
+      "delay_scale": 1,
+      "estimated_extension_bytes": 6684,
+      "final_peer": "X",
+      "final_status": "reachable",
+      "historical_nodes_all_prefixes": 80,
+      "initial_peer": "X",
+      "inter_phase_idle_ms": 30161,
+      "inter_phase_idle_seconds": 30.161,
+      "mode": "full",
+      "mrai_ms": 30000,
+      "mrai_seconds": 30.0,
+      "observer_changes": 2,
+      "observer_choices": [
+        {
+          "as_path": [],
+          "at_ms": 3,
+          "forwarding_proxy": "no_route",
+          "peer": ""
+        },
+        {
+          "as_path": [
+            65005,
+            65006,
+            65007,
+            65008,
+            65001
+          ],
+          "at_ms": 3,
+          "forwarding_proxy": "reachable",
+          "peer": "X"
+        }
+      ],
+      "observer_last_change_ms": 3,
+      "observer_last_change_seconds": 0.003,
+      "observer_metadata_selections": 2,
+      "observer_unusable_selections": 0,
+      "phase": "failure",
+      "proxy_broken_ms": 2,
+      "proxy_broken_seconds": 0.002,
+      "proxy_loop_ms": 0,
+      "proxy_loop_seconds": 0.0,
+      "proxy_no_route_ms": 0,
+      "proxy_no_route_seconds": 0.0,
+      "proxy_unreachable_ms": 2,
+      "proxy_unreachable_seconds": 0.002,
+      "proxy_unreachable_while_origin_connected_ms": 2,
+      "proxy_unreachable_while_origin_connected_seconds": 0.002,
+      "scenario": "mrai_cascade",
+      "updates_received": 85,
+      "updates_sent": 85,
+      "watermarks_all_prefixes": 132,
+      "withdrawal_ignores_mrai": false,
+      "withdrawals_sent": 8
+    }
+  ],
+  "runs": 576,
+  "scenarios": [
+    "export_only",
+    "fanout",
+    "ibgp_border",
+    "ibgp_origin",
+    "local_link_loss",
+    "metadata_gap",
+    "mrai_cascade",
+    "multi_origin",
+    "origin_withdraw",
+    "rapid_recovery",
+    "reroute",
+    "shared_loss"
+  ],
+  "schema": "bgptester-versioned-summary-v1",
+  "source_sha256": "557d5d47033840b955fceedbf66b4d3f9964439b58e042e41a69041346c9bf71",
+  "withdrawal_ignores_mrai": [
+    false,
+    true
+  ]
+}

@@ -1,0 +1,410 @@
+{
+  "schema": "bgptester-versioned-scenarios-v1",
+  "mrai_ms": [
+    1000,
+    5000,
+    30000
+  ],
+  "scenarios": [
+    {
+      "name": "shared_loss",
+      "topology": "../topo/versioned/shared_dependency.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "local_link_loss",
+      "topology": "../topo/versioned/shared_dependency.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "A",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "A",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "export_only",
+      "topology": "../topo/versioned/shared_dependency.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "filter",
+          "actions": [
+            {
+              "kind": "export",
+              "at_ms": 0,
+              "router": "A",
+              "peer": "X",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "export",
+              "at_ms": 0,
+              "router": "A",
+              "peer": "X",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "rapid_recovery",
+      "topology": "../topo/versioned/shared_dependency.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "flap",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            },
+            {
+              "kind": "link",
+              "at_ms": 3,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "origin_withdraw",
+      "topology": "../topo/versioned/shared_dependency.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "reroute",
+      "topology": "../topo/versioned/reroute.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "metadata_gap",
+      "topology": "../topo/versioned/metadata_gap.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "flap",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            },
+            {
+              "kind": "link",
+              "at_ms": 3,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "multi_origin",
+      "topology": "../topo/versioned/multi_origin.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw_one_origin",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "restore_origin",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ibgp_border",
+      "topology": "../topo/versioned/ibgp_border.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "O",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "ibgp_origin",
+      "topology": "../topo/versioned/ibgp_origin.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "withdraw",
+          "actions": [
+            {
+              "kind": "withdraw",
+              "at_ms": 0,
+              "router": "BIN",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": false
+        },
+        {
+          "name": "restore",
+          "actions": [
+            {
+              "kind": "originate",
+              "at_ms": 0,
+              "router": "BIN",
+              "prefix": "192.0.2.0/24"
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "fanout",
+      "topology": "../topo/versioned/fanout.json",
+      "observer": "X",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    },
+    {
+      "name": "mrai_cascade",
+      "topology": "../topo/versioned/mrai_cascade.json",
+      "observer": "Y",
+      "prefix": "192.0.2.0/24",
+      "unaffected_prefix": "198.51.100.0/24",
+      "phases": [
+        {
+          "name": "failure",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": false
+            }
+          ],
+          "observer_reachable": true
+        },
+        {
+          "name": "recovery",
+          "actions": [
+            {
+              "kind": "link",
+              "at_ms": 0,
+              "a": "D",
+              "b": "O",
+              "enabled": true
+            }
+          ],
+          "observer_reachable": true
+        }
+      ]
+    }
+  ]
+}

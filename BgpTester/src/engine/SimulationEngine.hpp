@@ -27,7 +27,7 @@ public:
     static constexpr quint64 DefaultConvergenceEventBudget = 10'000'000;
 
     explicit SimulationEngine(QObject* parent = nullptr, qsizetype processingQuantum = DefaultProcessingQuantum,
-                              quint64 convergenceEventBudget = DefaultConvergenceEventBudget);
+                              quint64 convergenceEventBudget = DefaultConvergenceEventBudget, bool detailedProtocolTracing = false);
     ~SimulationEngine() override = default;
 
     bool isRunning() const
@@ -56,6 +56,8 @@ public slots:
     // used by headless control commands to establish a stable mutation
     // boundary without relying on CPU speed or a wall-clock timeout.
     [[nodiscard]] bool runUntilConverged();
+    [[nodiscard]] bool advanceTime(qint64 milliseconds);
+    void setPeerExportEnabled(const QString& routerId, const QString& peerId, bool enabled);
     void stopSimulation();
     void setLinkState(const QString& a, const QString& b, bool enabled);
     void setRouterState(const QString& routerId, bool enabled);
@@ -90,6 +92,7 @@ private:
         std::optional<RouteEntry> route;
         PathAttributes withdrawalAttributes;
         quint64 generation = 0;
+        std::vector<StateRecord> stateRecords;
     };
 
     struct PeerRuntime
@@ -102,6 +105,7 @@ private:
         qint64 nextMraiAt = 0;
         bool flushScheduled = false;
         bool withdrawalFlushScheduled = false;
+        bool exportEnabled = true;
         qsizetype pendingAdvertisementCount = 0;
         qsizetype pendingWithdrawalCount = 0;
         QMap<QString, PendingUpdate> pending;
@@ -118,6 +122,7 @@ private:
         QHash<QString, RouteEntry> locRib;
         QHash<QString, QHash<QString, QPair<quint64, quint64>>> adjRibOut;
         QHash<QString, QHash<QString, quint64>> outboundGenerations;
+        QMap<QString, QMap<QString, VersionedPath>> advertisedVersions;
     };
 
     enum class ScheduledKind
@@ -158,7 +163,7 @@ private:
     bool buildRuntime(const Topology& topology, QString* error);
     bool scheduleInitialOpenMessages();
     void armNextEvent();
-    qsizetype processEventQuantum(qsizetype maximumEvents);
+    qsizetype processEventQuantum(qsizetype maximumEvents, std::optional<qint64> deadline = std::nullopt);
     void failConvergenceBudget();
     void finishConvergenceIfIdle();
     void markActivity(const QString& convergenceTriggerEvent = {}, const QString& convergenceTriggerContext = {});
@@ -170,7 +175,6 @@ private:
     void removePendingUpdate(PeerRuntime& peer, const QString& prefix);
     void cancelEmptyFlushes(PeerRuntime& peer);
     std::optional<quint64> sessionEpoch(const QString& from, const QString& to) const;
-    bool guardedMessageHasCurrentRoutes(const BgpMessage& message) const;
     bool scheduledEventValid(const ScheduledEvent& event) const;
     quint64 pruneInvalidScheduledEvents(quint64 maximumEvents);
 
@@ -185,6 +189,7 @@ private:
     bool retainCurrentRoutes(BgpMessage& message) const;
     void commitOutbound(const BgpMessage& message);
 
+    void sendStateRecords(const QString& routerId);
     void sendOpen(const QString& from, const QString& to);
     void handleOpen(const BgpMessage& message);
     void handleUpdateBatch(const QString& receiver, const QString& sender, const QVector<BgpMessage>& messages);
@@ -200,7 +205,8 @@ private:
     void queueAdvertisement(const QString& routerId, const QString& peerId, const QString& prefix, const std::optional<RouteEntry>& route,
                             PathAttributes withdrawalAttributes = {});
     BgpMessage makeUpdateMessage(const QString& from, const QString& to, const QString& prefix, const std::optional<RouteEntry>& route,
-                                 const PathAttributes& withdrawalAttributes, quint64 generation) const;
+                                 const PathAttributes& withdrawalAttributes, quint64 generation,
+                                 const std::vector<StateRecord>& records = {}) const;
 
     SimulationEvent messageEvent(const BgpMessage& message) const;
     void publishEvents(QVector<SimulationEvent> events);
@@ -229,6 +235,7 @@ private:
     qsizetype processingQuantum_ = DefaultProcessingQuantum;
     quint64 convergenceEventBudget_ = DefaultConvergenceEventBudget;
     quint64 processedEventsInConvergence_ = 0;
+    bool detailedProtocolTracing_ = false;
     bool routingStateDirty_ = false;
     QVector<SimulationEvent>* activeEventBatch_ = nullptr;
     bool drainingToConvergence_ = false;

@@ -1,0 +1,50 @@
+execute_process(
+    COMMAND "${EXPERIMENT_EXECUTABLE}" "${SUITE}" "${RESULTS}"
+    RESULT_VARIABLE status OUTPUT_VARIABLE output ERROR_VARIABLE errors)
+if(NOT status EQUAL 0)
+    message(FATAL_ERROR "Versioned matrix failed: ${output}\n${errors}")
+endif()
+file(READ "${RESULTS}" data)
+string(JSON count LENGTH "${data}" runs)
+if(NOT count EQUAL 576)
+    message(FATAL_ERROR "Expected 576 runs, got ${count}")
+endif()
+math(EXPR last "${count} - 1")
+foreach(i RANGE 0 ${last})
+    string(JSON run GET "${data}" runs ${i})
+    string(JSON scenario GET "${run}" scenario)
+    string(JSON mode GET "${run}" mode)
+    string(JSON mrai GET "${run}" mrai_ms)
+    string(JSON scale GET "${run}" delay_scale)
+    string(JSON bypass GET "${run}" withdrawal_ignores_mrai)
+    if(mrai LESS 1000)
+        message(FATAL_ERROR "Main experiments must use second-scale MRAI")
+    endif()
+    if(scale EQUAL 1 AND bypass AND (mode STREQUAL "standard" OR mode STREQUAL "full"))
+        foreach(metric IN ITEMS convergence_ms observer_changes observer_unusable_selections proxy_no_route_ms updates_sent)
+            string(JSON value GET "${run}" phases 0 ${metric})
+            set("${scenario}_${mode}_${mrai}_${metric}" "${value}")
+        endforeach()
+    endif()
+endforeach()
+# Fixed fixtures exercise both the intended benefit and known counterexamples.
+# They do not assert a universal convergence theorem.
+foreach(scenario IN ITEMS shared_loss fanout)
+    if(NOT ${scenario}_full_1000_observer_changes LESS ${scenario}_standard_1000_observer_changes
+       OR NOT ${scenario}_full_1000_observer_unusable_selections EQUAL 0
+       OR NOT ${scenario}_full_1000_updates_sent GREATER ${scenario}_standard_1000_updates_sent)
+        message(FATAL_ERROR "Missing pruning benefit or flooding cost in ${scenario}")
+    endif()
+endforeach()
+foreach(mrai IN ITEMS 1000 5000 30000)
+    if(mrai_cascade_standard_${mrai}_convergence_ms LESS mrai
+       OR NOT mrai_cascade_full_${mrai}_convergence_ms LESS 1000
+       OR NOT mrai_cascade_full_${mrai}_updates_sent GREATER mrai_cascade_standard_${mrai}_updates_sent)
+        message(FATAL_ERROR "Second-scale path exploration or the pruning/cost comparison changed at MRAI=${mrai}")
+    endif()
+    if(NOT metadata_gap_standard_${mrai}_proxy_no_route_ms EQUAL 0
+       OR NOT metadata_gap_full_${mrai}_proxy_no_route_ms GREATER 0)
+        message(FATAL_ERROR "The strict-freshness availability counterexample changed at MRAI=${mrai}; review the theory")
+    endif()
+endforeach()
+message(STATUS "${output}Second-scale MRAI, pruning benefits, costs and availability counterexamples verified")

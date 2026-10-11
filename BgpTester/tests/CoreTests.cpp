@@ -1442,7 +1442,7 @@ void transientWithdrawalIsSupersededBeforeFlush()
     engine.stopSimulation();
 }
 
-void stalePrefixDoesNotDiscardAggregatedWithdrawal()
+void sentAggregatedWithdrawalRemainsIntactDuringRecovery()
 {
     constexpr int prefixCount = 512;
     auto topology = twoRouterTopology();
@@ -1479,7 +1479,8 @@ void stalePrefixDoesNotDiscardAggregatedWithdrawal()
     }
 
     // Process exactly the zero-delay flush so one withdrawal message is in
-    // flight, then supersede only one prefix before its logical delivery time.
+    // flight, then originate one prefix again before delivery. Sent bytes must
+    // remain intact; the later advertisement restores that prefix in order.
     require(QMetaObject::invokeMethod(&engine, "processDueEvents", Qt::DirectConnection),
             "could not advance the withdrawal flush event");
     require(deliveredWithdrawals.isEmpty() && engine.statsSnapshot().pendingEvents > 0,
@@ -1492,12 +1493,12 @@ void stalePrefixDoesNotDiscardAggregatedWithdrawal()
                     return rib.size() == 1 && rib.contains(originated.front()) && engine.isConverged();
                 },
                 3000),
-            "one stale prefix discarded valid siblings from an aggregated withdrawal");
+            "ordered recovery did not preserve the restored prefix and withdraw its siblings");
     deliveredWithdrawals.sort(Qt::CaseSensitive);
-    auto expectedWithdrawals = originated.mid(1);
+    auto expectedWithdrawals = originated;
     expectedWithdrawals.sort(Qt::CaseSensitive);
     require(deliveredWithdrawals == expectedWithdrawals,
-            "generation filtering did not preserve every non-stale sibling in the in-flight withdrawal");
+            "an in-flight aggregate was rewritten after transmission");
     engine.stopSimulation();
 }
 
@@ -1733,7 +1734,7 @@ int main(int argc, char** argv)
         bulkUpdatesAreAggregated();
         bulkWithdrawalsAreAggregated();
         transientWithdrawalIsSupersededBeforeFlush();
-        stalePrefixDoesNotDiscardAggregatedWithdrawal();
+        sentAggregatedWithdrawalRemainsIntactDuringRecovery();
         eventStoreWritesJsonAndSqlite();
         eventStoreWorkerQueuePersistsBatches();
     }

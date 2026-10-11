@@ -4,6 +4,7 @@
 
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -15,7 +16,7 @@
 namespace bgptester
 {
 
-inline constexpr int RouterPluginApiVersion = 5;
+inline constexpr int RouterPluginApiVersion = 6;
 
 struct RouterPluginMetadata
 {
@@ -138,6 +139,12 @@ public:
     {
         return {};
     }
+
+    virtual bool usesVersionedPaths() const { return false; }
+    virtual QSet<QString> observeStateRecords(const std::vector<StateRecord>&, const NeighborConfig&) { return {}; }
+    virtual std::vector<StateRecord> withdrawalRecords(const QString&) const { return {}; }
+    virtual std::vector<StateRecord> takeStateRecords(const NeighborConfig&) { return {}; }
+    virtual nlohmann::json diagnostics() const { return nlohmann::json::object(); }
 
 private:
     RouterNodeContext context_;

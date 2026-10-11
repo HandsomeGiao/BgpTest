@@ -242,7 +242,7 @@ Ctrl+C 也会取消正在构建的大型拓扑运行时。
 - 每邻居 MRAI；参考 FRR 的 Adj-RIB-Out 待发送队列聚合 withdrawal，同一前缀的新状态覆盖旧状态；
 - 同一轮中标准共享路径属性相同的待发布前缀全部聚合到一条 UPDATE，不限制 NLRI 数量；单前缀或元数据完全相同的 TFP Dependency/Trigger 保留为公共属性，只有不同前缀的元数据真正不同时才提升为 sidecar override，因此不会仅因版本信息不同而拆包；
 - 全局仿真选项 `withdrawal_ignores_mrai` 控制 withdrawal 是否绕过 MRAI，默认为 `true` 以兼容旧拓扑；关闭后 WITHDRAW 与 UPDATE 共用每邻居 MRAI 计时器。两种模式都会聚合本轮属性相同的待撤销前缀；TFP 公共属性/sidecar 同样保留逐前缀语义，generation guard 过滤前缀时同步过滤对应元数据，不会误丢或串用同批其他路由；
-- 若某邻居既没有已提交的 Adj-RIB-Out 路由、待发送项，也没有已 flush 但尚未交付的 generation，撤销路径直接跳过；若存在 in-flight UPDATE，则先取消其 generation，防止后续复活已经撤销的幽灵路由；
+- generation guard 在真正发送前淘汰过时的待发送项；Adj-RIB-Out 在发送点提交。已发送 UPDATE/WITHDRAW 保持会话内交付顺序，不因后续选路变化而取消；链路失效和会话世代变化仍会使旧会话消息失效。没有已发送路由或待发送项时，不制造多余撤销；
 - 链路延迟、节点/链路运行时状态以及静默窗口收敛判定；
 - 引擎使用单一的整数虚拟时钟，从 `0 ms` 开始。事件以 `(dueAt, insertionOrder)` 构成全序；每次弹出事件时虚拟时钟直接推进到其 `dueAt`，绝不读取系统时钟或等待真实时间；
 - 每个处理批次固定最多处理 16384 个事件。批量边界只影响调用方重新取得控制权的时机以及 GUI 响应速度，不影响事件顺序、时间或结果；不再使用墙钟预算决定一个批次处理多少事件；
@@ -295,7 +295,75 @@ API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` �
 `RouteEntry` 未变化时请求一次因果发布，以及在全部 peer 导出后安全消费本轮因果；
 不需要这些能力的策略可继续使用默认空实现。
 
+### 版本化路径依赖图实验
+
+新路由器位于 [`src/router_plugins/VersionedPathRouterPlugin.cpp`](src/router_plugins/VersionedPathRouterPlugin.cpp)，继承 `StandardBgpRouterNode`，通过 `BGPTESTER_REGISTER_ROUTER_PLUGIN` 注册，CMake 自动发现源码；GUI 的路由器插件列表中可选择“版本化路径依赖图路由器”。图与失效闭包实现位于 [`src/router_plugins/versioned_path/`](src/router_plugins/versioned_path/)。
+
+它使用仓库现有的 **Qt RouterNodePlugin 接口和仿真引擎**。`src/core` 保持原样，portable `BgpTesterCli` 的策略注册表不包含此插件；无界面实验使用同一源码插件构建的 `BgpTesterExperiments`，避免在另一套核心中复制算法。
+
+```json
+"plugin": {
+  "id": "org.bgptester.router.versioned-path",
+  "settings": {"mode": "full"}
+}
+```
+
+`mode` 默认为 `full`。`path_only` 使用正向版本与版本化撤销绑定，但不发布或接收退役记录；`local` 发布本创建者退役记录，远端记录仅本地应用；`full` 将已知记录按邻居去重传播，重连后重新同步。对照组 `standard` 使用现有 `StandardBgpRouterPlugin`，复用相同的排序、商业策略和消息调度。
+
+正向属性分开保存发送者状态 `advertiser` 和 AS 对齐数组 `path`，覆盖空 AS_PATH 的 iBGP 起源。WITHDRAW 以 `MP_UNREACH_NLRI + VERSIONED_WITHDRAW` 的语义绑定该会话已发送的旧版本，并携带 `RETIRE_BEFORE` / `REVOKE_STATE`；仅停止对某邻居导出不会退役仍有效的本地状态。插件 API 6 增加状态消息与诊断回调；公共报文类型负责承载属性，`src/engine` 负责发送、会话顺序及控制消息交付，版本比较、闭包和选路资格均由插件处理。
+
+实验范围为全网部署、IPv4 unicast、普通 iBGP/eBGP；拒绝混合部署和路由反射配置。不支持 Add-PATH、跨进程版本持久化、有界历史回收或密码学认证。原型处理语义级报文，没有实现真实 BGP socket 或二进制编码。独立状态消息每批最多 64 条记录，绕过 MRAI；路由通告按配置等待。扩展负载是估算值，不能视为实际线缆字节数或满足 4096 字节上限的证明。
+
+从 `BgpTest` 根目录构建无界面插件实验，需要 Qt 6.5+ Core、Sql（无需 Widgets/显示服务器）：
+
+```bash
+cmake -S BgpTester -B BgpTester/build/versioned \
+  -DBGPTESTER_BUILD_GUI=OFF -DBGPTESTER_BUILD_ROUTER_EXPERIMENTS=ON \
+  -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/path/to/Qt/6.x/gcc_64
+cmake --build BgpTester/build/versioned --config Release -j 3
+ctest --test-dir BgpTester/build/versioned -C Release --output-on-failure
+python3 BgpTester/experiments/generate_versioned_scenarios.py
+BgpTester/build/versioned/bin/BgpTesterExperiments \
+  BgpTester/experiments/versioned_scenarios.json \
+  BgpTester/experiments/results/versioned_results.json
+python3 BgpTester/experiments/summarize_versioned_results.py \
+  BgpTester/experiments/results/versioned_results.json
+```
+
+系统已能发现 Qt 时可省略 `CMAKE_PREFIX_PATH`。启用 GUI 的构建也会包含实验程序。Windows 为可执行文件补 `.exe`，Python 命令可用 `python`。在实验命令末尾加 `--quick` 仅运行 1 秒 MRAI、延迟倍率 1 的 96 组；加 `--trace-dir BgpTester/experiments/results/traces` 可导出逐消息 JSONL。
+
+主矩阵使用 **1、5、30 秒 MRAI**（配置字段为毫秒：1000/5000/30000），生成的拓扑默认 30000 ms。12 个场景 × 4 个机制 × 3 个 MRAI × 2 个链路延迟倍率 × 2 种撤销 MRAI 模式，共 **576 组运行、1056 个阶段**。`withdrawal_ignores_mrai` 同时覆盖 true/false，各组机制配置完全相同。独立阶段前等待 `MRAI + 2 × 最大链路延迟 + 1 ms`，快速故障/恢复仍在同一阶段按指定虚拟时刻执行。
+
+| 拓扑 / 场景 | 检查目的 |
+|---|---|
+| `shared_dependency`：共享依赖、局部链路、导出撤销、快速恢复、起源撤销 | 共享退役与局部关系撤销的区别；迟到信息与前缀隔离 |
+| `reroute` | 旧实例仍能沿新下游转发的情况 |
+| `metadata_gap` | 退役先到而正向通告等待 MRAI 的反例 |
+| `multi_origin` | 撤销一个起源不能撤销另一起源 |
+| `ibgp_border`、`ibgp_origin` | 多边界与空 AS_PATH 的版本绑定 |
+| `fanout` | 8 个候选共享依赖时的批量剪枝 |
+| `mrai_cascade` | 中间备选通告启动下游 MRAI，导致秒级路径探索 |
+
+`mrai_cascade` 在共享依赖拓扑的 X 后增加客户 Y。故障发生后，普通 BGP 的 X 先发布经 B 的旧备选，启动 X→Y 的 MRAI；真正独立的 C 路由到达时需要等待。完整插件直接跳过 B，避免这次等待。延迟倍率 1、撤销绕过 MRAI 时，故障阶段的全网队列清空时间为：
+
+| MRAI（秒） | 普通 BGP（秒） | 完整插件（秒） | UPDATE 发送数：普通 → 完整 |
+|---:|---:|---:|---:|
+| 1 | 1.003 | 0.086 | 6 → 85 |
+| 5 | 5.003 | 0.086 | 6 → 85 |
+| 30 | 30.003 | 0.086 | 6 → 85 |
+
+这说明秒级 MRAI 能放大一次中间路径探索的控制面代价，但不意味着数据面同样中断 30 秒：Y 的转发下一跳一直是 X，下游代理在 X 改选后即可恢复。仅有纯撤销、且定时器已经过期的 `shared_loss` 场景仍可能在毫秒级结束，因此不把所有场景都强行解释为秒级收益。
+
+反例也按秒报告：`metadata_gap` 中，MRAI 1/5/30 秒时，完整插件分别出现 **0.987/4.987/29.987 秒**的观察者无路由窗口，普通 BGP 为零（延迟倍率 1、撤销旁路开启）。退役事实先到而新路径等待 MRAI，可能牺牲暂态可用性。
+
+[CSV](experiments/results/versioned_phases.csv) 包含原始毫秒及换算后的 `_seconds` 列；[摘要 JSON](experiments/results/versioned_summary.json) 记录结果哈希、四组对照和完整计数。264 对可比阶段中，完整插件全网收敛时间有 12 对缩短、240 对增加、12 对不变，UPDATE 数量全部增加。标准插件能聚合共享属性的多个前缀，当前新属性实现逐前缀发送；这部分打包损失也计入消息开销。
+
+诊断使用沿 `learnedFrom` 的控制面转发代理，不模拟真实数据包、IGP 或 FIB。大原始 JSON 与轨迹由命令生成且不纳入版本控制。实验启用详细追踪，计数选择 `message_sent`，避免同时统计发送与接收事件。图快照包含候选引用、后继、污染标记、最高版本和历史节点数。
+
 ### TFP 路径版本策略
+
+以下 TFP 历史性能记录来自当时版本；Qt 引擎的 generation guard 现已移至发送点，旧数值不是当前实现的复测结果。新插件使用上节秒级矩阵，portable `src/core` 未作修改。
 
 内置策略 `org.bgptester.router.tfp-version` 实现路由器级实体版本机制：
 
@@ -320,7 +388,7 @@ API 5 增加 `convergenceStateChanged(bool)`、`requiresDissemination(prefix)` �
   因果，即使经典 best 未变，也会携带当前 selected route，沿标准出口策略允许的
   邻居转发一次最小 delta；它不推进 `LocalVer`，也不是绕过策略的全邻居泛洪。
   全部 peer 导出完成后消费本轮因果，重复或较旧 Trigger 不再产生 UPDATE；
-- pending 或已 flush、尚未交付的消息被新 generation 覆盖时，非空 Trigger 会迁移到最新状态；引擎只按单次仿真内唯一的 generation 建立稀疏 `generation -> TriggerVector` 保真索引，并在交付、取消、邻居断开或停止时删除，不把向量内联到数百万个普通 outbound generation；
+- 尚未发送的 pending 消息被新 generation 覆盖时，非空 Trigger 会迁移到最新状态；引擎按单次仿真内唯一的 generation 建立稀疏 `generation -> TriggerVector` 保真索引，并在发送提交、取消、邻居断开或停止时删除。已经发送的消息继续携带自身 Trigger，不被之后的新 generation 改写；
 - 同一 decision 向多个策略允许的 peer 导出时，只构造一次“所选路径 Dependency + 本地实体版本”，各 peer 隐式共享该稳定向量；AS_PATH、NEXT_HOP、RR 和出口策略仍逐 peer 处理，临时缓存由 `decisionCompleted` 清理；
 - 若入站 Trigger 已显式证明旧 best 的 Dependency 过期，由此产生的本地经典变化
   仍推进 `LocalVer`，但出站只转发该根因，不再逐跳追加冗余的本地 Trigger；新的
